@@ -1,0 +1,30 @@
+# Development guidelines (internal documentation)
+CLAUDE.md
+
+# Generated deployment artifacts
+.k0rdent-suffix
+azure-resources/
+wg-keys/
+cloud-init-yaml/
+
+# IDE and editor files
+*.code-workspace
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
