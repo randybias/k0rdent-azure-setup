@@ -11,6 +11,19 @@ set -euo pipefail
 source ./k0rdent-config.sh
 source ./common-functions.sh
 
+# Handle reset argument
+if [[ "${1:-}" == "reset" ]]; then
+    print_info "Resetting laptop WireGuard configuration..."
+    CONFIG_DIR="./laptop-wg-config"
+    if [[ -d "$CONFIG_DIR" ]]; then
+        rm -rf "$CONFIG_DIR"
+        print_success "Laptop WireGuard configuration directory removed: $CONFIG_DIR"
+    else
+        print_info "No laptop WireGuard configuration directory found"
+    fi
+    exit 0
+fi
+
 # Check if Azure CLI is installed and user is authenticated
 check_azure_cli
 
