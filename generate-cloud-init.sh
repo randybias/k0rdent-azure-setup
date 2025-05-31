@@ -84,6 +84,7 @@ write_files:
       [Interface]
       PrivateKey = $WG_PRIVKEY
       Address = $WG_IP/32
+      ListenPort = $WIREGUARD_PORT
 
       # This is your laptop as the hub. 
       [Peer]
