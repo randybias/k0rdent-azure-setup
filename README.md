@@ -79,7 +79,7 @@ Or step-by-step:
 # Step 3: Generate cloud-init configurations
 ./generate-cloud-init.sh
 
-# Step 4: Create VMs in parallel
+# Step 4: Create VMs in parallel with verification
 ./create-azure-vms.sh
 ```
 
@@ -117,6 +117,13 @@ All configuration is centralized in `k0rdent-config.sh`:
 - **Wait Timeout**: 15 minutes
 - **Check Interval**: 30 seconds
 
+### VM Verification Settings
+
+- **SSH Timeout**: 10 seconds
+- **Cloud-Init Timeout**: 10 minutes
+- **Verification Retries**: 3 attempts
+- **Retry Delay**: 10 seconds
+
 ## File Structure
 
 ```
@@ -152,11 +159,17 @@ k0rdent-azure-setup/
 
 Main orchestration script with commands:
 - `deploy` - Run full deployment with confirmation
+- `reset` - Remove all k0rdent resources in proper order
 - `config` - Show deployment configuration
 - `check` - Verify prerequisites only
 - `help` - Show usage information
 
 ### Individual Scripts
+
+**create-azure-vms.sh**: Creates VMs in parallel and verifies deployment with:
+- SSH connectivity testing
+- Cloud-init completion monitoring  
+- WireGuard configuration verification
 
 Each script supports a `reset` option to clean up its resources:
 
@@ -219,13 +232,27 @@ sudo wg show
 
 ## Cleanup
 
-To completely remove all Azure resources:
+To completely remove all k0rdent resources:
 
 ```bash
-echo "yes" | ./setup-azure-network.sh reset
+./deploy-k0rdent.sh reset
 ```
 
-This will delete the entire resource group and all contained resources.
+This will remove resources in the proper order:
+1. Azure VMs and network resources
+2. Cloud-init files  
+3. WireGuard keys
+4. Project suffix file (for completely fresh deployments)
+
+For individual component cleanup, you can also run:
+
+```bash
+./setup-azure-network.sh reset    # Remove Azure resources only
+./generate-cloud-init.sh reset    # Remove cloud-init files only
+./generate-wg-keys.sh reset       # Remove WireGuard keys only
+```
+
+**Note**: The project suffix file is only removed when using `./deploy-k0rdent.sh reset` to ensure a completely fresh deployment. Individual script resets preserve the project identifier.
 
 ## Troubleshooting
 

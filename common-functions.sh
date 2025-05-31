@@ -146,3 +146,115 @@ check_local_ssh_key_exists() {
         return 1
     fi
 }
+
+# Test SSH connectivity to a VM
+test_ssh_connectivity() {
+    local host="$1"
+    local public_ip="$2"
+    local ssh_key="$3"
+    local admin_user="$4"
+    local timeout="${5:-10}"
+    
+    print_info "Testing SSH connectivity to $host ($public_ip)..."
+    
+    if ssh -i "$ssh_key" \
+           -o ConnectTimeout="$timeout" \
+           -o StrictHostKeyChecking=no \
+           -o UserKnownHostsFile=/dev/null \
+           -o LogLevel=ERROR \
+           "$admin_user@$public_ip" \
+           "echo 'SSH connection successful'" &> /dev/null; then
+        print_success "SSH connectivity to $host verified"
+        return 0
+    else
+        print_error "SSH connectivity to $host failed"
+        return 1
+    fi
+}
+
+# Check WireGuard configuration on VM
+verify_wireguard_config() {
+    local host="$1"
+    local public_ip="$2"
+    local ssh_key="$3"
+    local admin_user="$4"
+    local timeout="${5:-10}"
+    
+    print_info "Verifying WireGuard configuration on $host..."
+    
+    # Check if WireGuard interface exists and is configured
+    local wg_status
+    wg_status=$(ssh -i "$ssh_key" \
+                    -o ConnectTimeout="$timeout" \
+                    -o StrictHostKeyChecking=no \
+                    -o UserKnownHostsFile=/dev/null \
+                    -o LogLevel=ERROR \
+                    "$admin_user@$public_ip" \
+                    "sudo wg show wg0 2>/dev/null | head -1" 2>/dev/null || echo "FAILED")
+    
+    if [[ "$wg_status" == "FAILED" ]] || [[ -z "$wg_status" ]]; then
+        print_error "WireGuard interface wg0 not found or not configured on $host"
+        return 1
+    fi
+    
+    # Check if WireGuard service is active
+    local service_status
+    service_status=$(ssh -i "$ssh_key" \
+                         -o ConnectTimeout="$timeout" \
+                         -o StrictHostKeyChecking=no \
+                         -o UserKnownHostsFile=/dev/null \
+                         -o LogLevel=ERROR \
+                         "$admin_user@$public_ip" \
+                         "sudo systemctl is-active wg-quick@wg0" 2>/dev/null || echo "FAILED")
+    
+    if [[ "$service_status" != "active" ]]; then
+        print_error "WireGuard service wg-quick@wg0 is not active on $host (status: $service_status)"
+        return 1
+    fi
+    
+    print_success "WireGuard configuration verified on $host"
+    return 0
+}
+
+# Wait for cloud-init to complete
+wait_for_cloud_init() {
+    local host="$1"
+    local public_ip="$2"
+    local ssh_key="$3"
+    local admin_user="$4"
+    local timeout_minutes="${5:-10}"
+    local check_interval="${6:-30}"
+    
+    print_info "Waiting for cloud-init to complete on $host..."
+    
+    local timeout_seconds=$((timeout_minutes * 60))
+    local elapsed_seconds=0
+    
+    while [[ $elapsed_seconds -lt $timeout_seconds ]]; do
+        local cloud_init_status
+        cloud_init_status=$(ssh -i "$ssh_key" \
+                                -o ConnectTimeout=10 \
+                                -o StrictHostKeyChecking=no \
+                                -o UserKnownHostsFile=/dev/null \
+                                -o LogLevel=ERROR \
+                                "$admin_user@$public_ip" \
+                                "sudo cloud-init status --wait" 2>/dev/null || echo "FAILED")
+        
+        if [[ "$cloud_init_status" == *"done"* ]]; then
+            print_success "Cloud-init completed on $host"
+            return 0
+        elif [[ "$cloud_init_status" == "FAILED" ]]; then
+            print_info "Cloud-init still running on $host (elapsed: ${elapsed_seconds}s)"
+        else
+            print_info "Cloud-init status on $host: $cloud_init_status (elapsed: ${elapsed_seconds}s)"
+        fi
+        
+        if [[ $elapsed_seconds -lt $timeout_seconds ]]; then
+            sleep $check_interval
+            elapsed_seconds=$((elapsed_seconds + check_interval))
+        fi
+    done
+    
+    print_error "Timeout waiting for cloud-init to complete on $host after $timeout_minutes minutes"
+    return 1
+}
