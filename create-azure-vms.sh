@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 # Script: create-azure-vms.sh
-# Purpose: Create 5 ARM64 Debian 12 Spot VMs in southeastasia (zones 2/3)
-#          Each VM is provisioned with its own cloud-init for WireGuard.
-# Usage: bash create-azure-vms.sh
+# Purpose: Create 5 ARM64 Debian 12 VMs with WireGuard configuration and verification
+# Usage: bash create-azure-vms.sh [reset]
+#        reset - Delete all k0rdent VMs and their OS disks individually
 # Prereq: Run setup-azure-network.sh and generate-cloud-init.sh first.
 
 set -euo pipefail
@@ -11,6 +11,49 @@ set -euo pipefail
 # Load central configuration and common functions
 source ./k0rdent-config.sh
 source ./common-functions.sh
+
+# Handle reset argument
+if [[ "${1:-}" == "reset" ]]; then
+    print_header "Resetting VMs"
+    print_warning "This will delete all k0rdent VMs individually"
+    
+    # Check if Azure CLI is installed and user is authenticated
+    check_azure_cli
+    
+    # Find VMs in any resource group that match our naming pattern
+    print_info "Finding k0rdent VMs..."
+    VM_LIST=$(az vm list --query "[?contains(name, 'k0rd')].{Name:name, ResourceGroup:resourceGroup}" -o tsv 2>/dev/null || echo "")
+    
+    if [[ -z "$VM_LIST" ]]; then
+        print_info "No k0rdent VMs found to delete"
+        exit 0
+    fi
+    
+    echo "Found VMs to delete:"
+    echo "$VM_LIST" | while IFS=$'\t' read -r vm_name rg_name; do
+        echo "  $vm_name (in $rg_name)"
+    done
+    
+    echo
+    read -p "Are you sure you want to delete these VMs? (yes/no): " -r
+    if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+        echo "VM deletion cancelled."
+        exit 0
+    fi
+    
+    print_info "Deleting VMs and their OS disks in parallel..."
+    
+    # Delete each VM with OS disk
+    echo "$VM_LIST" | while IFS=$'\t' read -r vm_name rg_name; do
+        print_info "Deleting VM and OS disk: $vm_name"
+        az vm delete --resource-group "$rg_name" --name "$vm_name" --yes --force-deletion disks --no-wait
+    done
+    
+    print_success "VM and OS disk deletion initiated for all k0rdent VMs"
+    print_info "Deletions are running in background. Check Azure portal for progress."
+    print_info "Network interfaces and public IPs will be automatically reused for new VMs."
+    exit 0
+fi
 
 # Check if Azure CLI is installed and user is authenticated
 check_azure_cli
@@ -110,11 +153,10 @@ while [[ $ELAPSED_SECONDS -lt $TIMEOUT_SECONDS ]]; do
     # Check each VM status
     for HOST in "${VM_HOSTS[@]}"; do
         VM_STATE=$(az vm show --resource-group "$RG" --name "$HOST" --query "provisioningState" -o tsv 2>/dev/null || echo "NotFound")
-        POWER_STATE=$(az vm show --resource-group "$RG" --name "$HOST" --query "instanceView.statuses[1].displayStatus" -o tsv 2>/dev/null || echo "Unknown")
         
-        VM_STATUS_OUTPUT="$VM_STATUS_OUTPUT\n  $HOST: $VM_STATE / $POWER_STATE"
+        VM_STATUS_OUTPUT="$VM_STATUS_OUTPUT\n  $HOST: $VM_STATE"
         
-        if [[ "$VM_STATE" != "Succeeded" ]] || [[ "$POWER_STATE" != "VM running" ]]; then
+        if [[ "$VM_STATE" != "Succeeded" ]]; then
             ALL_READY=false
         fi
     done
@@ -136,7 +178,7 @@ done
 
 if [[ "$ALL_READY" != "true" ]]; then
     print_error "Timeout reached! Not all VMs are ready after $VM_WAIT_TIMEOUT_MINUTES minutes."
-    print_info "You can check VM status manually with: az vm list --resource-group $RG --query '[].{Name:name, ProvisioningState:provisioningState, PowerState:instanceView.statuses[1].displayStatus}' -o table"
+    print_info "You can check VM status manually with: az vm list --resource-group $RG --query '[].{Name:name, ProvisioningState:provisioningState}' -o table"
     exit 1
 fi
 
