@@ -64,10 +64,13 @@ run_deployment() {
 
 show_next_steps() {
     print_header "Next Steps"
-    echo "1. Wait for VMs to complete cloud-init (5-10 minutes)"
-    echo "2. Retrieve VM public IPs for WireGuard configuration"
-    echo "3. Configure your laptop WireGuard client"
-    echo "4. Install and configure k0rdent on the VMs"
+    echo "1. Generate laptop WireGuard configuration:"
+    echo "   ./generate-laptop-wg-config.sh"
+    echo ""
+    echo "2. Connect to the WireGuard VPN:"
+    echo "   ./connect-laptop-wireguard.sh"
+    echo ""
+    echo "3. Install and configure k0rdent on the VMs"
     echo ""
     echo "To clean up all resources:"
     echo "  $0 reset"
