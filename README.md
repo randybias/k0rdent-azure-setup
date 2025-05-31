@@ -81,6 +81,12 @@ Or step-by-step:
 
 # Step 4: Create VMs in parallel with verification
 ./create-azure-vms.sh
+
+# Step 5: Generate laptop WireGuard configuration
+./generate-laptop-wg-config.sh
+
+# Step 6: Connect laptop to WireGuard VPN
+./connect-laptop-wireguard.sh
 ```
 
 ### Check Status
@@ -171,12 +177,20 @@ Main orchestration script with commands:
 - Cloud-init completion monitoring  
 - WireGuard configuration verification
 
+**generate-laptop-wg-config.sh**: Generates WireGuard configuration for laptop connectivity
+
+**connect-laptop-wireguard.sh**: Sets up and tests WireGuard VPN connection with options for:
+- GUI app import (recommended for macOS)
+- Command-line wg-quick setup
+- Connection testing and verification
+
 Each script supports a `reset` option to clean up its resources:
 
 ```bash
 ./generate-wg-keys.sh reset      # Remove WireGuard keys
 ./setup-azure-network.sh reset  # Delete Azure resources
 ./generate-cloud-init.sh reset  # Remove cloud-init files
+./create-azure-vms.sh reset     # Delete k0rdent VMs and OS disks individually
 ```
 
 ## SSH Access
@@ -250,6 +264,7 @@ For individual component cleanup, you can also run:
 ./setup-azure-network.sh reset    # Remove Azure resources only
 ./generate-cloud-init.sh reset    # Remove cloud-init files only
 ./generate-wg-keys.sh reset       # Remove WireGuard keys only
+./create-azure-vms.sh reset       # Delete k0rdent VMs and OS disks individually
 ```
 
 **Note**: The project suffix file is only removed when using `./deploy-k0rdent.sh reset` to ensure a completely fresh deployment. Individual script resets preserve the project identifier.
