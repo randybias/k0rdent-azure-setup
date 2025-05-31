@@ -70,7 +70,61 @@ show_next_steps() {
     echo "4. Install and configure k0rdent on the VMs"
     echo ""
     echo "To clean up all resources:"
-    echo "  bash setup-azure-network.sh reset"
+    echo "  $0 reset"
+}
+
+run_full_reset() {
+    print_header "Full k0rdent Deployment Reset"
+    print_warning "This will remove ALL k0rdent resources in the following order:"
+    echo "  1. Azure VMs and network resources"
+    echo "  2. Cloud-init files"
+    echo "  3. WireGuard keys"
+    echo ""
+    
+    read -p "Are you sure you want to proceed? (yes/no): " -r
+    if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+        echo "Reset cancelled."
+        return
+    fi
+    
+    print_info "Resetting components..."
+    
+    # Step 1: Reset Azure resources (VMs and network)
+    if [[ -f "$AZURE_MANIFEST" ]] || check_resource_group_exists "$RG"; then
+        print_header "Step 1: Removing Azure Resources"
+        echo "yes" | bash setup-azure-network.sh reset
+        print_success "Azure resources removed"
+    else
+        print_info "Step 1: No Azure resources to remove"
+    fi
+    
+    # Step 2: Reset cloud-init files
+    if [[ -d "$CLOUDINITS" ]]; then
+        print_header "Step 2: Removing Cloud-Init Files"
+        bash generate-cloud-init.sh reset
+        print_success "Cloud-init files removed"
+    else
+        print_info "Step 2: No cloud-init files to remove"
+    fi
+    
+    # Step 3: Reset WireGuard keys
+    if [[ -d "$KEYDIR" ]]; then
+        print_header "Step 3: Removing WireGuard Keys"
+        bash generate-wg-keys.sh reset
+        print_success "WireGuard keys removed"
+    else
+        print_info "Step 3: No WireGuard keys to remove"
+    fi
+    
+    # Clean up project suffix file (only when using deploy-k0rdent.sh reset)
+    if [[ -f "$SUFFIX_FILE" ]]; then
+        print_info "Removing project suffix file for fresh deployment"
+        rm -f "$SUFFIX_FILE"
+    fi
+    
+    print_header "Reset Complete"
+    print_success "All k0rdent resources have been removed"
+    print_info "You can now run a fresh deployment with: $0 deploy"
 }
 
 # Main execution
@@ -88,6 +142,9 @@ case "${1:-deploy}" in
             echo "Deployment cancelled."
         fi
         ;;
+    "reset")
+        run_full_reset
+        ;;
     "config")
         show_config
         ;;
@@ -99,12 +156,10 @@ case "${1:-deploy}" in
         echo ""
         echo "Commands:"
         echo "  deploy    Run full deployment (default)"
+        echo "  reset     Remove all k0rdent resources"
         echo "  config    Show configuration"
         echo "  check     Check prerequisites only"
         echo "  help      Show this help"
-        echo ""
-        echo "To clean up:"
-        echo "  bash setup-azure-network.sh reset"
         ;;
     *)
         print_error "Unknown command: $1"
