@@ -1,8 +1,10 @@
 # k0rdent Azure Setup
 
-Automated Azure infrastructure deployment for k0rdent Kubernetes clusters with WireGuard networking.
+Automated infrastructure deployment for k0rdent Kubernetes clusters with WireGuard networking. Only works for Azure for now.
 
 ## Overview
+
+A set of simple Bash scripts to assist with spinning up infrastructure on Azure for deploying a production-style [k0rdent](https://k0rdent.io) cluster.  Not intended for production deployments.  This is mostly to assist in setting up test and development environments.  May have idioms and quirks specific to my needs.
 
 This project provides shell scripts to automatically deploy a complete Azure infrastructure for running k0rdent Kubernetes clusters. It creates:
 
