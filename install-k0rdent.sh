@@ -101,7 +101,6 @@ apiVersion: k0sctl.k0sproject.io/v1beta1
 kind: Cluster
 metadata:
   name: $K0RDENT_PREFIX
-
 spec:
   hosts:
 EOF
@@ -119,9 +118,6 @@ for host in k0rdcp1 k0rdcp2 k0rdcp3; do
 EOF
 done
 
-# Add empty line for readability
-echo "" >> "$K0SCTL_FILE"
-
 # Add worker nodes
 print_info "Adding worker nodes to configuration..."
 for host in k0rdwood1 k0rdwood2; do
@@ -137,11 +133,13 @@ done
 
 # Add k0s configuration
 cat >> "$K0SCTL_FILE" << EOF
-
   k0s:
     version: v1.33.1+k0s.0
     dynamicConfig: false
-
+    config:
+      spec:
+        network:
+          provider: calico
 EOF
 
     print_success "k0sctl configuration generated: $K0SCTL_FILE"
@@ -254,7 +252,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
             ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "mkdir -p ~/.kube && sudo k0s kubeconfig admin > ~/.kube/config" &>/dev/null
             
             print_info "Installing k0rdent v1.0.0 using Helm..."
-            if ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "echo helm install kcm oci://ghcr.io/k0rdent/kcm/charts/kcm --version 1.0.0 -n kcm-system --create-namespace" &>/dev/null; then
+            if ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "helm install kcm oci://ghcr.io/k0rdent/kcm/charts/kcm --version 1.0.0 -n kcm-system --create-namespace" &>/dev/null; then
                 print_success "k0rdent installed successfully!"
                 
                 print_info "Waiting for k0rdent components to be ready..."
