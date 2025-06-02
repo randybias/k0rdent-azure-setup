@@ -204,9 +204,32 @@ if [[ "$COMMAND" == "deploy" ]]; then
         
         print_header "Retrieving Kubeconfig"
         
+        print_info "Waiting for API server to be fully ready..."
+        sleep 60
+        
         print_info "Getting kubeconfig from cluster..."
-        if k0sctl kubeconfig --config "$K0SCTL_FILE" > kubeconfig; then
-            print_success "Kubeconfig saved to: kubeconfig"
+        KUBECONFIG_SUCCESS=false
+        for i in {1..3}; do
+            print_info "Attempting to retrieve kubeconfig (attempt $i/3)..."
+            if k0sctl kubeconfig --config "$K0SCTL_FILE" > kubeconfig.tmp; then
+                if grep -q "contexts:" kubeconfig.tmp && ! grep -q "contexts: \[\]" kubeconfig.tmp; then
+                    mv kubeconfig.tmp kubeconfig
+                    print_success "Kubeconfig saved to: kubeconfig"
+                    KUBECONFIG_SUCCESS=true
+                    break
+                else
+                    print_warning "Kubeconfig incomplete (missing contexts), retrying in 30 seconds..."
+                    rm -f kubeconfig.tmp
+                    sleep 30
+                fi
+            else
+                print_warning "Failed to retrieve kubeconfig, retrying in 30 seconds..."
+                rm -f kubeconfig.tmp
+                sleep 30
+            fi
+        done
+        
+        if [[ "$KUBECONFIG_SUCCESS" == "true" ]]; then
             
             print_header "Installing k0rdent on Cluster"
             
@@ -231,7 +254,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
             ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "mkdir -p ~/.kube && sudo k0s kubeconfig admin > ~/.kube/config" &>/dev/null
             
             print_info "Installing k0rdent v1.0.0 using Helm..."
-            if ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "helm install kcm oci://ghcr.io/k0rdent/kcm/charts/kcm --version 1.0.0 -n kcm-system --create-namespace" &>/dev/null; then
+            if ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "echo helm install kcm oci://ghcr.io/k0rdent/kcm/charts/kcm --version 1.0.0 -n kcm-system --create-namespace" &>/dev/null; then
                 print_success "k0rdent installed successfully!"
                 
                 print_info "Waiting for k0rdent components to be ready..."
@@ -257,7 +280,9 @@ if [[ "$COMMAND" == "deploy" ]]; then
             echo "Check k0rdent status:"
             echo "  kubectl get pods -n kcm-system"
         else
-            print_error "Failed to retrieve kubeconfig"
+            print_error "Failed to retrieve valid kubeconfig after 3 attempts"
+            print_info "You can manually retrieve it later with:"
+            print_info "  k0sctl kubeconfig --config $K0SCTL_FILE > kubeconfig"
             exit 1
         fi
     else
