@@ -69,6 +69,12 @@ Run the complete deployment process:
 ./deploy-k0rdent.sh deploy
 ```
 
+For automated deployments without prompts:
+
+```bash
+./deploy-k0rdent.sh deploy -y
+```
+
 Or step-by-step:
 
 ```bash
@@ -89,6 +95,27 @@ Or step-by-step:
 
 # Step 6: Connect laptop to WireGuard VPN
 ./connect-laptop-wireguard.sh
+```
+
+### Command-Line Options
+
+All scripts support standardized arguments:
+
+- `-y, --yes` - Skip confirmation prompts for automated deployments
+- `--no-wait` - Skip waiting for resources (where applicable)
+- `-h, --help` - Show help message
+
+Examples:
+
+```bash
+# Automated deployment without prompts
+./deploy-k0rdent.sh deploy -y
+
+# Create VMs without waiting for provisioning
+./create-azure-vms.sh --no-wait
+
+# Reset everything without confirmation
+./deploy-k0rdent.sh reset -y
 ```
 
 ### Check Status
@@ -172,12 +199,20 @@ Main orchestration script with commands:
 - `check` - Verify prerequisites only
 - `help` - Show usage information
 
+Options:
+- `-y, --yes` - Skip confirmation prompts
+- `--no-wait` - Pass to child scripts to skip resource waiting
+- `-h, --help` - Show help message
+
+The orchestrator automatically passes flags to all child scripts for consistent behavior.
+
 ### Individual Scripts
 
 **create-azure-vms.sh**: Creates VMs in parallel and verifies deployment with:
 - SSH connectivity testing
 - Cloud-init completion monitoring  
 - WireGuard configuration verification
+- Support for `--no-wait` to skip verification
 
 **generate-laptop-wg-config.sh**: Generates WireGuard configuration for laptop connectivity
 
@@ -186,13 +221,18 @@ Main orchestration script with commands:
 - Command-line wg-quick setup
 - Connection testing and verification
 
-Each script supports a `reset` option to clean up its resources:
+Each script supports standardized arguments and a `reset` option to clean up its resources:
 
 ```bash
+# Reset with confirmation
 ./generate-wg-keys.sh reset      # Remove WireGuard keys
 ./setup-azure-network.sh reset  # Delete Azure resources
 ./generate-cloud-init.sh reset  # Remove cloud-init files
 ./create-azure-vms.sh reset     # Delete k0rdent VMs and OS disks individually
+
+# Reset without confirmation
+./generate-wg-keys.sh reset -y
+./setup-azure-network.sh reset -y
 ```
 
 ## SSH Access
