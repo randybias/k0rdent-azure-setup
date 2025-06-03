@@ -2,7 +2,7 @@
 
 # Script: connect-laptop-wireguard.sh
 # Purpose: Set up and test WireGuard VPN connection to k0rdent cluster
-# Usage: bash connect-laptop-wireguard.sh
+# Usage: bash connect-laptop-wireguard.sh [command] [options]
 # Prerequisites: WireGuard configuration must be generated first
 
 set -euo pipefail
@@ -11,26 +11,44 @@ set -euo pipefail
 source ./k0rdent-config.sh
 source ./common-functions.sh
 
-print_header "k0rdent WireGuard VPN Setup"
+# Script-specific functions
+show_usage() {
+    print_usage "$0" \
+        "  connect    Set up WireGuard VPN connection
+  disconnect Safely shut down WireGuard VPN connection
+  test       Test existing WireGuard connectivity
+  status     Show VPN connection status
+  help       Show this help message" \
+        "  -y, --yes        Skip confirmation prompts (use CLI tools)
+  --no-wait        Skip waiting for connection establishment" \
+        "  $0 connect       # Interactive WireGuard setup
+  $0 connect -y    # Automated setup with CLI tools
+  $0 disconnect    # Safely disconnect WireGuard
+  $0 test          # Test connectivity only
+  $0 status        # Check current VPN status"
+}
 
 # Configuration file path
 CONFIG_DIR="./laptop-wg-config"
 CONFIG_FILE="$CONFIG_DIR/k0rdent-cluster.conf"
 
-# Check if configuration file exists
-if ! check_file_exists "$CONFIG_FILE" "WireGuard configuration"; then
-    print_error "WireGuard configuration not found. Run ./generate-laptop-wg-config.sh first."
-    exit 1
-fi
+# Validation functions
+validate_prerequisites() {
+    # Check if configuration file exists
+    if ! check_file_exists "$CONFIG_FILE" "WireGuard configuration"; then
+        print_error "WireGuard configuration not found. Run ./generate-laptop-wg-config.sh first."
+        exit 1
+    fi
 
-# Check if netcat is installed (needed for connectivity testing)
-if ! command -v nc &> /dev/null; then
-    print_error "netcat (nc) not found. Please install netcat first:"
-    echo "  brew install netcat"
-    exit 1
-fi
+    # Check if netcat is installed (needed for connectivity testing)
+    if ! command -v nc &> /dev/null; then
+        print_error "netcat (nc) not found. Please install netcat first:"
+        echo "  brew install netcat"
+        exit 1
+    fi
 
-print_success "WireGuard configuration found: $CONFIG_FILE"
+    print_success "WireGuard configuration found: $CONFIG_FILE"
+}
 
 # Function to test if WireGuard VPN is actually working
 test_wireguard_connectivity() {
@@ -59,8 +77,12 @@ test_wireguard_connectivity() {
     fi
 }
 
-# Check current VPN status
-print_info "Checking current VPN connectivity..."
+connect_wireguard() {
+    print_header "k0rdent WireGuard VPN Setup"
+    validate_prerequisites
+    
+    # Check current VPN status
+    print_info "Checking current VPN connectivity..."
 if WORKING_COUNT=$(test_wireguard_connectivity); then
     print_success "WireGuard VPN is already active ($WORKING_COUNT/${#VM_HOSTS[@]} VMs reachable)"
     print_info "Skipping setup - proceeding to final connectivity test..."
@@ -68,7 +90,7 @@ else
     print_info "WireGuard VPN not detected ($WORKING_COUNT/${#VM_HOSTS[@]} VMs reachable)"
     
     # Provide setup options
-    if [[ $YES == true ]]; then
+    if [[ "$SKIP_PROMPTS" == "true" ]]; then
         # Non-interactive mode: use CLI tools
         print_info "Non-interactive mode: using wg-quick..."
         
@@ -81,7 +103,8 @@ else
         
         # Start the interface directly from local config file
         print_info "Starting WireGuard interface from: $CONFIG_FILE"
-        if sudo wg-quick up "$CONFIG_FILE"; then
+        WG_QUICK_PATH=$(get_wg_quick_path)
+        if sudo "$WG_QUICK_PATH" up "$CONFIG_FILE"; then
             print_success "WireGuard interface started successfully"
         else
             print_error "Failed to start WireGuard interface"
@@ -123,7 +146,8 @@ else
                 
                 # Start the interface directly from local config file
                 print_info "Starting WireGuard interface from: $CONFIG_FILE"
-                if sudo wg-quick up "$CONFIG_FILE"; then
+                WG_QUICK_PATH=$(get_wg_quick_path)
+                if sudo "$WG_QUICK_PATH" up "$CONFIG_FILE"; then
                     print_success "WireGuard interface started successfully"
                 else
                     print_error "Failed to start WireGuard interface"
@@ -235,4 +259,96 @@ fi
 echo
 print_info "To disconnect WireGuard:"
 echo "  • GUI: Deactivate tunnel in WireGuard app"
-echo "  • CLI: sudo wg-quick down $CONFIG_FILE"
+WG_QUICK_PATH=$(get_wg_quick_path)
+echo "  • CLI: sudo $WG_QUICK_PATH down $CONFIG_FILE"
+}
+
+test_connectivity() {
+    validate_prerequisites
+    print_header "Testing WireGuard Connectivity"
+    
+    print_info "Testing VPN connectivity..."
+    if WORKING_COUNT=$(test_wireguard_connectivity); then
+        print_success "🎉 WireGuard VPN is working correctly ($WORKING_COUNT/${#VM_HOSTS[@]} VMs reachable)"
+    else
+        print_error "WireGuard VPN is not working ($WORKING_COUNT/${#VM_HOSTS[@]} VMs reachable)"
+        return 1
+    fi
+}
+
+disconnect_wireguard() {
+    print_header "Disconnecting WireGuard VPN"
+    
+    # First validate the config exists
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        print_warning "No WireGuard configuration found at $CONFIG_FILE"
+        print_info "Attempting to disconnect any active k0rdent-cluster interface..."
+        shutdown_wireguard_interface "k0rdent-cluster"
+        return
+    fi
+    
+    # Disconnect the interface
+    if shutdown_wireguard_interface "$CONFIG_FILE"; then
+        print_success "WireGuard VPN disconnected successfully"
+    else
+        print_error "Failed to disconnect WireGuard VPN"
+        print_info "You may need to manually disconnect using:"
+        echo "  sudo wg-quick down k0rdent-cluster"
+        echo "  or"
+        echo "  sudo ip link delete k0rdent-cluster"
+        return 1
+    fi
+}
+
+show_status() {
+    validate_prerequisites
+    print_header "WireGuard VPN Status"
+    
+    print_info "Checking VPN connectivity..."
+    if WORKING_COUNT=$(test_wireguard_connectivity); then
+        print_success "WireGuard VPN is active ($WORKING_COUNT/${#VM_HOSTS[@]} VMs reachable)"
+    else
+        print_info "WireGuard VPN not detected ($WORKING_COUNT/${#VM_HOSTS[@]} VMs reachable)"
+    fi
+}
+
+# Default values
+SKIP_PROMPTS=false
+NO_WAIT=false
+
+# Parse standard arguments
+PARSED_ARGS=$(parse_standard_args "$@")
+eval "$PARSED_ARGS"
+
+# Get command from positional arguments
+COMMAND="${POSITIONAL_ARGS[0]:-connect}"
+
+# Check for help flag
+if [[ "$SHOW_HELP" == "true" ]]; then
+    show_usage
+    exit 0
+fi
+
+# Execute command
+case "$COMMAND" in
+    "connect")
+        connect_wireguard
+        ;;
+    "disconnect")
+        disconnect_wireguard
+        ;;
+    "test")
+        test_connectivity
+        ;;
+    "status")
+        show_status
+        ;;
+    "help")
+        show_usage
+        ;;
+    *)
+        print_error "Unknown command: $COMMAND"
+        show_usage
+        exit 1
+        ;;
+esac

@@ -68,6 +68,70 @@ check_wireguard_tools() {
     fi
 }
 
+# Safely shut down WireGuard interface
+# Parameters:
+#   $1 - Interface name or config file path
+# Returns: 0 on success (or if already down), 1 on failure
+shutdown_wireguard_interface() {
+    local interface_or_config="$1"
+    local interface_name=""
+    
+    # Determine interface name
+    if [[ -f "$interface_or_config" ]]; then
+        # Extract interface name from config file path
+        interface_name=$(basename "$interface_or_config" .conf)
+    else
+        interface_name="$interface_or_config"
+    fi
+    
+    # Check if interface exists
+    if ! sudo wg show "$interface_name" &>/dev/null; then
+        print_info "WireGuard interface '$interface_name' is not active"
+        return 0
+    fi
+    
+    print_info "Shutting down WireGuard interface: $interface_name"
+    
+    # Try wg-quick first (preferred method)
+    local wg_quick_path=""
+    if command -v wg-quick &>/dev/null; then
+        wg_quick_path="wg-quick"
+    elif [[ -x "/usr/local/bin/wg-quick" ]]; then
+        wg_quick_path="/usr/local/bin/wg-quick"
+    elif [[ -x "/opt/homebrew/bin/wg-quick" ]]; then
+        wg_quick_path="/opt/homebrew/bin/wg-quick"
+    fi
+    
+    if [[ -n "$wg_quick_path" ]]; then
+        if sudo "$wg_quick_path" down "$interface_name" 2>/dev/null; then
+            print_success "WireGuard interface '$interface_name' shut down successfully"
+            return 0
+        fi
+    fi
+    
+    # Fallback: manual interface shutdown
+    print_warning "wg-quick not available, using manual shutdown"
+    
+    # Remove interface
+    if sudo ip link delete "$interface_name" 2>/dev/null || \
+       sudo ifconfig "$interface_name" down 2>/dev/null; then
+        print_success "WireGuard interface '$interface_name' shut down manually"
+        return 0
+    fi
+    
+    print_error "Failed to shut down WireGuard interface '$interface_name'"
+    return 1
+}
+
+# Get full path to WireGuard tools for sudo usage
+get_wg_path() {
+    which wg 2>/dev/null || echo "/usr/bin/wg"
+}
+
+get_wg_quick_path() {
+    which wg-quick 2>/dev/null || echo "/usr/bin/wg-quick"
+}
+
 # File existence validation
 check_file_exists() {
     local file_path="$1"
@@ -360,4 +424,46 @@ check_command_support() {
         print_info "Supported commands: $supported_commands"
         return 1
     fi
+}
+
+# Parse standard arguments for all scripts
+parse_standard_args() {
+    # Initialize arrays and variables
+    POSITIONAL_ARGS=()
+    local skip_prompts=false
+    local no_wait=false
+    local show_help=false
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -y|--yes)
+                skip_prompts=true
+                shift
+                ;;
+            --no-wait)
+                no_wait=true
+                shift
+                ;;
+            -h|--help)
+                show_help=true
+                shift
+                ;;
+            -*)
+                print_error "Unknown option: $1"
+                print_info "Use -h or --help for usage information"
+                exit 1
+                ;;
+            *)
+                POSITIONAL_ARGS+=("$1")
+                shift
+                ;;
+        esac
+    done
+    
+    # Export parsed values
+    echo "SKIP_PROMPTS=$skip_prompts"
+    echo "NO_WAIT=$no_wait"
+    echo "SHOW_HELP=$show_help"
+    echo "POSITIONAL_ARGS=(${POSITIONAL_ARGS[@]:-})"
 }
