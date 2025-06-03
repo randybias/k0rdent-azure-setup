@@ -15,10 +15,21 @@ source ./common-functions.sh
 K0SCTL_DIR="./k0sctl-config"
 KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_PREFIX}-kubeconfig"
 
-# Handle command line arguments
-COMMAND="${1:-}"
+# Script-specific functions
+show_usage() {
+    print_usage "$0" \
+        "  deploy     Install k0rdent on existing k0s cluster
+  uninstall  Remove k0rdent from cluster
+  status     Show k0rdent installation status
+  help       Show this help message" \
+        "  -y, --yes        Skip confirmation prompts
+  --no-wait        Skip waiting for resources" \
+        "  $0 deploy        # Install k0rdent
+  $0 status        # Check installation status
+  $0 uninstall     # Remove k0rdent"
+}
 
-if [[ "$COMMAND" == "uninstall" ]]; then
+uninstall_k0rdent() {
     print_info "Uninstalling k0rdent from cluster..."
     
     # Find SSH private key
@@ -39,8 +50,9 @@ if [[ "$COMMAND" == "uninstall" ]]; then
     fi
     
     print_success "k0rdent uninstall completed"
-    exit
-fi
+}
+
+deploy_k0rdent() {
 
 print_header "k0rdent Installation"
 
@@ -112,9 +124,6 @@ if [[ "$COMMAND" == "deploy" ]]; then
         echo "Check k0rdent status:"
         echo "  kubectl get pods -n kcm-system"
         echo ""
-        echo "Access k0rdent UI:"
-        echo "  kubectl port-forward -n kcm-system svc/kcm-server 9443:443"
-        echo "  Then open: https://localhost:9443"
     else
         print_error "Failed to install k0rdent"
         exit 1
@@ -131,15 +140,48 @@ else
 fi
 }
 
-# Parse arguments
-parse_common_args "$@" || parse_result=$?
+show_status() {
+    print_header "k0rdent Installation Status"
+    
+    # Find SSH private key
+    SSH_KEY_PATH=$(find ./azure-resources -name "${K0RDENT_PREFIX}-ssh-key" -type f 2>/dev/null | head -1)
+    
+    if [[ -n "$SSH_KEY_PATH" ]]; then
+        # Get the first controller IP
+        CONTROLLER_IP="${WG_IPS[k0rdcp1]}"
+        
+        print_info "Checking k0rdent installation status..."
+        if ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "helm list -n kcm-system | grep -q kcm" &>/dev/null; then
+            print_success "k0rdent is installed"
+            ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "helm list -n kcm-system"
+        else
+            print_info "k0rdent is not installed"
+        fi
+    else
+        print_warning "SSH key not found, cannot check k0rdent status"
+    fi
+}
 
-if [[ $parse_result -eq 1 ]]; then
-    # Help was requested
+# Default values
+SKIP_PROMPTS=false
+NO_WAIT=false
+
+# Parse standard arguments
+PARSED_ARGS=$(parse_standard_args "$@")
+eval "$PARSED_ARGS"
+
+# Get command from positional arguments
+COMMAND="${POSITIONAL_ARGS[0]:-}"
+
+# Check for help flag
+if [[ "$SHOW_HELP" == "true" ]]; then
     show_usage
     exit 0
-elif [[ $parse_result -eq 2 ]]; then
-    # Invalid argument
+fi
+
+# Check command support
+SUPPORTED_COMMANDS="deploy uninstall status help"
+if [[ -z "$COMMAND" ]]; then
     show_usage
     exit 1
 fi
