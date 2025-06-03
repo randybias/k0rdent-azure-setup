@@ -9,7 +9,7 @@ A set of simple Bash scripts to assist with spinning up infrastructure on Azure 
 This project provides shell scripts to automatically deploy a complete Azure infrastructure for running k0rdent Kubernetes clusters. It creates:
 
 - Configurable number of VMs with flexible controller/worker topology
-- Ubuntu 24.04 LTS VMs with different sizes for controllers vs workers
+- Debian 12 ARM64 VMs with different sizes for controllers vs workers
 - WireGuard mesh network for secure connectivity
 - SSH key management with local key storage
 - Network security groups with proper firewall rules
@@ -240,18 +240,18 @@ k0rdent-azure-setup/
 ├── azure-resources/            # Generated Azure resources
 │   ├── azure-resource-manifest.csv
 │   ├── wireguard-port.txt
-│   ├── k2-XXXXXXXX-ssh-key     # Private SSH key
-│   └── k2-XXXXXXXX-ssh-key.pub # Public SSH key
+│   ├── k0rdent-XXXXXXXX-ssh-key     # Private SSH key
+│   └── k0rdent-XXXXXXXX-ssh-key.pub # Public SSH key
 ├── wg-keys/                    # WireGuard keys
 │   ├── wg-key-manifest.csv
 │   ├── *_privkey
 │   └── *_pubkey
 └── cloud-init-yaml/           # VM cloud-init configurations
-    ├── k0rdcp1-cloud-init.yaml
-    ├── k0rdcp2-cloud-init.yaml
-    ├── k0rdcp3-cloud-init.yaml
-    ├── k0rdwood1-cloud-init.yaml
-    └── k0rdwood2-cloud-init.yaml
+    ├── k0s-controller-cloud-init.yaml
+    ├── k0s-controller-2-cloud-init.yaml
+    ├── k0s-controller-3-cloud-init.yaml
+    ├── k0s-worker-1-cloud-init.yaml
+    └── k0s-worker-2-cloud-init.yaml
 ```
 
 ## Scripts Reference
@@ -306,7 +306,7 @@ Each script supports standardized arguments and a `reset` option to clean up its
 After deployment, SSH to any VM using the generated key:
 
 ```bash
-ssh -i ./azure-resources/k2-XXXXXXXX-ssh-key k0rdent@<PUBLIC_IP>
+ssh -i ./azure-resources/k0rdent-XXXXXXXX-ssh-key k0rdent@<PUBLIC_IP>
 ```
 
 ## WireGuard Setup
@@ -381,7 +381,7 @@ For individual component cleanup, you can also run:
 
 ### Common Issues
 
-1. **Quota Exceeded**: Reduce VM size in `k0rdent-config.sh`
+1. **Quota Exceeded**: Reduce VM size in `config-user.sh`
 2. **Zone Availability**: Check ARM64 VM availability in your region
 3. **Network Conflicts**: Ensure no existing resources conflict with names
 
@@ -389,13 +389,13 @@ For individual component cleanup, you can also run:
 
 ```bash
 # Check Azure resources
-az group list --query "[?contains(name, 'k2-')]"
+az group list --query "[?contains(name, 'k0rdent-')]"
 
 # Check VM status
 az vm list --resource-group <resource-group> --show-details
 
 # View cloud-init logs
-ssh -i ./azure-resources/k2-*-ssh-key k0rdent@<vm-ip> 'sudo cat /var/log/cloud-init-output.log'
+ssh -i ./azure-resources/k0rdent-*-ssh-key k0rdent@<vm-ip> 'sudo cat /var/log/cloud-init-output.log'
 ```
 
 ## Security Features
