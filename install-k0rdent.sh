@@ -14,6 +14,7 @@ source ./common-functions.sh
 # Output directory and file
 K0SCTL_DIR="./k0sctl-config"
 K0SCTL_FILE="$K0SCTL_DIR/${K0RDENT_PREFIX}-k0sctl.yaml"
+KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_PREFIX}-kubeconfig"
 
 # Handle command line arguments
 COMMAND="${1:-}"
@@ -54,7 +55,6 @@ fi
 if [[ "$COMMAND" == "reset" ]]; then
     print_info "Removing k0sctl configuration and kubeconfig..."
     rm -rf "$K0SCTL_DIR"
-    rm -f kubeconfig
     print_success "k0sctl configuration and kubeconfig removed"
     exit
 fi
@@ -211,8 +211,8 @@ if [[ "$COMMAND" == "deploy" ]]; then
             print_info "Attempting to retrieve kubeconfig (attempt $i/3)..."
             if k0sctl kubeconfig --config "$K0SCTL_FILE" > kubeconfig.tmp; then
                 if grep -q "contexts:" kubeconfig.tmp && ! grep -q "contexts: \[\]" kubeconfig.tmp; then
-                    mv kubeconfig.tmp kubeconfig
-                    print_success "Kubeconfig saved to: kubeconfig"
+                    mv kubeconfig.tmp "$KUBECONFIG_FILE"
+                    print_success "Kubeconfig saved to: $KUBECONFIG_FILE"
                     KUBECONFIG_SUCCESS=true
                     break
                 else
@@ -269,7 +269,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
             
             print_header "Cluster Access"
             echo "Export kubeconfig to access your cluster:"
-            echo "  export KUBECONFIG=\$PWD/kubeconfig"
+            echo "  export KUBECONFIG=\$PWD/$KUBECONFIG_FILE"
             echo ""
             echo "Test cluster access:"
             echo "  kubectl get nodes"
@@ -280,7 +280,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
         else
             print_error "Failed to retrieve valid kubeconfig after 3 attempts"
             print_info "You can manually retrieve it later with:"
-            print_info "  k0sctl kubeconfig --config $K0SCTL_FILE > kubeconfig"
+            print_info "  k0sctl kubeconfig --config $K0SCTL_FILE > $KUBECONFIG_FILE"
             exit 1
         fi
     else
@@ -301,6 +301,6 @@ else
     echo "   k0sctl apply --config $K0SCTL_FILE"
     echo ""
     echo "5. Get kubeconfig after deployment:"
-    echo "   k0sctl kubeconfig --config $K0SCTL_FILE > kubeconfig"
-    echo "   export KUBECONFIG=\$PWD/kubeconfig"
+    echo "   k0sctl kubeconfig --config $K0SCTL_FILE > $KUBECONFIG_FILE"
+    echo "   export KUBECONFIG=\$PWD/$KUBECONFIG_FILE"
 fi

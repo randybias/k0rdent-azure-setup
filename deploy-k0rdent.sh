@@ -33,6 +33,9 @@ show_config() {
 run_deployment() {
     print_header "Starting k0rdent Deployment"
     
+    # Record start time
+    DEPLOYMENT_START_TIME=$(date +%s)
+    
     # Step 1: Generate WireGuard keys
     print_header "Step 1: Generating WireGuard Keys"
     if [[ -f "$WG_MANIFEST" ]]; then
@@ -59,18 +62,48 @@ run_deployment() {
     # Step 4: Create Azure VMs
     print_header "Step 4: Creating Azure VMs"
     bash create-azure-vms.sh
-    print_success "VM creation initiated"
+    print_success "VM creation complete"
+    
+    # Step 5: Generate laptop WireGuard configuration
+    print_header "Step 5: Generating Laptop WireGuard Configuration"
+    bash generate-laptop-wg-config.sh
+    print_success "Laptop WireGuard configuration generated"
+    
+    # Step 6: Connect to WireGuard VPN
+    print_header "Step 6: Connecting to WireGuard VPN"
+    bash connect-laptop-wireguard.sh
+    print_success "WireGuard VPN connected"
+    
+    # Step 7: Install k0rdent cluster
+    print_header "Step 7: Installing k0rdent Cluster"
+    bash install-k0rdent.sh deploy
+    print_success "k0rdent cluster installation complete"
+    
+    # Calculate and display total deployment time
+    DEPLOYMENT_END_TIME=$(date +%s)
+    DEPLOYMENT_DURATION=$((DEPLOYMENT_END_TIME - DEPLOYMENT_START_TIME))
+    DEPLOYMENT_MINUTES=$((DEPLOYMENT_DURATION / 60))
+    DEPLOYMENT_SECONDS=$((DEPLOYMENT_DURATION % 60))
+    
+    print_header "Deployment Time"
+    echo "Total deployment time: ${DEPLOYMENT_MINUTES} minutes and ${DEPLOYMENT_SECONDS} seconds"
 }
 
 show_next_steps() {
-    print_header "Next Steps"
-    echo "1. Generate laptop WireGuard configuration:"
-    echo "   ./generate-laptop-wg-config.sh"
+    print_header "Deployment Complete!"
+    echo "The k0rdent cluster has been successfully deployed and configured."
     echo ""
-    echo "2. Connect to the WireGuard VPN:"
-    echo "   ./connect-laptop-wireguard.sh"
+    echo "Cluster Access:"
+    echo "  - WireGuard VPN is connected"
+    echo "  - k0rdent cluster is installed and running"
+    echo "  - kubectl configuration is available at: ./k0sctl-config/${K0RDENT_PREFIX}-kubeconfig"
     echo ""
-    echo "3. Install and configure k0rdent on the VMs"
+    echo "Management Commands:"
+    echo "  - Export kubeconfig: export KUBECONFIG=\$PWD/k0sctl-config/${K0RDENT_PREFIX}-kubeconfig"
+    echo "  - Check cluster status: kubectl get nodes"
+    echo "  - View k0rdent resources: kubectl get all -A"
+    echo "  - Disconnect VPN: sudo wg-quick down k0rdent-laptop"
+    echo "  - Reconnect VPN: sudo wg-quick up k0rdent-laptop"
     echo ""
     echo "To clean up all resources:"
     echo "  $0 reset"
@@ -79,9 +112,12 @@ show_next_steps() {
 run_full_reset() {
     print_header "Full k0rdent Deployment Reset"
     print_warning "This will remove ALL k0rdent resources in the following order:"
-    echo "  1. Azure VMs and network resources"
-    echo "  2. Cloud-init files"
-    echo "  3. WireGuard keys"
+    echo "  1. Disconnect WireGuard VPN"
+    echo "  2. k0rdent cluster configuration"
+    echo "  3. Laptop WireGuard configuration"
+    echo "  4. Azure VMs and network resources"
+    echo "  5. Cloud-init files"
+    echo "  6. WireGuard keys"
     echo ""
     
     read -p "Are you sure you want to proceed? (yes/no): " -r
@@ -92,31 +128,58 @@ run_full_reset() {
     
     print_info "Resetting components..."
     
-    # Step 1: Reset Azure resources (VMs and network)
+    # Step 1: Disconnect WireGuard VPN if connected
+    if sudo wg show k0rdent-laptop &>/dev/null; then
+        print_header "Step 1: Disconnecting WireGuard VPN"
+        sudo wg-quick down k0rdent-laptop || true
+        print_success "WireGuard VPN disconnected"
+    else
+        print_info "Step 1: WireGuard VPN not connected"
+    fi
+    
+    # Step 2: Reset k0rdent cluster configuration
+    if [[ -d "./k0sctl-config" ]]; then
+        print_header "Step 2: Removing k0rdent Cluster Configuration"
+        bash install-k0rdent.sh reset
+        print_success "k0rdent cluster configuration removed"
+    else
+        print_info "Step 2: No k0rdent cluster configuration to remove"
+    fi
+    
+    # Step 3: Reset laptop WireGuard configuration
+    if [[ -d "./laptop-wg-config" ]]; then
+        print_header "Step 3: Removing Laptop WireGuard Configuration"
+        bash generate-laptop-wg-config.sh reset
+        print_success "Laptop WireGuard configuration removed"
+    else
+        print_info "Step 3: No laptop WireGuard configuration to remove"
+    fi
+    
+    # Step 4: Reset Azure resources (VMs and network)
     if [[ -f "$AZURE_MANIFEST" ]] || check_resource_group_exists "$RG"; then
-        print_header "Step 1: Removing Azure Resources"
+        print_header "Step 4: Removing Azure Resources"
         echo "yes" | bash setup-azure-network.sh reset
         print_success "Azure resources removed"
     else
-        print_info "Step 1: No Azure resources to remove"
+        print_info "Step 4: No Azure resources to remove"
     fi
     
-    # Step 2: Reset cloud-init files
+    # Step 5: Reset cloud-init files
     if [[ -d "$CLOUDINITS" ]]; then
-        print_header "Step 2: Removing Cloud-Init Files"
+        print_header "Step 5: Removing Cloud-Init Files"
         bash generate-cloud-init.sh reset
         print_success "Cloud-init files removed"
     else
-        print_info "Step 2: No cloud-init files to remove"
+        print_info "Step 5: No cloud-init files to remove"
     fi
     
-    # Step 3: Reset WireGuard keys
+    # Step 6: Reset WireGuard keys
     if [[ -d "$KEYDIR" ]]; then
-        print_header "Step 3: Removing WireGuard Keys"
+        print_header "Step 6: Removing WireGuard Keys"
         bash generate-wg-keys.sh reset
         print_success "WireGuard keys removed"
     else
-        print_info "Step 3: No WireGuard keys to remove"
+        print_info "Step 6: No WireGuard keys to remove"
     fi
     
     # Clean up project suffix file (only when using deploy-k0rdent.sh reset)
