@@ -58,7 +58,7 @@ run_deployment() {
     if [[ -f "$WG_MANIFEST" ]]; then
         print_warning "WireGuard keys already exist. Skipping generation."
     else
-        bash generate-wg-keys.sh $DEPLOY_FLAGS
+        bash generate-wg-keys.sh deploy $DEPLOY_FLAGS
         print_success "WireGuard keys generated"
     fi
     
@@ -67,28 +67,28 @@ run_deployment() {
     if [[ -f "$AZURE_MANIFEST" ]]; then
         print_warning "Azure resources already exist. Skipping network setup."
     else
-        bash setup-azure-network.sh $DEPLOY_FLAGS
+        bash setup-azure-network.sh deploy $DEPLOY_FLAGS
         print_success "Azure network setup complete"
     fi
     
     # Step 3: Generate cloud-init files
     print_header "Step 3: Generating Cloud-Init Files"
-    bash generate-cloud-init.sh $DEPLOY_FLAGS
+    bash generate-cloud-init.sh deploy $DEPLOY_FLAGS
     print_success "Cloud-init files generated"
     
     # Step 4: Create Azure VMs
     print_header "Step 4: Creating Azure VMs"
-    bash create-azure-vms.sh $DEPLOY_FLAGS
+    bash create-azure-vms.sh deploy $DEPLOY_FLAGS
     print_success "VM creation complete"
     
     # Step 5: Generate laptop WireGuard configuration
     print_header "Step 5: Generating Laptop WireGuard Configuration"
-    bash generate-laptop-wg-config.sh $DEPLOY_FLAGS
+    bash generate-laptop-wg-config.sh deploy $DEPLOY_FLAGS
     print_success "Laptop WireGuard configuration generated"
     
     # Step 6: Connect to WireGuard VPN
     print_header "Step 6: Connecting to WireGuard VPN"
-    bash connect-laptop-wireguard.sh $DEPLOY_FLAGS
+    bash connect-laptop-wireguard.sh deploy $DEPLOY_FLAGS
     print_success "WireGuard VPN connected"
     
     # Step 7: Install k0s cluster
@@ -124,8 +124,8 @@ show_next_steps() {
     echo "  - Export kubeconfig: export KUBECONFIG=\$PWD/k0sctl-config/${K0RDENT_PREFIX}-kubeconfig"
     echo "  - Check cluster status: kubectl get nodes"
     echo "  - View k0rdent resources: kubectl get all -A"
-    echo "  - Disconnect VPN: sudo wg-quick down k0rdent-laptop"
-    echo "  - Reconnect VPN: sudo wg-quick up k0rdent-laptop"
+    echo "  - Disconnect VPN: sudo \$(which wg-quick) down k0rdent-laptop"
+    echo "  - Reconnect VPN: sudo \$(which wg-quick) up k0rdent-laptop"
     echo ""
     echo "To clean up all resources:"
     echo "  $0 reset"
@@ -156,7 +156,7 @@ run_full_reset() {
     # Step 1: Uninstall k0rdent from cluster (requires VPN connection)
     if [[ -d "./k0sctl-config" ]]; then
         print_header "Step 1: Uninstalling k0rdent from Cluster"
-        bash install-k0rdent.sh uninstall || true
+        bash install-k0rdent.sh uninstall $DEPLOY_FLAGS || true
         print_success "k0rdent uninstalled"
     else
         print_info "Step 1: No k0rdent to uninstall"
@@ -165,17 +165,19 @@ run_full_reset() {
     # Step 2: Reset k0s cluster (requires VPN connection)
     if [[ -d "./k0sctl-config" ]]; then
         print_header "Step 2: Removing k0s Cluster"
-        bash install-k0s.sh uninstall
-        bash install-k0s.sh reset
+        bash install-k0s.sh uninstall $DEPLOY_FLAGS
+        bash install-k0s.sh reset $DEPLOY_FLAGS
         print_success "k0s cluster removed"
     else
         print_info "Step 2: No k0s cluster to remove"
     fi
     
     # Step 3: Disconnect WireGuard VPN if connected
-    if sudo wg show k0rdent-laptop &>/dev/null; then
+    WG_PATH=$(get_wg_path)
+    WG_QUICK_PATH=$(get_wg_quick_path)
+    if sudo "$WG_PATH" show k0rdent-laptop &>/dev/null; then
         print_header "Step 3: Disconnecting WireGuard VPN"
-        sudo wg-quick down k0rdent-laptop || true
+        sudo "$WG_QUICK_PATH" down k0rdent-laptop || true
         print_success "WireGuard VPN disconnected"
     else
         print_info "Step 3: WireGuard VPN not connected"
@@ -184,7 +186,7 @@ run_full_reset() {
     # Step 4: Reset laptop WireGuard configuration
     if [[ -d "./laptop-wg-config" ]]; then
         print_header "Step 4: Removing Laptop WireGuard Configuration"
-        bash generate-laptop-wg-config.sh reset
+        bash generate-laptop-wg-config.sh reset $DEPLOY_FLAGS
         print_success "Laptop WireGuard configuration removed"
     else
         print_info "Step 4: No laptop WireGuard configuration to remove"
@@ -193,11 +195,7 @@ run_full_reset() {
     # Step 5: Reset Azure resources (VMs and network)
     if [[ -f "$AZURE_MANIFEST" ]] || check_resource_group_exists "$RG"; then
         print_header "Step 5: Removing Azure Resources"
-        if [[ "$SKIP_PROMPTS" == "true" ]]; then
-            bash setup-azure-network.sh reset -y
-        else
-            echo "yes" | bash setup-azure-network.sh reset
-        fi
+        bash setup-azure-network.sh reset $DEPLOY_FLAGS
         print_success "Azure resources removed"
     else
         print_info "Step 5: No Azure resources to remove"
@@ -206,7 +204,7 @@ run_full_reset() {
     # Step 6: Reset cloud-init files
     if [[ -d "$CLOUDINITS" ]]; then
         print_header "Step 6: Removing Cloud-Init Files"
-        bash generate-cloud-init.sh reset
+        bash generate-cloud-init.sh reset $DEPLOY_FLAGS
         print_success "Cloud-init files removed"
     else
         print_info "Step 6: No cloud-init files to remove"
@@ -215,7 +213,7 @@ run_full_reset() {
     # Step 7: Reset WireGuard keys
     if [[ -d "$KEYDIR" ]]; then
         print_header "Step 7: Removing WireGuard Keys"
-        bash generate-wg-keys.sh reset
+        bash generate-wg-keys.sh reset $DEPLOY_FLAGS
         print_success "WireGuard keys removed"
     else
         print_info "Step 7: No WireGuard keys to remove"

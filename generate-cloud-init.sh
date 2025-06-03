@@ -196,33 +196,29 @@ reset_cloudinit() {
         exit 0
     fi
     
-    if confirm_action "This will remove all cloud-init files. Are you sure?"; then
-        print_info_quiet "Resetting cloud-init directory: $CLOUDINITS"
-        rm -rf "$CLOUDINITS"
-        print_success "Cloud-init files removed"
-    else
-        print_info "Reset cancelled."
+    if [[ "$SKIP_PROMPTS" == "false" ]]; then
+        read -p "This will remove all cloud-init files. Are you sure? (yes/no): " -r
+        if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+            print_info "Reset cancelled."
+            exit 0
+        fi
     fi
+    
+    print_info "Resetting cloud-init directory: $CLOUDINITS"
+    rm -rf "$CLOUDINITS"
+    print_success "Cloud-init files removed"
 }
 
-# Main execution
-# Parse command line arguments
-COMMAND="${1:-}"
-shift || true
+# Default values
+SKIP_PROMPTS=false
+NO_WAIT=false
 
-# Parse options
-parse_result=0
-parse_common_args "$@" || parse_result=$?
+# Parse standard arguments
+PARSED_ARGS=$(parse_standard_args "$@")
+eval "$PARSED_ARGS"
 
-if [[ $parse_result -eq 1 ]]; then
-    # Help was requested
-    show_usage
-    exit 0
-elif [[ $parse_result -eq 2 ]]; then
-    # Unknown option
-    show_usage
-    exit 1
-fi
+# Get command from positional arguments
+COMMAND="${POSITIONAL_ARGS[0]:-}"
 
 # Check command support
 SUPPORTED_COMMANDS="deploy reset status help"
