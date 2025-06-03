@@ -68,16 +68,37 @@ else
     print_info "WireGuard VPN not detected ($WORKING_COUNT/${#VM_HOSTS[@]} VMs reachable)"
     
     # Provide setup options
-    print_header "WireGuard Setup Options"
-    echo "Choose how you want to set up the WireGuard connection:"
-    echo ""
-    echo "1) Import into WireGuard GUI app (recommended for macOS)"
-    echo "2) Use command-line wg-quick (requires sudo)"
-    echo "3) Run detailed connectivity test"
-    echo ""
-    
-    while true; do
-        read -p "Enter your choice (1-3): " choice
+    if [[ $YES == true ]]; then
+        # Non-interactive mode: use CLI tools
+        print_info "Non-interactive mode: using wg-quick..."
+        
+        # Check if WireGuard tools are installed
+        if ! command -v wg &> /dev/null; then
+            print_error "WireGuard tools not found. Please install first:"
+            echo "  brew install wireguard-tools"
+            exit 1
+        fi
+        
+        # Start the interface directly from local config file
+        print_info "Starting WireGuard interface from: $CONFIG_FILE"
+        if sudo wg-quick up "$CONFIG_FILE"; then
+            print_success "WireGuard interface started successfully"
+        else
+            print_error "Failed to start WireGuard interface"
+            exit 1
+        fi
+    else
+        # Interactive mode: show options
+        print_header "WireGuard Setup Options"
+        echo "Choose how you want to set up the WireGuard connection:"
+        echo ""
+        echo "1) Import into WireGuard GUI app (recommended for macOS)"
+        echo "2) Use command-line wg-quick (requires sudo)"
+        echo "3) Run detailed connectivity test"
+        echo ""
+        
+        while true; do
+            read -p "Enter your choice (1-3): " choice
         case $choice in
             1)
                 print_header "WireGuard GUI Setup"
@@ -186,7 +207,8 @@ else
                 print_error "Invalid choice. Please enter 1, 2, or 3."
                 ;;
         esac
-    done
+        done
+    fi
     
     # Wait a moment for connection to establish
     print_info "Waiting 5 seconds for connection to establish..."
