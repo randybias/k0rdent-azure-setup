@@ -18,9 +18,8 @@ show_usage() {
   reset     Remove laptop WireGuard configuration
   status    Show configuration status
   help      Show this help message" \
-        "  -y, --yes        Assume yes to all prompts
-  -q, --quiet      Suppress non-error output
-  -v, --verbose    Enable verbose output" \
+        "  -y, --yes        Skip confirmation prompts
+  --no-wait        Skip waiting for resources" \
         "  $0 deploy        # Generate laptop WireGuard config
   $0 status        # Check configuration status
   $0 reset -y      # Remove configuration without confirmation"
@@ -50,19 +49,18 @@ show_status() {
     print_info "WireGuard port: $endpoint"
     print_info "Configured peers: $peer_count"
     
-    if [[ $VERBOSE == true ]]; then
-        echo
-        print_info "Peer endpoints:"
-        grep "^Endpoint" "$CONFIG_FILE" | while read -r line; do
-            echo "  - ${line#*= }"
-        done
-    fi
+    echo
+    print_info "Peer endpoints:"
+    grep "^Endpoint" "$CONFIG_FILE" | while read -r line; do
+        echo "  - ${line#*= }"
+    done
 }
 
 reset_laptop_config() {
     CONFIG_DIR="./laptop-wg-config"
+    CONFIG_FILE="$CONFIG_DIR/k0rdent-cluster.conf"
     
-    if [[ $YES != true ]]; then
+    if [[ "$SKIP_PROMPTS" != "true" ]]; then
         read -p "Are you sure you want to remove the laptop WireGuard configuration? (y/N) " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -72,6 +70,16 @@ reset_laptop_config() {
     fi
     
     print_info "Resetting laptop WireGuard configuration..."
+    
+    # First, shut down the WireGuard interface if it's active
+    if [[ -f "$CONFIG_FILE" ]]; then
+        shutdown_wireguard_interface "$CONFIG_FILE"
+    else
+        # Try common interface names
+        shutdown_wireguard_interface "k0rdent-cluster"
+    fi
+    
+    # Now remove the configuration directory
     if [[ -d "$CONFIG_DIR" ]]; then
         rm -rf "$CONFIG_DIR"
         print_success "Laptop WireGuard configuration directory removed: $CONFIG_DIR"
@@ -230,15 +238,26 @@ cat "$CONFIG_FILE"
 echo "----------------------------------------"
 }
 
-# Parse arguments
-parse_common_args "$@" || parse_result=$?
+# Default values
+SKIP_PROMPTS=false
+NO_WAIT=false
 
-if [[ $parse_result -eq 1 ]]; then
-    # Help was requested
+# Parse standard arguments
+PARSED_ARGS=$(parse_standard_args "$@")
+eval "$PARSED_ARGS"
+
+# Get command from positional arguments
+COMMAND="${POSITIONAL_ARGS[0]:-}"
+
+# Check for help flag
+if [[ "$SHOW_HELP" == "true" ]]; then
     show_usage
     exit 0
-elif [[ $parse_result -eq 2 ]]; then
-    # Invalid argument
+fi
+
+# Check command support
+SUPPORTED_COMMANDS="deploy reset status help"
+if [[ -z "$COMMAND" ]]; then
     show_usage
     exit 1
 fi
