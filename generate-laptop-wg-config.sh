@@ -2,7 +2,7 @@
 
 # Script: generate-laptop-wg-config.sh
 # Purpose: Generate WireGuard configuration file for laptop to connect to k0rdent VMs
-# Usage: bash generate-laptop-wg-config.sh
+# Usage: bash generate-laptop-wg-config.sh [command] [options]
 # Prerequisites: Run full deployment first (VMs must be created and running)
 
 set -euo pipefail
@@ -11,21 +11,78 @@ set -euo pipefail
 source ./k0rdent-config.sh
 source ./common-functions.sh
 
-# Handle reset argument
-if [[ "${1:-}" == "reset" ]]; then
-    print_info "Resetting laptop WireGuard configuration..."
+# Script-specific functions
+show_usage() {
+    print_usage "$0" \
+        "  deploy    Generate laptop WireGuard configuration
+  reset     Remove laptop WireGuard configuration
+  status    Show configuration status
+  help      Show this help message" \
+        "  -y, --yes        Assume yes to all prompts
+  -q, --quiet      Suppress non-error output
+  -v, --verbose    Enable verbose output" \
+        "  $0 deploy        # Generate laptop WireGuard config
+  $0 status        # Check configuration status
+  $0 reset -y      # Remove configuration without confirmation"
+}
+
+show_status() {
+    print_header "Laptop WireGuard Configuration Status"
+    
     CONFIG_DIR="./laptop-wg-config"
+    CONFIG_FILE="$CONFIG_DIR/k0rdent-cluster.conf"
+    
+    if [[ ! -d "$CONFIG_DIR" || ! -f "$CONFIG_FILE" ]]; then
+        print_info "No laptop WireGuard configuration found."
+        print_info "Run '$0 deploy' to generate configuration."
+        return
+    fi
+    
+    print_info "Configuration file: $CONFIG_FILE"
+    print_info "File created: $(stat -f '%Sm' "$CONFIG_FILE" 2>/dev/null || stat -c '%y' "$CONFIG_FILE" 2>/dev/null | cut -d' ' -f1,2)"
+    
+    # Extract configuration details
+    local laptop_ip=$(grep "^Address" "$CONFIG_FILE" | cut -d'=' -f2 | tr -d ' ')
+    local peer_count=$(grep -c "^\[Peer\]" "$CONFIG_FILE" || echo "0")
+    local endpoint=$(grep "^Endpoint" "$CONFIG_FILE" | head -1 | cut -d'=' -f2 | tr -d ' ' | cut -d':' -f2)
+    
+    print_info "Laptop WireGuard IP: $laptop_ip"
+    print_info "WireGuard port: $endpoint"
+    print_info "Configured peers: $peer_count"
+    
+    if [[ $VERBOSE == true ]]; then
+        echo
+        print_info "Peer endpoints:"
+        grep "^Endpoint" "$CONFIG_FILE" | while read -r line; do
+            echo "  - ${line#*= }"
+        done
+    fi
+}
+
+reset_laptop_config() {
+    CONFIG_DIR="./laptop-wg-config"
+    
+    if [[ $YES != true ]]; then
+        read -p "Are you sure you want to remove the laptop WireGuard configuration? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_info "Reset cancelled."
+            return
+        fi
+    fi
+    
+    print_info "Resetting laptop WireGuard configuration..."
     if [[ -d "$CONFIG_DIR" ]]; then
         rm -rf "$CONFIG_DIR"
         print_success "Laptop WireGuard configuration directory removed: $CONFIG_DIR"
     else
         print_info "No laptop WireGuard configuration directory found"
     fi
-    exit 0
-fi
+}
 
-# Check if Azure CLI is installed and user is authenticated
-check_azure_cli
+deploy_laptop_config() {
+    # Check if Azure CLI is installed and user is authenticated
+    check_azure_cli
 
 print_header "Generating Laptop WireGuard Configuration"
 
@@ -171,3 +228,38 @@ print_info "Configuration file contents:"
 echo "----------------------------------------"
 cat "$CONFIG_FILE"
 echo "----------------------------------------"
+}
+
+# Parse arguments
+parse_common_args "$@" || parse_result=$?
+
+if [[ $parse_result -eq 1 ]]; then
+    # Help was requested
+    show_usage
+    exit 0
+elif [[ $parse_result -eq 2 ]]; then
+    # Invalid argument
+    show_usage
+    exit 1
+fi
+
+# Execute command
+case "$COMMAND" in
+    "deploy")
+        deploy_laptop_config
+        ;;
+    "reset")
+        reset_laptop_config
+        ;;
+    "status")
+        show_status
+        ;;
+    "help")
+        show_usage
+        ;;
+    *)
+        print_error "Unknown command: $COMMAND"
+        show_usage
+        exit 1
+        ;;
+esac

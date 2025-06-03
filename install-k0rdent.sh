@@ -129,3 +129,38 @@ else
     echo "To uninstall k0rdent:"
     echo "   ./install-k0rdent.sh uninstall"
 fi
+}
+
+# Parse arguments
+parse_common_args "$@" || parse_result=$?
+
+if [[ $parse_result -eq 1 ]]; then
+    # Help was requested
+    show_usage
+    exit 0
+elif [[ $parse_result -eq 2 ]]; then
+    # Invalid argument
+    show_usage
+    exit 1
+fi
+
+# Execute command
+case "$COMMAND" in
+    "deploy")
+        deploy_k0rdent
+        ;;
+    "uninstall")
+        uninstall_k0rdent
+        ;;
+    "status")
+        show_status
+        ;;
+    "help")
+        show_usage
+        ;;
+    *)
+        print_error "Unknown command: $COMMAND"
+        show_usage
+        exit 1
+        ;;
+esac
