@@ -258,3 +258,106 @@ wait_for_cloud_init() {
     print_error "Timeout waiting for cloud-init to complete on $host after $timeout_minutes minutes"
     return 1
 }
+
+# ---- Standard Argument Handling ----
+
+# Global variables for common options
+QUIET_MODE=false
+VERBOSE_MODE=false
+YES_TO_ALL=false
+
+# Standard usage function
+print_usage() {
+    local script_name="$1"
+    local commands="$2"
+    local options="$3"
+    local examples="$4"
+    
+    cat << EOF
+Usage: $script_name [command] [options]
+
+Commands:
+$commands
+
+Options:
+$options
+
+Examples:
+$examples
+EOF
+}
+
+# Parse common arguments
+parse_common_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -y|--yes)
+                YES_TO_ALL=true
+                shift
+                ;;
+            -q|--quiet)
+                QUIET_MODE=true
+                shift
+                ;;
+            -v|--verbose)
+                VERBOSE_MODE=true
+                shift
+                ;;
+            -h|--help)
+                return 1  # Signal to show help
+                ;;
+            -*)
+                print_error "Unknown option: $1"
+                return 2  # Signal unknown option
+                ;;
+            *)
+                # Not an option, return to let script handle
+                return 0
+                ;;
+        esac
+    done
+    return 0
+}
+
+# Enhanced print functions that respect quiet mode
+print_info_verbose() {
+    if [[ "$VERBOSE_MODE" == "true" ]]; then
+        print_info "$1"
+    fi
+}
+
+print_info_quiet() {
+    if [[ "$QUIET_MODE" != "true" ]]; then
+        print_info "$1"
+    fi
+}
+
+# Confirmation function that respects -y flag
+confirm_action() {
+    local prompt="$1"
+    
+    if [[ "$YES_TO_ALL" == "true" ]]; then
+        return 0
+    fi
+    
+    read -p "$prompt (yes/no): " -r
+    if [[ $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Check if a command is supported
+check_command_support() {
+    local command="$1"
+    local supported_commands="$2"
+    
+    if [[ " $supported_commands " =~ " $command " ]]; then
+        return 0
+    else
+        print_error "Unknown command: $command"
+        print_info "Supported commands: $supported_commands"
+        return 1
+    fi
+}
