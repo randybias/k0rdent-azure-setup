@@ -84,28 +84,28 @@ Or step-by-step:
 
 ```bash
 # Step 1: Generate WireGuard keys
-./generate-wg-keys.sh
+./bin/generate-wg-keys.sh
 
 # Step 2: Setup Azure network infrastructure
-./setup-azure-network.sh
+./bin/setup-azure-network.sh
 
 # Step 3: Generate cloud-init configurations
-./generate-cloud-init.sh
+./bin/generate-cloud-init.sh
 
 # Step 4: Create VMs in parallel with verification
-./create-azure-vms.sh
+./bin/create-azure-vms.sh
 
 # Step 5: Generate laptop WireGuard configuration
-./generate-laptop-wg-config.sh
+./bin/generate-laptop-wg-config.sh
 
 # Step 6: Connect laptop to WireGuard VPN
-./connect-laptop-wireguard.sh
+./bin/connect-laptop-wireguard.sh
 
 # Step 7: Install k0s cluster
-./install-k0s.sh deploy
+./bin/install-k0s.sh deploy
 
 # Step 8: Install k0rdent on cluster  
-./install-k0rdent.sh deploy
+./bin/install-k0rdent.sh deploy
 ```
 
 ### Command-Line Options
@@ -143,9 +143,9 @@ Examples:
 
 Configuration is split into user-configurable settings and internal computed values:
 
-### User Configuration (`config-user.sh`)
+### User Configuration (`etc/config-user.sh`)
 
-Modify `config-user.sh` to customize your deployment:
+Modify `etc/config-user.sh` to customize your deployment:
 
 #### Cluster Topology
 ```bash
@@ -220,7 +220,7 @@ AZURE_CONTROLLER_VM_SIZE="Standard_D4s_v3"
 AZURE_WORKER_VM_SIZE="Standard_D8s_v3"      # Larger workers
 ```
 
-### Internal Configuration (`config-internal.sh`)
+### Internal Configuration (`etc/config-internal.sh`)
 
 Automatically computed values (do not edit):
 
@@ -234,19 +234,21 @@ Automatically computed values (do not edit):
 ```
 k0rdent-azure-setup/
 ├── README.md                    # This file
-├── common-functions.sh          # Shared utility functions
-├── config-user.sh              # User-configurable settings
-├── config-internal.sh          # Computed configuration (do not edit)
-├── k0rdent-config.sh           # Central configuration loader
 ├── deploy-k0rdent.sh           # Main orchestration script
-├── generate-wg-keys.sh         # WireGuard key generation
-├── setup-azure-network.sh     # Azure infrastructure setup
-├── generate-cloud-init.sh      # Cloud-init file generation
-├── create-azure-vms.sh         # VM creation with parallel deployment
-├── generate-laptop-wg-config.sh # Laptop WireGuard configuration
-├── connect-laptop-wireguard.sh # WireGuard VPN connection setup
-├── install-k0s.sh              # k0s cluster installation
-├── install-k0rdent.sh          # k0rdent installation on cluster
+├── etc/                        # Configuration files
+│   ├── config-user.sh          # User-configurable settings
+│   ├── config-internal.sh      # Computed configuration (do not edit)
+│   ├── k0rdent-config.sh       # Central configuration loader
+│   └── common-functions.sh     # Shared utility functions
+├── bin/                        # Action scripts
+│   ├── generate-wg-keys.sh     # WireGuard key generation
+│   ├── setup-azure-network.sh # Azure infrastructure setup
+│   ├── generate-cloud-init.sh  # Cloud-init file generation
+│   ├── create-azure-vms.sh     # VM creation with parallel deployment
+│   ├── generate-laptop-wg-config.sh # Laptop WireGuard configuration
+│   ├── connect-laptop-wireguard.sh # WireGuard VPN connection setup
+│   ├── install-k0s.sh          # k0s cluster installation
+│   └── install-k0rdent.sh      # k0rdent installation on cluster
 ├── azure-resources/            # Generated Azure resources
 │   ├── azure-resource-manifest.csv
 │   ├── wireguard-port.txt
@@ -317,20 +319,20 @@ Each script supports standardized arguments and a `reset` option to clean up its
 
 ```bash
 # Reset with confirmation
-./install-k0rdent.sh uninstall  # Uninstall k0rdent from cluster
-./install-k0s.sh uninstall       # Remove k0s cluster
-./install-k0s.sh reset           # Remove k0s configuration files
-./generate-wg-keys.sh reset      # Remove WireGuard keys
-./setup-azure-network.sh reset  # Delete Azure resources
-./generate-cloud-init.sh reset  # Remove cloud-init files
-./create-azure-vms.sh reset     # Delete k0rdent VMs and OS disks individually
+./bin/install-k0rdent.sh uninstall  # Uninstall k0rdent from cluster
+./bin/install-k0s.sh uninstall       # Remove k0s cluster
+./bin/install-k0s.sh reset           # Remove k0s configuration files
+./bin/generate-wg-keys.sh reset      # Remove WireGuard keys
+./bin/setup-azure-network.sh reset  # Delete Azure resources
+./bin/generate-cloud-init.sh reset  # Remove cloud-init files
+./bin/create-azure-vms.sh reset     # Delete k0rdent VMs and OS disks individually
 
 # Reset without confirmation
-./install-k0rdent.sh uninstall -y
-./install-k0s.sh uninstall -y
-./install-k0s.sh reset -y
-./generate-wg-keys.sh reset -y
-./setup-azure-network.sh reset -y
+./bin/install-k0rdent.sh uninstall -y
+./bin/install-k0s.sh uninstall -y
+./bin/install-k0s.sh reset -y
+./bin/generate-wg-keys.sh reset -y
+./bin/setup-azure-network.sh reset -y
 ```
 
 ## SSH Access
@@ -405,12 +407,12 @@ This will remove resources in the proper order:
 For individual component cleanup, you can also run:
 
 ```bash
-./install-k0rdent.sh uninstall    # Uninstall k0rdent only
-./install-k0s.sh uninstall        # Remove k0s cluster only
-./setup-azure-network.sh reset    # Remove Azure resources only
-./generate-cloud-init.sh reset    # Remove cloud-init files only
-./generate-wg-keys.sh reset       # Remove WireGuard keys only
-./create-azure-vms.sh reset       # Delete k0rdent VMs and OS disks individually
+./bin/install-k0rdent.sh uninstall    # Uninstall k0rdent only
+./bin/install-k0s.sh uninstall        # Remove k0s cluster only
+./bin/setup-azure-network.sh reset    # Remove Azure resources only
+./bin/generate-cloud-init.sh reset    # Remove cloud-init files only
+./bin/generate-wg-keys.sh reset       # Remove WireGuard keys only
+./bin/create-azure-vms.sh reset       # Delete k0rdent VMs and OS disks individually
 ```
 
 **Note**: The project suffix file is only removed when using `./deploy-k0rdent.sh reset` to ensure a completely fresh deployment. Individual script resets preserve the project identifier.
@@ -419,7 +421,7 @@ For individual component cleanup, you can also run:
 
 ### Common Issues
 
-1. **Quota Exceeded**: Reduce VM size in `config-user.sh`
+1. **Quota Exceeded**: Reduce VM size in `etc/config-user.sh`
 2. **Zone Availability**: Check ARM64 VM availability in your region
 3. **Network Conflicts**: Ensure no existing resources conflict with names
 
@@ -462,10 +464,10 @@ If you prefer to run installation steps manually:
 # After infrastructure is deployed and WireGuard is connected...
 
 # Install k0s cluster
-./install-k0s.sh deploy
+./bin/install-k0s.sh deploy
 
 # Install k0rdent on the cluster
-./install-k0rdent.sh deploy
+./bin/install-k0rdent.sh deploy
 
 # Export kubeconfig for cluster access
 export KUBECONFIG=$PWD/k0sctl-config/<prefix>-kubeconfig
