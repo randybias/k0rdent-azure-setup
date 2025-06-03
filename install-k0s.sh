@@ -100,22 +100,49 @@ spec:
   hosts:
 EOF
 
+# Identify controller and worker nodes from VM configuration
+CONTROLLER_NODES=()
+WORKER_NODES=()
+
+for HOST in "${VM_HOSTS[@]}"; do
+    if [[ "${VM_TYPE_MAP[$HOST]}" == "controller" ]]; then
+        CONTROLLER_NODES+=("$HOST")
+    else
+        WORKER_NODES+=("$HOST")
+    fi
+done
+
 # Add controller nodes
-print_info "Adding controller nodes to configuration..."
-for host in k0rdcp1 k0rdcp2 k0rdcp3; do
+print_info "Adding ${#CONTROLLER_NODES[@]} controller nodes to configuration..."
+for i in "${!CONTROLLER_NODES[@]}"; do
+    host="${CONTROLLER_NODES[$i]}"
     wg_ip="${WG_IPS[$host]}"
+    
+    # For single controller or HA setup with multiple controllers
+    if [[ ${#CONTROLLER_NODES[@]} -eq 1 ]]; then
+        # Single controller - use controller+worker role
+        role="controller+worker"
+    else
+        # Multiple controllers - first is controller, others are controller only
+        if [[ $i -eq 0 ]]; then
+            role="controller"
+        else
+            role="controller"
+        fi
+    fi
+    
     cat >> "$K0SCTL_FILE" << EOF
     - ssh:
         address: $wg_ip
         user: $ADMIN_USER
         keyPath: $SSH_KEY_PATH
-      role: controller+worker
+      role: $role
 EOF
 done
 
 # Add worker nodes
-print_info "Adding worker nodes to configuration..."
-for host in k0rdwood1 k0rdwood2; do
+print_info "Adding ${#WORKER_NODES[@]} worker nodes to configuration..."
+for host in "${WORKER_NODES[@]}"; do
     wg_ip="${WG_IPS[$host]}"
     cat >> "$K0SCTL_FILE" << EOF
     - ssh:
@@ -129,7 +156,7 @@ done
 # Add k0s configuration
 cat >> "$K0SCTL_FILE" << EOF
   k0s:
-    version: v1.33.1+k0s.0
+    version: $K0S_VERSION
     dynamicConfig: false
     config:
       spec:
@@ -145,16 +172,24 @@ print_header "Configuration Summary"
 echo "Cluster Name: $K0RDENT_PREFIX"
 echo "SSH User: $ADMIN_USER"
 echo "SSH Key: $SSH_KEY_PATH"
+echo "k0s Version: $K0S_VERSION"
 echo ""
-echo "Controller Nodes:"
-for host in k0rdcp1 k0rdcp2 k0rdcp3; do
+echo "Controller Nodes (${#CONTROLLER_NODES[@]}):"
+for host in "${CONTROLLER_NODES[@]}"; do
     echo "  - $host: ${WG_IPS[$host]}"
 done
 echo ""
-echo "Worker Nodes:"
-for host in k0rdwood1 k0rdwood2; do
+echo "Worker Nodes (${#WORKER_NODES[@]}):"
+for host in "${WORKER_NODES[@]}"; do
     echo "  - $host: ${WG_IPS[$host]}"
 done
+
+# Show HA status
+if [[ ${#CONTROLLER_NODES[@]} -gt 1 ]]; then
+    print_info "High Availability: Enabled (${#CONTROLLER_NODES[@]} controllers)"
+else
+    print_info "High Availability: Disabled (single controller)"
+fi
 
 # Deploy k0s if requested
 if [[ "$COMMAND" == "deploy" ]]; then
@@ -162,7 +197,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
     
     # Test SSH connectivity to all nodes
     ALL_SSH_OK=true
-    for host in k0rdcp1 k0rdcp2 k0rdcp3 k0rdwood1 k0rdwood2; do
+    for host in "${VM_HOSTS[@]}"; do
         wg_ip="${WG_IPS[$host]}"
         print_info "Testing SSH to $host ($wg_ip)..."
         
@@ -183,7 +218,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
     
     # Remove SSH host keys from known_hosts to avoid conflicts
     print_info "Cleaning SSH known_hosts entries for cluster nodes..."
-    for host in k0rdcp1 k0rdcp2 k0rdcp3 k0rdwood1 k0rdwood2; do
+    for host in "${VM_HOSTS[@]}"; do
         wg_ip="${WG_IPS[$host]}"
         ssh-keygen -R "$wg_ip" 2>/dev/null || true
         print_info "Removed known_hosts entry for $wg_ip"
@@ -198,7 +233,13 @@ if [[ "$COMMAND" == "deploy" ]]; then
         print_header "Retrieving Kubeconfig"
         
         print_info "Waiting for API server to be fully ready..."
-        sleep 60
+        # Longer wait for HA clusters
+        if [[ ${#CONTROLLER_NODES[@]} -gt 1 ]]; then
+            print_info "HA cluster detected, waiting longer for all controllers to sync..."
+            sleep 90
+        else
+            sleep 60
+        fi
         
         print_info "Getting kubeconfig from cluster..."
         KUBECONFIG_SUCCESS=false
@@ -248,7 +289,10 @@ else
     echo ""
     echo "Or manually:"
     echo "3. Verify SSH connectivity to all nodes:"
-    echo "   ssh -i $SSH_KEY_PATH $ADMIN_USER@172.24.24.11  # k0rdcp1"
+    if [[ ${#CONTROLLER_NODES[@]} -gt 0 ]]; then
+        first_controller="${CONTROLLER_NODES[0]}"
+        echo "   ssh -i $SSH_KEY_PATH $ADMIN_USER@${WG_IPS[$first_controller]}  # $first_controller"
+    fi
     echo ""
     echo "4. Deploy k0s using k0sctl:"
     echo "   k0sctl apply --config $K0SCTL_FILE"

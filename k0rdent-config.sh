@@ -4,94 +4,34 @@
 # Central configuration file for k0rdent Azure setup scripts
 # Source this file in other scripts: source ./k0rdent-config.sh
 
-# ---- Deployment Configuration ----
+# Load user configuration and computed internal variables
+source ./config-user.sh
+source ./config-internal.sh
 
-# Generate or load persistent random suffix for deployment uniqueness
-SUFFIX_FILE="./.k0rdent-suffix"
+# ---- Legacy Variable Mappings ----
+# Map new variable names to legacy names for backward compatibility
+LOCATION="$AZURE_LOCATION"
+ADMIN_USER="$SSH_USERNAME"
+VM_SIZE="$AZURE_WORKER_VM_SIZE"  # Default to worker size for compatibility
+IMAGE="$AZURE_VM_IMAGE"
+PRIORITY="$AZURE_VM_PRIORITY"
+EVICTION_POLICY="$AZURE_EVICTION_POLICY"
 
-if [[ -f "$SUFFIX_FILE" ]]; then
-    RANDOM_SUFFIX=$(cat "$SUFFIX_FILE")
-else
-    RANDOM_SUFFIX=$(head /dev/urandom | base64 | tr -dc 'a-z0-9' | head -c 8; echo)
-    echo "$RANDOM_SUFFIX" > "$SUFFIX_FILE"
-fi
+# Map timeout variables
+VM_WAIT_TIMEOUT_MINUTES="$VM_CREATION_TIMEOUT_MINUTES"
+VM_CHECK_INTERVAL_SECONDS="$VM_WAIT_CHECK_INTERVAL"
 
-# Deployment identifier - automatically includes random suffix for uniqueness
-K0RDENT_PREFIX="k2-${RANDOM_SUFFIX}"
-
-# ---- Azure Configuration ----
-
-# Azure location and resource naming
-LOCATION="southeastasia"
-RG="${K0RDENT_PREFIX}-resgrp"
-
-# Network configuration
-VNET_NAME="${K0RDENT_PREFIX}-vnet"
-VNET_PREFIX="10.240.0.0/16"
-SUBNET_NAME="${K0RDENT_PREFIX}-subnet"
-SUBNET_PREFIX="10.240.1.0/24"
-NSG_NAME="${K0RDENT_PREFIX}-nsg"
-
-# SSH key configuration
-SSH_KEY_NAME="${K0RDENT_PREFIX}-admin"
-ADMIN_USER="k0rdent"
-
-# VM configuration
-VM_SIZE="Standard_D4pls_v6"
-IMAGE="Debian:debian-12:12-arm64:latest"
-PRIORITY="Regular"
-# EVICTION_POLICY only applies to Spot instances
-# EVICTION_POLICY="Deallocate"
-
-# Available zones for ARM64 in Southeast Asia
-ZONES="2 3"
-
-# VM deployment configuration
-VM_WAIT_TIMEOUT_MINUTES=15
-VM_CHECK_INTERVAL_SECONDS=30
-
-# VM verification configuration
+# Additional legacy variables not in user config
 SSH_TIMEOUT_SECONDS=10
 CLOUD_INIT_TIMEOUT_MINUTES=10
 CLOUD_INIT_CHECK_INTERVAL_SECONDS=30
 VERIFICATION_RETRY_COUNT=3
 VERIFICATION_RETRY_DELAY_SECONDS=10
 
-# ---- WireGuard Configuration ----
-
-# WireGuard network range
-WG_NETWORK="172.24.24.0/24"
-
-# Hostname to WireGuard IP mapping
-declare -A WG_IPS=(
-    ["mylaptop"]="172.24.24.1"
-    ["k0rdcp1"]="172.24.24.11"
-    ["k0rdcp2"]="172.24.24.12"
-    ["k0rdcp3"]="172.24.24.13"
-    ["k0rdwood1"]="172.24.24.21"
-    ["k0rdwood2"]="172.24.24.22"
-)
-
-# ---- VM Host Configuration ----
-
-# List of VM hosts to create
-VM_HOSTS=("k0rdcp1" "k0rdcp2" "k0rdcp3" "k0rdwood1" "k0rdwood2")
-
-# Host to zone assignment (alternate zones for HA)
-declare -A VM_ZONES=(
-    ["k0rdcp1"]="2"
-    ["k0rdcp2"]="3"
-    ["k0rdcp3"]="2"
-    ["k0rdwood1"]="3"
-    ["k0rdwood2"]="2"
-)
-
 # ---- Directory Configuration ----
-
-# Working directories
-KEYDIR="./wg-keys"
-MANIFEST_DIR="./azure-resources"
-CLOUDINITS="./cloud-init-yaml"
+# Legacy directory names
+KEYDIR="$WG_KEYDIR"
+CLOUDINITS="$CLOUD_INIT_DIR"
 
 # File paths
 WG_MANIFEST="$KEYDIR/wg-key-manifest.csv"

@@ -8,37 +8,42 @@ A set of simple Bash scripts to assist with spinning up infrastructure on Azure 
 
 This project provides shell scripts to automatically deploy a complete Azure infrastructure for running k0rdent Kubernetes clusters. It creates:
 
-- 5 ARM64 Debian 12 VMs (3 control plane + 2 worker nodes)
+- Configurable number of VMs with flexible controller/worker topology
+- Ubuntu 24.04 LTS VMs with different sizes for controllers vs workers
 - WireGuard mesh network for secure connectivity
 - SSH key management with local key storage
 - Network security groups with proper firewall rules
-- Parallel VM deployment for faster provisioning
+- Parallel VM deployment with HA zone distribution
 
 ## Architecture
+
+Default HA topology (3 controllers + 2 workers):
 
 ```
 ┌─────────────────┐    ┌──────────────────────────────────────┐
 │   Your Laptop   │    │              Azure Cloud             │
 │  172.24.24.1    │◄──►│                                      │
 │  (WireGuard     │    │  ┌─────────────┐  ┌─────────────┐    │
-│   Hub)          │    │  │  k0rdcp1    │  │  k0rdcp2    │    │
+│   Hub)          │    │  │k0s-controller│ │k0s-controller-2│ │
 └─────────────────┘    │  │172.24.24.11 │  │172.24.24.12 │    │
                        │  │   Zone 2    │  │   Zone 3    │    │
                        │  └─────────────┘  └─────────────┘    │
                        │                                      │
-                       │  ┌─────────────┐  ┌─────────────┐    │
-                       │  │  k0rdcp3    │  │ k0rdwood1   │    │
-                       │  │172.24.24.13 │  │172.24.24.21 │    │
-                       │  │   Zone 2    │  │   Zone 3    │    │
-                       │  └─────────────┘  └─────────────┘    │
-                       │                                      │
                        │  ┌─────────────┐                     │
-                       │  │ k0rdwood2   │                     │
-                       │  │172.24.24.22 │                     │
+                       │  │k0s-controller-3│                  │
+                       │  │172.24.24.13 │                     │
                        │  │   Zone 2    │                     │
                        │  └─────────────┘                     │
+                       │                                      │
+                       │  ┌─────────────┐  ┌─────────────┐    │
+                       │  │k0s-worker-1 │  │k0s-worker-2 │    │
+                       │  │172.24.24.14 │  │172.24.24.15 │    │
+                       │  │   Zone 3    │  │   Zone 2    │    │
+                       │  └─────────────┘  └─────────────┘    │
                        └──────────────────────────────────────┘
 ```
+
+This HA setup provides controller redundancy across zones for high availability.
 
 ## Quick Start
 
@@ -130,34 +135,93 @@ Examples:
 
 ## Configuration
 
-All configuration is centralized in `k0rdent-config.sh`:
+Configuration is split into user-configurable settings and internal computed values:
 
-### Key Settings
+### User Configuration (`config-user.sh`)
 
-- **VM Size**: `Standard_D4pls_v6` (4 vCPUs, 8GB RAM)
-- **Region**: `southeastasia`
-- **Image**: `Debian:debian-12:12-arm64:latest`
-- **Priority**: `Regular` (not Spot instances)
-- **Zones**: Alternates between zones 2 and 3 for HA
+Modify `config-user.sh` to customize your deployment:
 
-### Network Configuration
+#### Cluster Topology
+```bash
+K0S_CONTROLLER_COUNT=3    # Number of k0s controllers (1, 3, 5, etc.)
+K0S_WORKER_COUNT=2        # Number of k0s workers
+```
 
-- **Azure VNet**: `10.240.0.0/16`
-- **Subnet**: `10.240.1.0/24`
-- **WireGuard Network**: `172.24.24.0/24`
-- **WireGuard Port**: Randomly generated (30000-64000)
+#### VM Sizing
+```bash
+AZURE_CONTROLLER_VM_SIZE="Standard_D4pls_v6"  # Controllers (4 vCPUs, 8GB ARM64)
+AZURE_WORKER_VM_SIZE="Standard_D4pls_v6"      # Workers (4 vCPUs, 8GB ARM64)
+```
 
-### VM Deployment Settings
+#### Azure Settings
+```bash
+AZURE_LOCATION="southeastasia"               # Azure region
+AZURE_VM_IMAGE="Debian:debian-12:12-arm64:latest"
+AZURE_VM_PRIORITY="Regular"                  # Regular or Spot
+AZURE_EVICTION_POLICY="Deallocate"          # For Spot VMs
+```
 
-- **Wait Timeout**: 15 minutes
-- **Check Interval**: 30 seconds
+#### Zone Distribution
+```bash
+CONTROLLER_ZONES=(2 3 2)   # Zones for controllers
+WORKER_ZONES=(3 2 3 2)     # Zones for workers (cycles if needed)
+```
 
-### VM Verification Settings
+#### Network Settings
+```bash
+VNET_PREFIX="10.240.0.0/16"
+SUBNET_PREFIX="10.240.1.0/24"
+WG_NETWORK="172.24.24.0/24"
+```
 
-- **SSH Timeout**: 10 seconds
-- **Cloud-Init Timeout**: 10 minutes
-- **Verification Retries**: 3 attempts
-- **Retry Delay**: 10 seconds
+#### k0rdent Settings
+```bash
+K0S_VERSION="v1.33.1+k0s.0"
+K0RDENT_VERSION="1.0.0"
+K0RDENT_OCI_REGISTRY="oci://ghcr.io/k0rdent/kcm/charts/kcm"
+K0RDENT_NAMESPACE="kcm-system"
+```
+
+### Configuration Examples
+
+#### HA Setup with 3 Controllers (Default)
+```bash
+K0S_CONTROLLER_COUNT=3
+K0S_WORKER_COUNT=2
+```
+Creates: `k0s-controller`, `k0s-controller-2`, `k0s-controller-3`, `k0s-worker-1`, `k0s-worker-2`
+
+#### Single Controller Setup
+```bash
+K0S_CONTROLLER_COUNT=1
+K0S_WORKER_COUNT=4
+```
+Creates: `k0s-controller`, `k0s-worker-1`, `k0s-worker-2`, `k0s-worker-3`, `k0s-worker-4`
+
+#### Small Development Setup
+```bash
+K0S_CONTROLLER_COUNT=1
+K0S_WORKER_COUNT=2
+AZURE_CONTROLLER_VM_SIZE="Standard_B2s"     # Smaller/cheaper
+AZURE_WORKER_VM_SIZE="Standard_B2ms"
+```
+
+#### Large Production Setup
+```bash
+K0S_CONTROLLER_COUNT=3
+K0S_WORKER_COUNT=10
+AZURE_CONTROLLER_VM_SIZE="Standard_D4s_v3"
+AZURE_WORKER_VM_SIZE="Standard_D8s_v3"      # Larger workers
+```
+
+### Internal Configuration (`config-internal.sh`)
+
+Automatically computed values (do not edit):
+
+- **VM Arrays**: Dynamically generated based on counts
+- **Resource Naming**: Uses random suffix for uniqueness
+- **IP Mapping**: WireGuard IPs assigned automatically
+- **Validation**: Ensures minimum requirements and HA best practices
 
 ## File Structure
 
@@ -165,7 +229,9 @@ All configuration is centralized in `k0rdent-config.sh`:
 k0rdent-azure-setup/
 ├── README.md                    # This file
 ├── common-functions.sh          # Shared utility functions
-├── k0rdent-config.sh           # Central configuration
+├── config-user.sh              # User-configurable settings
+├── config-internal.sh          # Computed configuration (do not edit)
+├── k0rdent-config.sh           # Central configuration loader
 ├── deploy-k0rdent.sh           # Main orchestration script
 ├── generate-wg-keys.sh         # WireGuard key generation
 ├── setup-azure-network.sh     # Azure infrastructure setup
