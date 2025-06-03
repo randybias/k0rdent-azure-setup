@@ -10,6 +10,23 @@ set -euo pipefail
 source ./k0rdent-config.sh
 source ./common-functions.sh
 
+# Default values
+SKIP_PROMPTS=false
+NO_WAIT=false
+DEPLOY_FLAGS=""
+
+# Parse standard arguments
+PARSED_ARGS=$(parse_standard_args "$@")
+eval "$PARSED_ARGS"
+
+# Build flags to pass to child scripts
+if [[ "$SKIP_PROMPTS" == "true" ]]; then
+    DEPLOY_FLAGS="$DEPLOY_FLAGS -y"
+fi
+if [[ "$NO_WAIT" == "true" ]]; then
+    DEPLOY_FLAGS="$DEPLOY_FLAGS --no-wait"
+fi
+
 check_prerequisites() {
     print_header "Checking Prerequisites"
     
@@ -41,7 +58,7 @@ run_deployment() {
     if [[ -f "$WG_MANIFEST" ]]; then
         print_warning "WireGuard keys already exist. Skipping generation."
     else
-        bash generate-wg-keys.sh
+        bash generate-wg-keys.sh $DEPLOY_FLAGS
         print_success "WireGuard keys generated"
     fi
     
@@ -50,38 +67,38 @@ run_deployment() {
     if [[ -f "$AZURE_MANIFEST" ]]; then
         print_warning "Azure resources already exist. Skipping network setup."
     else
-        bash setup-azure-network.sh
+        bash setup-azure-network.sh $DEPLOY_FLAGS
         print_success "Azure network setup complete"
     fi
     
     # Step 3: Generate cloud-init files
     print_header "Step 3: Generating Cloud-Init Files"
-    bash generate-cloud-init.sh
+    bash generate-cloud-init.sh $DEPLOY_FLAGS
     print_success "Cloud-init files generated"
     
     # Step 4: Create Azure VMs
     print_header "Step 4: Creating Azure VMs"
-    bash create-azure-vms.sh
+    bash create-azure-vms.sh $DEPLOY_FLAGS
     print_success "VM creation complete"
     
     # Step 5: Generate laptop WireGuard configuration
     print_header "Step 5: Generating Laptop WireGuard Configuration"
-    bash generate-laptop-wg-config.sh
+    bash generate-laptop-wg-config.sh $DEPLOY_FLAGS
     print_success "Laptop WireGuard configuration generated"
     
     # Step 6: Connect to WireGuard VPN
     print_header "Step 6: Connecting to WireGuard VPN"
-    bash connect-laptop-wireguard.sh
+    bash connect-laptop-wireguard.sh $DEPLOY_FLAGS
     print_success "WireGuard VPN connected"
     
     # Step 7: Install k0s cluster
     print_header "Step 7: Installing k0s Cluster"
-    bash install-k0s.sh deploy
+    bash install-k0s.sh deploy $DEPLOY_FLAGS
     print_success "k0s cluster installation complete"
     
     # Step 8: Install k0rdent on cluster
     print_header "Step 8: Installing k0rdent on Cluster"
-    bash install-k0rdent.sh deploy
+    bash install-k0rdent.sh deploy $DEPLOY_FLAGS
     print_success "k0rdent installation complete"
     
     # Calculate and display total deployment time
@@ -126,10 +143,12 @@ run_full_reset() {
     echo "  7. WireGuard keys"
     echo ""
     
-    read -p "Are you sure you want to proceed? (yes/no): " -r
-    if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
-        echo "Reset cancelled."
-        return
+    if [[ "$SKIP_PROMPTS" == "false" ]]; then
+        read -p "Are you sure you want to proceed? (yes/no): " -r
+        if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+            echo "Reset cancelled."
+            return
+        fi
     fi
     
     print_info "Resetting components..."
@@ -174,7 +193,11 @@ run_full_reset() {
     # Step 5: Reset Azure resources (VMs and network)
     if [[ -f "$AZURE_MANIFEST" ]] || check_resource_group_exists "$RG"; then
         print_header "Step 5: Removing Azure Resources"
-        echo "yes" | bash setup-azure-network.sh reset
+        if [[ "$SKIP_PROMPTS" == "true" ]]; then
+            bash setup-azure-network.sh reset -y
+        else
+            echo "yes" | bash setup-azure-network.sh reset
+        fi
         print_success "Azure resources removed"
     else
         print_info "Step 5: No Azure resources to remove"
@@ -210,19 +233,21 @@ run_full_reset() {
 }
 
 # Main execution
-case "${1:-deploy}" in
+case "${POSITIONAL_ARGS[0]:-deploy}" in
     "deploy")
         check_prerequisites
         show_config
         echo ""
-        read -p "Continue with deployment? (y/n): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            run_deployment
-            show_next_steps
-        else
-            echo "Deployment cancelled."
+        if [[ "$SKIP_PROMPTS" == "false" ]]; then
+            read -p "Continue with deployment? (y/n): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                echo "Deployment cancelled."
+                exit 0
+            fi
         fi
+        run_deployment
+        show_next_steps
         ;;
     "reset")
         run_full_reset
@@ -234,7 +259,7 @@ case "${1:-deploy}" in
         check_prerequisites
         ;;
     "help"|"-h"|"--help")
-        echo "Usage: $0 [command]"
+        echo "Usage: $0 [command] [options]"
         echo ""
         echo "Commands:"
         echo "  deploy    Run full deployment (default)"
@@ -242,9 +267,14 @@ case "${1:-deploy}" in
         echo "  config    Show configuration"
         echo "  check     Check prerequisites only"
         echo "  help      Show this help"
+        echo ""
+        echo "Options:"
+        echo "  -y, --yes         Skip confirmation prompts"
+        echo "  --no-wait         Skip waiting for resources (where applicable)"
+        echo "  -h, --help        Show this help message"
         ;;
     *)
-        print_error "Unknown command: $1"
+        print_error "Unknown command: ${POSITIONAL_ARGS[0]}"
         echo "Use '$0 help' for usage information."
         exit 1
         ;;
