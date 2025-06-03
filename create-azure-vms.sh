@@ -193,10 +193,11 @@ deploy_vms() {
     
     # Start all VM creations in parallel
     for HOST in "${VM_HOSTS[@]}"; do
-        ZONE="${VM_ZONES[$HOST]}"
+        ZONE="${VM_ZONE_MAP[$HOST]}"
+        VM_SIZE="${VM_SIZE_MAP[$HOST]}"
         CLOUD_INIT="$CLOUDINITS/${HOST}-cloud-init.yaml"
         
-        print_info_quiet "Starting VM creation: $HOST (zone $ZONE)"
+        print_info_quiet "Starting VM creation: $HOST (zone $ZONE, size $VM_SIZE)"
         
         # Build VM creation command based on priority type
         VM_CREATE_CMD="az vm create \
