@@ -100,6 +100,12 @@ Or step-by-step:
 
 # Step 6: Connect laptop to WireGuard VPN
 ./connect-laptop-wireguard.sh
+
+# Step 7: Install k0s cluster
+./install-k0s.sh deploy
+
+# Step 8: Install k0rdent on cluster  
+./install-k0rdent.sh deploy
 ```
 
 ### Command-Line Options
@@ -237,6 +243,10 @@ k0rdent-azure-setup/
 ├── setup-azure-network.sh     # Azure infrastructure setup
 ├── generate-cloud-init.sh      # Cloud-init file generation
 ├── create-azure-vms.sh         # VM creation with parallel deployment
+├── generate-laptop-wg-config.sh # Laptop WireGuard configuration
+├── connect-laptop-wireguard.sh # WireGuard VPN connection setup
+├── install-k0s.sh              # k0s cluster installation
+├── install-k0rdent.sh          # k0rdent installation on cluster
 ├── azure-resources/            # Generated Azure resources
 │   ├── azure-resource-manifest.csv
 │   ├── wireguard-port.txt
@@ -246,12 +256,17 @@ k0rdent-azure-setup/
 │   ├── wg-key-manifest.csv
 │   ├── *_privkey
 │   └── *_pubkey
-└── cloud-init-yaml/           # VM cloud-init configurations
-    ├── k0s-controller-cloud-init.yaml
-    ├── k0s-controller-2-cloud-init.yaml
-    ├── k0s-controller-3-cloud-init.yaml
-    ├── k0s-worker-1-cloud-init.yaml
-    └── k0s-worker-2-cloud-init.yaml
+├── cloud-init-yaml/           # VM cloud-init configurations
+│   ├── k0s-controller-cloud-init.yaml
+│   ├── k0s-controller-2-cloud-init.yaml
+│   ├── k0s-controller-3-cloud-init.yaml
+│   ├── k0s-worker-1-cloud-init.yaml
+│   └── k0s-worker-2-cloud-init.yaml
+├── laptop-wg-config/          # Generated laptop WireGuard config
+│   └── k0rdent-laptop.conf
+└── k0sctl-config/             # k0s cluster configuration and kubeconfig
+    ├── <prefix>-k0sctl.yaml
+    └── <prefix>-kubeconfig
 ```
 
 ## Scripts Reference
@@ -287,16 +302,33 @@ The orchestrator automatically passes flags to all child scripts for consistent 
 - Command-line wg-quick setup
 - Connection testing and verification
 
+**install-k0s.sh**: Installs and configures k0s Kubernetes cluster with:
+- k0sctl configuration generation
+- Support for single controller or HA multi-controller setups
+- SSH connectivity testing
+- Kubeconfig retrieval and validation
+
+**install-k0rdent.sh**: Installs k0rdent on the k0s cluster with:
+- Helm-based installation using OCI registry
+- Automatic cluster detection and configuration
+- Installation status verification
+
 Each script supports standardized arguments and a `reset` option to clean up its resources:
 
 ```bash
 # Reset with confirmation
+./install-k0rdent.sh uninstall  # Uninstall k0rdent from cluster
+./install-k0s.sh uninstall       # Remove k0s cluster
+./install-k0s.sh reset           # Remove k0s configuration files
 ./generate-wg-keys.sh reset      # Remove WireGuard keys
 ./setup-azure-network.sh reset  # Delete Azure resources
 ./generate-cloud-init.sh reset  # Remove cloud-init files
 ./create-azure-vms.sh reset     # Delete k0rdent VMs and OS disks individually
 
 # Reset without confirmation
+./install-k0rdent.sh uninstall -y
+./install-k0s.sh uninstall -y
+./install-k0s.sh reset -y
 ./generate-wg-keys.sh reset -y
 ./setup-azure-network.sh reset -y
 ```
@@ -361,14 +393,20 @@ To completely remove all k0rdent resources:
 ```
 
 This will remove resources in the proper order:
-1. Azure VMs and network resources
-2. Cloud-init files  
-3. WireGuard keys
-4. Project suffix file (for completely fresh deployments)
+1. Uninstall k0rdent from cluster
+2. Remove k0s cluster
+3. Disconnect WireGuard VPN
+4. Remove laptop WireGuard configuration
+5. Azure VMs and network resources
+6. Cloud-init files  
+7. WireGuard keys
+8. Project suffix file (for completely fresh deployments)
 
 For individual component cleanup, you can also run:
 
 ```bash
+./install-k0rdent.sh uninstall    # Uninstall k0rdent only
+./install-k0s.sh uninstall        # Remove k0s cluster only
 ./setup-azure-network.sh reset    # Remove Azure resources only
 ./generate-cloud-init.sh reset    # Remove cloud-init files only
 ./generate-wg-keys.sh reset       # Remove WireGuard keys only
@@ -410,10 +448,32 @@ ssh -i ./azure-resources/k0rdent-*-ssh-key k0rdent@<vm-ip> 'sudo cat /var/log/cl
 
 After successful deployment:
 
-1. Verify WireGuard connectivity between laptop and VMs
-2. Install k0rdent on the control plane nodes
-3. Join worker nodes to the cluster
-4. Deploy your applications
+1. **Verify WireGuard connectivity**: Test connection between laptop and VMs
+2. **Install k0s cluster**: Run `./install-k0s.sh deploy` to set up Kubernetes
+3. **Install k0rdent**: Run `./install-k0rdent.sh deploy` to install k0rdent on the cluster
+4. **Access your cluster**: Export kubeconfig and verify with `kubectl get nodes`
+5. **Deploy your applications**: Your k0rdent cluster is ready for workloads
+
+### Manual Installation Steps
+
+If you prefer to run installation steps manually:
+
+```bash
+# After infrastructure is deployed and WireGuard is connected...
+
+# Install k0s cluster
+./install-k0s.sh deploy
+
+# Install k0rdent on the cluster
+./install-k0rdent.sh deploy
+
+# Export kubeconfig for cluster access
+export KUBECONFIG=$PWD/k0sctl-config/<prefix>-kubeconfig
+
+# Verify cluster is working
+kubectl get nodes
+kubectl get all -A
+```
 
 ---
 
