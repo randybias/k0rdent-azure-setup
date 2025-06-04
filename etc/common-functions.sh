@@ -467,3 +467,80 @@ parse_standard_args() {
     echo "SHOW_HELP=$show_help"
     echo "POSITIONAL_ARGS=(${POSITIONAL_ARGS[@]:-})"
 }
+
+# ---- Logging Functions ----
+
+# Initialize logging for a script
+init_logging() {
+    local script_name="$1"
+    local log_dir="./logs"
+    
+    # Ensure logs directory exists
+    ensure_directory "$log_dir"
+    
+    # Create timestamped log file
+    local timestamp=$(date +"%Y%m%d_%H%M%S")
+    local log_file="$log_dir/${script_name}_${timestamp}.log"
+    
+    # Export for use in script
+    export CURRENT_LOG_FILE="$log_file"
+    
+    # Write header to log
+    echo "=== Log started at $(date) ===" > "$log_file"
+    echo "Script: $script_name" >> "$log_file"
+    echo "============================" >> "$log_file"
+    echo "" >> "$log_file"
+    
+    print_info "Logging to: $log_file"
+}
+
+# Log command output while also displaying progress
+log_command() {
+    local description="$1"
+    shift
+    local command="$@"
+    
+    # Ensure we have a log file
+    if [[ -z "${CURRENT_LOG_FILE:-}" ]]; then
+        print_error "No log file initialized. Call init_logging first."
+        return 1
+    fi
+    
+    # Log the command being run
+    echo "==> Running: $description" >> "$CURRENT_LOG_FILE"
+    echo "Command: $command" >> "$CURRENT_LOG_FILE"
+    echo "Time: $(date)" >> "$CURRENT_LOG_FILE"
+    echo "---" >> "$CURRENT_LOG_FILE"
+    
+    # Run command and capture output
+    local output_file=$(mktemp)
+    local exit_code=0
+    
+    # Execute command with output to temp file
+    if eval "$command" > "$output_file" 2>&1; then
+        print_success "$description"
+        exit_code=0
+    else
+        exit_code=$?
+        print_error "$description failed (exit code: $exit_code)"
+    fi
+    
+    # Append output to log file
+    cat "$output_file" >> "$CURRENT_LOG_FILE"
+    echo "" >> "$CURRENT_LOG_FILE"
+    
+    # Clean up temp file
+    rm -f "$output_file"
+    
+    return $exit_code
+}
+
+# Log Azure command with reduced console output
+log_azure_command() {
+    local description="$1"
+    shift
+    local command="$@"
+    
+    print_info "$description..."
+    log_command "$description" "$command"
+}

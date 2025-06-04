@@ -28,22 +28,19 @@ show_usage() {
 show_status() {
     print_header "Laptop WireGuard Configuration Status"
     
-    CONFIG_DIR="./laptop-wg-config"
-    CONFIG_FILE="$CONFIG_DIR/k0rdent-cluster.conf"
-    
-    if [[ ! -d "$CONFIG_DIR" || ! -f "$CONFIG_FILE" ]]; then
+    if [[ ! -d "$WG_CONFIG_DIR" || ! -f "$WG_CONFIG_FILE" ]]; then
         print_info "No laptop WireGuard configuration found."
         print_info "Run '$0 deploy' to generate configuration."
         return
     fi
     
-    print_info "Configuration file: $CONFIG_FILE"
-    print_info "File created: $(stat -f '%Sm' "$CONFIG_FILE" 2>/dev/null || stat -c '%y' "$CONFIG_FILE" 2>/dev/null | cut -d' ' -f1,2)"
+    print_info "Configuration file: $WG_CONFIG_FILE"
+    print_info "File created: $(stat -f '%Sm' "$WG_CONFIG_FILE" 2>/dev/null || stat -c '%y' "$WG_CONFIG_FILE" 2>/dev/null | cut -d' ' -f1,2)"
     
     # Extract configuration details
-    local laptop_ip=$(grep "^Address" "$CONFIG_FILE" | cut -d'=' -f2 | tr -d ' ')
-    local peer_count=$(grep -c "^\[Peer\]" "$CONFIG_FILE" || echo "0")
-    local endpoint=$(grep "^Endpoint" "$CONFIG_FILE" | head -1 | cut -d'=' -f2 | tr -d ' ' | cut -d':' -f2)
+    local laptop_ip=$(grep "^Address" "$WG_CONFIG_FILE" | cut -d'=' -f2 | tr -d ' ')
+    local peer_count=$(grep -c "^\[Peer\]" "$WG_CONFIG_FILE" || echo "0")
+    local endpoint=$(grep "^Endpoint" "$WG_CONFIG_FILE" | head -1 | cut -d'=' -f2 | tr -d ' ' | cut -d':' -f2)
     
     print_info "Laptop WireGuard IP: $laptop_ip"
     print_info "WireGuard port: $endpoint"
@@ -51,15 +48,12 @@ show_status() {
     
     echo
     print_info "Peer endpoints:"
-    grep "^Endpoint" "$CONFIG_FILE" | while read -r line; do
+    grep "^Endpoint" "$WG_CONFIG_FILE" | while read -r line; do
         echo "  - ${line#*= }"
     done
 }
 
 reset_laptop_config() {
-    CONFIG_DIR="./laptop-wg-config"
-    CONFIG_FILE="$CONFIG_DIR/k0rdent-cluster.conf"
-    
     if [[ "$SKIP_PROMPTS" != "true" ]]; then
         read -p "Are you sure you want to remove the laptop WireGuard configuration? (y/N) " -n 1 -r
         echo
@@ -72,17 +66,17 @@ reset_laptop_config() {
     print_info "Resetting laptop WireGuard configuration..."
     
     # First, shut down the WireGuard interface if it's active
-    if [[ -f "$CONFIG_FILE" ]]; then
-        shutdown_wireguard_interface "$CONFIG_FILE"
+    if [[ -f "$WG_CONFIG_FILE" ]]; then
+        shutdown_wireguard_interface "$WG_CONFIG_FILE"
     else
         # Try common interface names
-        shutdown_wireguard_interface "k0rdent-cluster"
+        shutdown_wireguard_interface "${K0RDENT_PREFIX}-laptop-wg"
     fi
     
     # Now remove the configuration directory
-    if [[ -d "$CONFIG_DIR" ]]; then
-        rm -rf "$CONFIG_DIR"
-        print_success "Laptop WireGuard configuration directory removed: $CONFIG_DIR"
+    if [[ -d "$WG_CONFIG_DIR" ]]; then
+        rm -rf "$WG_CONFIG_DIR"
+        print_success "Laptop WireGuard configuration directory removed: $WG_CONFIG_DIR"
     else
         print_info "No laptop WireGuard configuration directory found"
     fi
@@ -160,14 +154,11 @@ if [[ -z "$LAPTOP_PRIVATE_KEY" ]]; then
 fi
 
 # Generate WireGuard configuration
-CONFIG_DIR="./laptop-wg-config"
-CONFIG_FILE="$CONFIG_DIR/k0rdent-cluster.conf"
+ensure_directory "$WG_CONFIG_DIR"
 
-ensure_directory "$CONFIG_DIR"
+print_info "Generating WireGuard configuration: $WG_CONFIG_FILE"
 
-print_info "Generating WireGuard configuration: $CONFIG_FILE"
-
-cat > "$CONFIG_FILE" << EOF
+cat > "$WG_CONFIG_FILE" << EOF
 # k0rdent Cluster WireGuard Configuration
 # Generated: $(date)
 # Cluster: ${K0RDENT_PREFIX}
@@ -190,7 +181,7 @@ while IFS=',' read -r hostname wg_ip private_key public_key; do
         VM_PUBLIC_KEY="$public_key"
         VM_PUBLIC_IP="${VM_PUBLIC_IPS[$hostname]}"
         
-        cat >> "$CONFIG_FILE" << EOF
+        cat >> "$WG_CONFIG_FILE" << EOF
 # Peer: $hostname (${WG_IPS[$hostname]})
 [Peer]
 PublicKey = $VM_PUBLIC_KEY
@@ -203,11 +194,14 @@ EOF
     fi
 done < "$WG_MANIFEST"
 
+# Set secure permissions on the configuration file
+chmod 600 "$WG_CONFIG_FILE"
+
 print_success "WireGuard configuration generated successfully"
 
 echo
 print_header "Configuration Summary"
-echo "Configuration file: $CONFIG_FILE"
+echo "Configuration file: $WG_CONFIG_FILE"
 echo "Laptop WireGuard IP: ${WG_IPS["mylaptop"]}"
 echo "WireGuard port: $WG_PORT"
 echo "VM peers configured: ${#VM_HOSTS[@]}"
@@ -216,12 +210,12 @@ echo
 print_header "Next Steps"
 echo "1. Install the configuration on your laptop:"
 echo "   # macOS with WireGuard app:"
-echo "   open $CONFIG_FILE"
+echo "   open $WG_CONFIG_FILE"
 echo ""
 echo "   # Linux with wg-quick:"
-echo "   sudo cp $CONFIG_FILE /etc/wireguard/"
-echo "   sudo systemctl enable wg-quick@k0rdent-cluster"
-echo "   sudo systemctl start wg-quick@k0rdent-cluster"
+echo "   sudo cp $WG_CONFIG_FILE /etc/wireguard/"
+echo "   sudo systemctl enable wg-quick@${K0RDENT_PREFIX}-laptop-wg"
+echo "   sudo systemctl start wg-quick@${K0RDENT_PREFIX}-laptop-wg"
 echo ""
 echo "2. Test connectivity to VMs:"
 for HOST in "${VM_HOSTS[@]}"; do
@@ -234,7 +228,7 @@ echo "   sudo wg show"
 echo
 print_info "Configuration file contents:"
 echo "----------------------------------------"
-cat "$CONFIG_FILE"
+cat "$WG_CONFIG_FILE"
 echo "----------------------------------------"
 }
 

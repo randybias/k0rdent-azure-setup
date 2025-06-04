@@ -12,6 +12,163 @@ source ./etc/k0rdent-config.sh
 source ./etc/common-functions.sh
 
 # Script-specific functions
+verify_vm_connectivity() {
+    # ---- VM Verification ----
+    
+    print_header "Verifying VM Configuration"
+    
+    # Get VM public IP addresses
+    declare -A VM_PUBLIC_IPS
+    print_info_quiet "Retrieving VM public IP addresses..."
+    
+    for HOST in "${VM_HOSTS[@]}"; do
+        PUBLIC_IP=$(az vm show --resource-group "$RG" --name "$HOST" --show-details --query "publicIps" -o tsv 2>/dev/null || echo "")
+        if [[ -z "$PUBLIC_IP" ]]; then
+            print_error "Could not retrieve public IP for $HOST"
+            exit 1
+        fi
+        VM_PUBLIC_IPS["$HOST"]="$PUBLIC_IP"
+        print_info_quiet "  $HOST: $PUBLIC_IP"
+    done
+    
+    if [[ "$QUIET_MODE" != "true" ]]; then
+        echo
+        print_info "Starting VM verification process..."
+        print_info "This will test SSH connectivity, wait for cloud-init completion, and verify WireGuard configuration."
+    fi
+    
+    # Verification tracking
+    declare -A SSH_VERIFIED
+    declare -A CLOUD_INIT_VERIFIED  
+    declare -A WIREGUARD_VERIFIED
+    
+    ALL_VERIFIED=false
+    VERIFICATION_ATTEMPTS=0
+    
+    while [[ "$ALL_VERIFIED" != "true" && $VERIFICATION_ATTEMPTS -lt $VERIFICATION_RETRY_COUNT ]]; do
+        VERIFICATION_ATTEMPTS=$((VERIFICATION_ATTEMPTS + 1))
+        
+        if [[ $VERIFICATION_ATTEMPTS -gt 1 ]]; then
+            print_info_verbose "Verification attempt $VERIFICATION_ATTEMPTS of $VERIFICATION_RETRY_COUNT"
+            print_info_verbose "Waiting ${VERIFICATION_RETRY_DELAY_SECONDS}s before retry..."
+            sleep $VERIFICATION_RETRY_DELAY_SECONDS
+        fi
+        
+        # Test SSH connectivity for all VMs
+        if [[ "$QUIET_MODE" != "true" ]]; then
+            print_header "Testing SSH Connectivity (Attempt $VERIFICATION_ATTEMPTS)"
+        fi
+        
+        for HOST in "${VM_HOSTS[@]}"; do
+            if [[ "${SSH_VERIFIED[$HOST]:-false}" == "false" ]]; then
+                if test_ssh_connectivity "$HOST" "${VM_PUBLIC_IPS[$HOST]}" "$SSH_PRIVATE_KEY" "$ADMIN_USER" "$SSH_TIMEOUT_SECONDS"; then
+                    SSH_VERIFIED["$HOST"]="true"
+                fi
+            fi
+        done
+        
+        # Wait for cloud-init completion for VMs with SSH access
+        if [[ "$QUIET_MODE" != "true" ]]; then
+            print_header "Waiting for Cloud-Init Completion (Attempt $VERIFICATION_ATTEMPTS)"
+        fi
+        
+        for HOST in "${VM_HOSTS[@]}"; do
+            if [[ "${SSH_VERIFIED[$HOST]:-false}" == "true" && "${CLOUD_INIT_VERIFIED[$HOST]:-false}" == "false" ]]; then
+                if wait_for_cloud_init "$HOST" "${VM_PUBLIC_IPS[$HOST]}" "$SSH_PRIVATE_KEY" "$ADMIN_USER" "$CLOUD_INIT_TIMEOUT_MINUTES" "$CLOUD_INIT_CHECK_INTERVAL_SECONDS"; then
+                    CLOUD_INIT_VERIFIED["$HOST"]="true"
+                fi
+            fi
+        done
+        
+        # Verify WireGuard configuration for VMs with completed cloud-init
+        if [[ "$QUIET_MODE" != "true" ]]; then
+            print_header "Verifying WireGuard Configuration (Attempt $VERIFICATION_ATTEMPTS)"
+        fi
+        
+        for HOST in "${VM_HOSTS[@]}"; do
+            if [[ "${CLOUD_INIT_VERIFIED[$HOST]:-false}" == "true" && "${WIREGUARD_VERIFIED[$HOST]:-false}" == "false" ]]; then
+                if verify_wireguard_config "$HOST" "${VM_PUBLIC_IPS[$HOST]}" "$SSH_PRIVATE_KEY" "$ADMIN_USER" "$SSH_TIMEOUT_SECONDS"; then
+                    WIREGUARD_VERIFIED["$HOST"]="true"
+                fi
+            fi
+        done
+        
+        # Check if all VMs are fully verified
+        ALL_VERIFIED=true
+        for HOST in "${VM_HOSTS[@]}"; do
+            if [[ "${SSH_VERIFIED[$HOST]:-false}" != "true" ]] || \
+               [[ "${CLOUD_INIT_VERIFIED[$HOST]:-false}" != "true" ]] || \
+               [[ "${WIREGUARD_VERIFIED[$HOST]:-false}" != "true" ]]; then
+                ALL_VERIFIED=false
+                break
+            fi
+        done
+        
+        if [[ "$ALL_VERIFIED" == "true" ]]; then
+            break
+        fi
+    done
+    
+    # ---- Verification Results ----
+    
+    if [[ "$QUIET_MODE" != "true" ]]; then
+        print_header "Verification Results"
+        
+        echo
+        print_info "SSH Connectivity:"
+        for HOST in "${VM_HOSTS[@]}"; do
+            if [[ "${SSH_VERIFIED[$HOST]:-false}" == "true" ]]; then
+                print_success "  $HOST: SSH accessible"
+            else
+                print_error "  $HOST: SSH failed"
+            fi
+        done
+        
+        echo
+        print_info "Cloud-Init Status:"
+        for HOST in "${VM_HOSTS[@]}"; do
+            if [[ "${CLOUD_INIT_VERIFIED[$HOST]:-false}" == "true" ]]; then
+                print_success "  $HOST: Cloud-init completed"
+            else
+                print_error "  $HOST: Cloud-init incomplete or failed"
+            fi
+        done
+        
+        echo
+        print_info "WireGuard Configuration:"
+        for HOST in "${VM_HOSTS[@]}"; do
+            if [[ "${WIREGUARD_VERIFIED[$HOST]:-false}" == "true" ]]; then
+                print_success "  $HOST: WireGuard configured and active"
+            else
+                print_error "  $HOST: WireGuard configuration failed"
+            fi
+        done
+    fi
+    
+    # ---- Final Status ----
+    
+    print_header "Deployment Complete"
+    
+    if [[ "$ALL_VERIFIED" == "true" ]]; then
+        print_success "All VMs are fully deployed and verified!"
+        if [[ "$QUIET_MODE" != "true" ]]; then
+            echo
+            print_success "✓ SSH connectivity confirmed"
+            print_success "✓ Cloud-init completed successfully"  
+            print_success "✓ WireGuard configured and active"
+        fi
+    else
+        print_warning "Some VMs failed verification. See results above for details."
+        if [[ "$QUIET_MODE" != "true" ]]; then
+            echo
+            print_info "Troubleshooting:"
+            print_info "  1. Check VM status: $0 status"
+            print_info "  2. Check Azure NSG rules and VM network settings"
+            print_info "  3. Review cloud-init logs on the VMs"
+        fi
+    fi
+}
+
 show_usage() {
     print_usage "$0" \
         "  deploy    Create Azure VMs with cloud-init
@@ -166,23 +323,30 @@ deploy_vms() {
     
     # Check for existing VMs
     local existing_vms=()
+    local vms_to_create=()
     for HOST in "${VM_HOSTS[@]}"; do
         if az vm show --resource-group "$RG" --name "$HOST" &>/dev/null; then
             existing_vms+=("$HOST")
+        else
+            vms_to_create+=("$HOST")
         fi
     done
     
     if [[ ${#existing_vms[@]} -gt 0 ]]; then
-        print_warning "The following VMs already exist: ${existing_vms[*]}"
-        print_info "To recreate VMs, first delete them via Azure portal or CLI."
-        print_info "Example: az vm delete --resource-group $RG --name <VM_NAME> --yes"
-        exit 1
+        print_warning "The following VMs already exist and will be skipped: ${existing_vms[*]}"
+    fi
+    
+    if [[ ${#vms_to_create[@]} -eq 0 ]]; then
+        print_success "All VMs already exist. Nothing to create."
+        # Still perform verification steps
+        verify_vm_connectivity
+        return
     fi
     
     print_success "Prerequisites validated successfully"
     
     # Confirm deployment
-    if ! confirm_action "Create ${#VM_HOSTS[@]} VMs in Azure?"; then
+    if ! confirm_action "Create ${#vms_to_create[@]} VMs in Azure?"; then
         print_info "VM creation cancelled."
         exit 0
     fi
@@ -191,8 +355,8 @@ deploy_vms() {
     
     print_header "Creating VMs in parallel"
     
-    # Start all VM creations in parallel
-    for HOST in "${VM_HOSTS[@]}"; do
+    # Start all VM creations in parallel (only for VMs that don't exist)
+    for HOST in "${vms_to_create[@]}"; do
         ZONE="${VM_ZONE_MAP[$HOST]}"
         VM_SIZE="${VM_SIZE_MAP[$HOST]}"
         CLOUD_INIT="$CLOUDINITS/${HOST}-cloud-init.yaml"
@@ -230,13 +394,15 @@ deploy_vms() {
     
     # ---- Wait for VMs to be ready ----
     
-    print_header "Waiting for VMs to become ready"
-    print_info_quiet "Timeout: $VM_WAIT_TIMEOUT_MINUTES minutes, Check interval: $VM_CHECK_INTERVAL_SECONDS seconds"
-    
-    TIMEOUT_SECONDS=$((VM_WAIT_TIMEOUT_MINUTES * 60))
-    ELAPSED_SECONDS=0
-    
-    while [[ $ELAPSED_SECONDS -lt $TIMEOUT_SECONDS ]]; do
+    # If we created any VMs, wait for them
+    if [[ ${#vms_to_create[@]} -gt 0 ]]; then
+        print_header "Waiting for new VMs to become ready"
+        print_info_quiet "Timeout: $VM_WAIT_TIMEOUT_MINUTES minutes, Check interval: $VM_CHECK_INTERVAL_SECONDS seconds"
+        
+        TIMEOUT_SECONDS=$((VM_WAIT_TIMEOUT_MINUTES * 60))
+        ELAPSED_SECONDS=0
+        
+        while [[ $ELAPSED_SECONDS -lt $TIMEOUT_SECONDS ]]; do
         if [[ "$QUIET_MODE" != "true" ]]; then
             echo
             print_info "Checking VM status... (elapsed: ${ELAPSED_SECONDS}s / ${TIMEOUT_SECONDS}s)"
@@ -245,8 +411,8 @@ deploy_vms() {
         ALL_READY=true
         VM_STATUS_OUTPUT=""
         
-        # Check each VM status
-        for HOST in "${VM_HOSTS[@]}"; do
+        # Check status of VMs we're creating
+        for HOST in "${vms_to_create[@]}"; do
             VM_STATE=$(az vm show --resource-group "$RG" --name "$HOST" --query "provisioningState" -o tsv 2>/dev/null || echo "NotFound")
             
             VM_STATUS_OUTPUT="$VM_STATUS_OUTPUT\n  $HOST: $VM_STATE"
@@ -278,173 +444,10 @@ deploy_vms() {
         print_info "You can check VM status with: $0 status"
         exit 1
     fi
+    fi  # End of if vms_to_create > 0
     
-    # ---- VM Verification ----
-    
-    print_header "Verifying VM Configuration"
-    
-    # Get VM public IP addresses
-    declare -A VM_PUBLIC_IPS
-    print_info_quiet "Retrieving VM public IP addresses..."
-    
-    for HOST in "${VM_HOSTS[@]}"; do
-        PUBLIC_IP=$(az vm show --resource-group "$RG" --name "$HOST" --show-details --query "publicIps" -o tsv 2>/dev/null || echo "")
-        if [[ -z "$PUBLIC_IP" ]]; then
-            print_error "Could not retrieve public IP for $HOST"
-            exit 1
-        fi
-        VM_PUBLIC_IPS["$HOST"]="$PUBLIC_IP"
-        print_info_quiet "  $HOST: $PUBLIC_IP"
-    done
-    
-    if [[ "$QUIET_MODE" != "true" ]]; then
-        echo
-        print_info "Starting VM verification process..."
-        print_info "This will test SSH connectivity, wait for cloud-init completion, and verify WireGuard configuration."
-    fi
-    
-    # Verification tracking
-    declare -A SSH_VERIFIED
-    declare -A CLOUD_INIT_VERIFIED  
-    declare -A WIREGUARD_VERIFIED
-    
-    ALL_VERIFIED=false
-    VERIFICATION_ATTEMPTS=0
-    
-    while [[ "$ALL_VERIFIED" != "true" && $VERIFICATION_ATTEMPTS -lt $VERIFICATION_RETRY_COUNT ]]; do
-        VERIFICATION_ATTEMPTS=$((VERIFICATION_ATTEMPTS + 1))
-        
-        if [[ $VERIFICATION_ATTEMPTS -gt 1 ]]; then
-            print_info_verbose "Verification attempt $VERIFICATION_ATTEMPTS of $VERIFICATION_RETRY_COUNT"
-            print_info_verbose "Waiting ${VERIFICATION_RETRY_DELAY_SECONDS}s before retry..."
-            sleep $VERIFICATION_RETRY_DELAY_SECONDS
-        fi
-        
-        # Test SSH connectivity for all VMs
-        if [[ "$QUIET_MODE" != "true" ]]; then
-            print_header "Testing SSH Connectivity (Attempt $VERIFICATION_ATTEMPTS)"
-        fi
-        
-        for HOST in "${VM_HOSTS[@]}"; do
-            if [[ "${SSH_VERIFIED[$HOST]:-false}" == "false" ]]; then
-                if test_ssh_connectivity "$HOST" "${VM_PUBLIC_IPS[$HOST]}" "$SSH_PRIVATE_KEY" "$ADMIN_USER" "$SSH_TIMEOUT_SECONDS"; then
-                    SSH_VERIFIED["$HOST"]="true"
-                fi
-            fi
-        done
-        
-        # Wait for cloud-init completion for VMs with SSH access
-        if [[ "$QUIET_MODE" != "true" ]]; then
-            print_header "Waiting for Cloud-Init Completion (Attempt $VERIFICATION_ATTEMPTS)"
-        fi
-        
-        for HOST in "${VM_HOSTS[@]}"; do
-            if [[ "${SSH_VERIFIED[$HOST]:-false}" == "true" && "${CLOUD_INIT_VERIFIED[$HOST]:-false}" == "false" ]]; then
-                if wait_for_cloud_init "$HOST" "${VM_PUBLIC_IPS[$HOST]}" "$SSH_PRIVATE_KEY" "$ADMIN_USER" "$CLOUD_INIT_TIMEOUT_MINUTES" "$CLOUD_INIT_CHECK_INTERVAL_SECONDS"; then
-                    CLOUD_INIT_VERIFIED["$HOST"]="true"
-                fi
-            fi
-        done
-        
-        # Verify WireGuard configuration for VMs with completed cloud-init
-        if [[ "$QUIET_MODE" != "true" ]]; then
-            print_header "Verifying WireGuard Configuration (Attempt $VERIFICATION_ATTEMPTS)"
-        fi
-        
-        for HOST in "${VM_HOSTS[@]}"; do
-            if [[ "${CLOUD_INIT_VERIFIED[$HOST]:-false}" == "true" && "${WIREGUARD_VERIFIED[$HOST]:-false}" == "false" ]]; then
-                if verify_wireguard_config "$HOST" "${VM_PUBLIC_IPS[$HOST]}" "$SSH_PRIVATE_KEY" "$ADMIN_USER" "$SSH_TIMEOUT_SECONDS"; then
-                    WIREGUARD_VERIFIED["$HOST"]="true"
-                fi
-            fi
-        done
-        
-        # Check if all VMs are fully verified
-        ALL_VERIFIED=true
-        for HOST in "${VM_HOSTS[@]}"; do
-            if [[ "${SSH_VERIFIED[$HOST]:-false}" != "true" ]] || \
-               [[ "${CLOUD_INIT_VERIFIED[$HOST]:-false}" != "true" ]] || \
-               [[ "${WIREGUARD_VERIFIED[$HOST]:-false}" != "true" ]]; then
-                ALL_VERIFIED=false
-                break
-            fi
-        done
-        
-        if [[ "$ALL_VERIFIED" == "true" ]]; then
-            break
-        fi
-    done
-    
-    # ---- Verification Results ----
-    
-    if [[ "$QUIET_MODE" != "true" ]]; then
-        print_header "Verification Results"
-        
-        echo
-        print_info "SSH Connectivity:"
-        for HOST in "${VM_HOSTS[@]}"; do
-            if [[ "${SSH_VERIFIED[$HOST]:-false}" == "true" ]]; then
-                print_success "  $HOST: SSH accessible"
-            else
-                print_error "  $HOST: SSH failed"
-            fi
-        done
-        
-        echo
-        print_info "Cloud-Init Status:"
-        for HOST in "${VM_HOSTS[@]}"; do
-            if [[ "${CLOUD_INIT_VERIFIED[$HOST]:-false}" == "true" ]]; then
-                print_success "  $HOST: Cloud-init completed"
-            else
-                print_error "  $HOST: Cloud-init incomplete or failed"
-            fi
-        done
-        
-        echo
-        print_info "WireGuard Configuration:"
-        for HOST in "${VM_HOSTS[@]}"; do
-            if [[ "${WIREGUARD_VERIFIED[$HOST]:-false}" == "true" ]]; then
-                print_success "  $HOST: WireGuard configured and active"
-            else
-                print_error "  $HOST: WireGuard configuration failed"
-            fi
-        done
-    fi
-    
-    # ---- Final Status ----
-    
-    print_header "Deployment Complete"
-    
-    if [[ "$ALL_VERIFIED" == "true" ]]; then
-        print_success "All VMs are fully deployed and verified!"
-        if [[ "$QUIET_MODE" != "true" ]]; then
-            echo
-            print_success "✓ SSH connectivity confirmed"
-            print_success "✓ Cloud-init completed successfully"  
-            print_success "✓ WireGuard configured and active"
-        fi
-    else
-        print_warning "Some VMs failed verification. See results above for details."
-        if [[ "$QUIET_MODE" != "true" ]]; then
-            echo
-            print_info "You can manually check failed VMs with:"
-            print_info "  SSH: ssh -i $SSH_PRIVATE_KEY $ADMIN_USER@<PUBLIC_IP>"
-            print_info "  Cloud-init: sudo cloud-init status"
-            print_info "  WireGuard: sudo wg show"
-        fi
-    fi
-    
-    if [[ "$QUIET_MODE" != "true" ]]; then
-        echo
-        print_info "VM Public IP Addresses:"
-        az vm list-ip-addresses --resource-group "$RG" --query "[].{Name:virtualMachine.name, PublicIP:virtualMachine.network.publicIpAddresses[0].ipAddress, PrivateIP:virtualMachine.network.privateIpAddresses[0]}" -o table
-        
-        echo
-        print_info "Next steps:"
-        print_info "  1. Configure your laptop WireGuard client with the generated configs"
-        print_info "  2. Test WireGuard connectivity to VM internal IPs (172.24.24.x)"
-        print_info "  3. Install and configure k0rdent on the VMs"
-    fi
+    # Call the verification function
+    verify_vm_connectivity
 }
 
 # Main execution

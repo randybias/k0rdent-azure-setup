@@ -34,7 +34,7 @@ show_usage() {
 
 uninstall_k0s() {
     print_info "Resetting k0s cluster..."
-    
+
     if [[ -f "$K0SCTL_FILE" ]]; then
         print_info "Running k0sctl reset to destroy cluster..."
         k0sctl reset --config "$K0SCTL_FILE" --force || true
@@ -42,7 +42,7 @@ uninstall_k0s() {
     else
         print_warning "No k0sctl config found, skipping cluster reset"
     fi
-    
+
     print_success "k0s cluster uninstall completed"
 }
 
@@ -117,20 +117,21 @@ print_info "Adding ${#CONTROLLER_NODES[@]} controller nodes to configuration..."
 for i in "${!CONTROLLER_NODES[@]}"; do
     host="${CONTROLLER_NODES[$i]}"
     wg_ip="${WG_IPS[$host]}"
-    
+
     # For single controller or HA setup with multiple controllers
     if [[ ${#CONTROLLER_NODES[@]} -eq 1 ]]; then
         # Single controller - use controller+worker role
         role="controller+worker"
     else
-        # Multiple controllers - first is controller, others are controller only
+        # Multiple controllers - first is controller only, others are controller+work
+        # May want to change this so it's configurable or variable depending on size of the control plane
         if [[ $i -eq 0 ]]; then
             role="controller"
         else
-            role="controller"
+            role="controller+worker"
         fi
     fi
-    
+
     cat >> "$K0SCTL_FILE" << EOF
     - ssh:
         address: $wg_ip
@@ -194,13 +195,13 @@ fi
 # Deploy k0s if requested
 if [[ "$COMMAND" == "deploy" ]]; then
     print_header "Testing SSH Connectivity"
-    
+
     # Test SSH connectivity to all nodes
     ALL_SSH_OK=true
     for host in "${VM_HOSTS[@]}"; do
         wg_ip="${WG_IPS[$host]}"
         print_info "Testing SSH to $host ($wg_ip)..."
-        
+
         if ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$wg_ip" "echo 'SSH OK'" &>/dev/null; then
             print_success "SSH connectivity to $host: OK"
         else
@@ -208,14 +209,14 @@ if [[ "$COMMAND" == "deploy" ]]; then
             ALL_SSH_OK=false
         fi
     done
-    
+
     if [[ "$ALL_SSH_OK" != "true" ]]; then
         print_error "SSH connectivity test failed. Ensure WireGuard VPN is connected and all VMs are running."
         exit 1
     fi
-    
+
     print_header "Preparing SSH Known Hosts"
-    
+
     # Remove SSH host keys from known_hosts to avoid conflicts
     print_info "Cleaning SSH known_hosts entries for cluster nodes..."
     for host in "${VM_HOSTS[@]}"; do
@@ -223,15 +224,15 @@ if [[ "$COMMAND" == "deploy" ]]; then
         ssh-keygen -R "$wg_ip" 2>/dev/null || true
         print_info "Removed known_hosts entry for $wg_ip"
     done
-    
+
     print_header "Deploying k0s Cluster"
-    
+
     print_info "Running k0sctl apply to deploy k0s cluster..."
     if k0sctl apply --config "$K0SCTL_FILE"; then
         print_success "k0s cluster deployed successfully!"
-        
+
         print_header "Retrieving Kubeconfig"
-        
+
         print_info "Waiting for API server to be fully ready..."
         # Longer wait for HA clusters
         if [[ ${#CONTROLLER_NODES[@]} -gt 1 ]]; then
@@ -240,7 +241,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
         else
             sleep 60
         fi
-        
+
         print_info "Getting kubeconfig from cluster..."
         KUBECONFIG_SUCCESS=false
         for i in {1..3}; do
@@ -262,7 +263,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
                 sleep 30
             fi
         done
-        
+
         if [[ "$KUBECONFIG_SUCCESS" == "true" ]]; then
             print_header "Cluster Access"
             echo "Export kubeconfig to access your cluster:"
@@ -305,7 +306,7 @@ fi
 
 show_status() {
     print_header "k0s Configuration Status"
-    
+
     if [[ -f "$K0SCTL_FILE" ]]; then
         print_info "k0sctl configuration: $K0SCTL_FILE"
         print_info "Configuration exists"
@@ -313,7 +314,7 @@ show_status() {
         print_info "No k0sctl configuration found"
         print_info "Run '$0 deploy' to generate and deploy"
     fi
-    
+
     if [[ -f "$KUBECONFIG_FILE" ]]; then
         print_info "Kubeconfig: $KUBECONFIG_FILE"
         print_info "Cluster appears to be deployed"

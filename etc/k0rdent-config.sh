@@ -38,6 +38,10 @@ WG_MANIFEST="$KEYDIR/wg-key-manifest.csv"
 AZURE_MANIFEST="$MANIFEST_DIR/azure-resource-manifest.csv"
 WG_PORT_FILE="$MANIFEST_DIR/wireguard-port.txt"
 
+# WireGuard laptop configuration
+WG_CONFIG_DIR="./laptop-wg-config"
+WG_CONFIG_FILE="$WG_CONFIG_DIR/wgk0${RANDOM_SUFFIX}.conf"
+
 # ---- Script Dependencies ----
 
 # Script execution order for reference

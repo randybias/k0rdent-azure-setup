@@ -37,7 +37,7 @@ uninstall_k0rdent() {
     
     if [[ -n "$SSH_KEY_PATH" ]]; then
         # Get the first controller IP
-        CONTROLLER_IP="${WG_IPS[k0rdcp1]}"
+        CONTROLLER_IP="${WG_IPS[k0s-controller]}"
         
         print_info "Uninstalling k0rdent using Helm..."
         if ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "helm uninstall kcm -n kcm-system" &>/dev/null; then
@@ -80,7 +80,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
     print_header "Installing k0rdent on Cluster"
     
     # Get the first controller IP
-    CONTROLLER_IP="${WG_IPS[k0rdcp1]}"
+    CONTROLLER_IP="${WG_IPS[k0s-controller]}"
     
     print_info "Testing SSH connectivity to controller node..."
     if ! ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "echo 'SSH OK'" &>/dev/null; then
@@ -88,7 +88,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
         exit 1
     fi
     
-    print_info "Installing Helm on controller node k0rdcp1..."
+    print_info "Installing Helm on controller node k0s-controller..."
     if ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "command -v helm &>/dev/null"; then
         print_success "Helm already installed"
     else
@@ -148,7 +148,7 @@ show_status() {
     
     if [[ -n "$SSH_KEY_PATH" ]]; then
         # Get the first controller IP
-        CONTROLLER_IP="${WG_IPS[k0rdcp1]}"
+        CONTROLLER_IP="${WG_IPS[k0s-controller]}"
         
         print_info "Checking k0rdent installation status..."
         if ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "helm list -n kcm-system | grep -q kcm" &>/dev/null; then

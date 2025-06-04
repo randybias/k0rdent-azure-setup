@@ -9,8 +9,8 @@ AZURE_EVICTION_POLICY="Deallocate"  # For Spot VMs
 
 # ---- VM Sizing ----
 # Different instance types for controllers vs workers
-AZURE_CONTROLLER_VM_SIZE="Standard_D4pls_v6"  # Size for k0s controller nodes
-AZURE_WORKER_VM_SIZE="Standard_D4pls_v6"      # Size for k0s worker nodes
+AZURE_CONTROLLER_VM_SIZE="Standard_D2pls_v6"  # Size for k0s controller nodes
+AZURE_WORKER_VM_SIZE="Standard_D8pls_v6"      # Size for k0s worker nodes
 
 # ---- Cluster Topology ----
 # Number of nodes (minimum 1 each)
