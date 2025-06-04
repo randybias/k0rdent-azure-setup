@@ -28,14 +28,12 @@ show_usage() {
   $0 status        # Check current VPN status"
 }
 
-# Configuration file path
-CONFIG_DIR="./laptop-wg-config"
-CONFIG_FILE="$CONFIG_DIR/k0rdent-cluster.conf"
+# Configuration file path (now defined in global config)
 
 # Validation functions
 validate_prerequisites() {
     # Check if configuration file exists
-    if ! check_file_exists "$CONFIG_FILE" "WireGuard configuration"; then
+    if ! check_file_exists "$WG_CONFIG_FILE" "WireGuard configuration"; then
         print_error "WireGuard configuration not found. Run ./generate-laptop-wg-config.sh first."
         exit 1
     fi
@@ -47,7 +45,7 @@ validate_prerequisites() {
         exit 1
     fi
 
-    print_success "WireGuard configuration found: $CONFIG_FILE"
+    print_success "WireGuard configuration found: $WG_CONFIG_FILE"
 }
 
 # Function to test if WireGuard VPN is actually working
@@ -102,9 +100,9 @@ else
         fi
         
         # Start the interface directly from local config file
-        print_info "Starting WireGuard interface from: $CONFIG_FILE"
+        print_info "Starting WireGuard interface from: $WG_CONFIG_FILE"
         WG_QUICK_PATH=$(get_wg_quick_path)
-        if sudo "$WG_QUICK_PATH" up "$CONFIG_FILE"; then
+        if sudo "$WG_QUICK_PATH" up "$WG_CONFIG_FILE"; then
             print_success "WireGuard interface started successfully"
         else
             print_error "Failed to start WireGuard interface"
@@ -128,7 +126,7 @@ else
                 echo "Steps to import configuration:"
                 echo "1. Open the WireGuard app (install from Mac App Store if needed)"
                 echo "2. Click 'Import Tunnel(s) from File...'"
-                echo "3. Select the configuration file: $CONFIG_FILE"
+                echo "3. Select the configuration file: $WG_CONFIG_FILE"
                 echo "4. Activate the tunnel in the WireGuard app"
                 echo ""
                 read -p "Press Enter after you've imported and activated the tunnel in WireGuard app..."
@@ -145,9 +143,9 @@ else
                 fi
                 
                 # Start the interface directly from local config file
-                print_info "Starting WireGuard interface from: $CONFIG_FILE"
+                print_info "Starting WireGuard interface from: $WG_CONFIG_FILE"
                 WG_QUICK_PATH=$(get_wg_quick_path)
-                if sudo "$WG_QUICK_PATH" up "$CONFIG_FILE"; then
+                if sudo "$WG_QUICK_PATH" up "$WG_CONFIG_FILE"; then
                     print_success "WireGuard interface started successfully"
                 else
                     print_error "Failed to start WireGuard interface"
@@ -260,7 +258,7 @@ echo
 print_info "To disconnect WireGuard:"
 echo "  • GUI: Deactivate tunnel in WireGuard app"
 WG_QUICK_PATH=$(get_wg_quick_path)
-echo "  • CLI: sudo $WG_QUICK_PATH down $CONFIG_FILE"
+echo "  • CLI: sudo $WG_QUICK_PATH down $WG_CONFIG_FILE"
 }
 
 test_connectivity() {
@@ -280,22 +278,22 @@ disconnect_wireguard() {
     print_header "Disconnecting WireGuard VPN"
     
     # First validate the config exists
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        print_warning "No WireGuard configuration found at $CONFIG_FILE"
-        print_info "Attempting to disconnect any active k0rdent-cluster interface..."
-        shutdown_wireguard_interface "k0rdent-cluster"
+    if [[ ! -f "$WG_CONFIG_FILE" ]]; then
+        print_warning "No WireGuard configuration found at $WG_CONFIG_FILE"
+        print_info "Attempting to disconnect any active ${K0RDENT_PREFIX}-laptop-wg interface..."
+        shutdown_wireguard_interface "${K0RDENT_PREFIX}-laptop-wg"
         return
     fi
     
     # Disconnect the interface
-    if shutdown_wireguard_interface "$CONFIG_FILE"; then
+    if shutdown_wireguard_interface "$WG_CONFIG_FILE"; then
         print_success "WireGuard VPN disconnected successfully"
     else
         print_error "Failed to disconnect WireGuard VPN"
         print_info "You may need to manually disconnect using:"
-        echo "  sudo wg-quick down k0rdent-cluster"
+        echo "  sudo wg-quick down ${K0RDENT_PREFIX}-laptop-wg"
         echo "  or"
-        echo "  sudo ip link delete k0rdent-cluster"
+        echo "  sudo ip link delete ${K0RDENT_PREFIX}-laptop-wg"
         return 1
     fi
 }

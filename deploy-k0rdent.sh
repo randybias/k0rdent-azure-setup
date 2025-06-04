@@ -29,11 +29,11 @@ fi
 
 check_prerequisites() {
     print_header "Checking Prerequisites"
-    
+
     # Check Azure CLI and WireGuard tools
     check_azure_cli
     check_wireguard_tools
-    
+
     print_success "All prerequisites satisfied"
 }
 
@@ -49,10 +49,10 @@ show_config() {
 
 run_deployment() {
     print_header "Starting k0rdent Deployment"
-    
+
     # Record start time
     DEPLOYMENT_START_TIME=$(date +%s)
-    
+
     # Step 1: Generate WireGuard keys
     print_header "Step 1: Generating WireGuard Keys"
     if [[ -f "$WG_MANIFEST" ]]; then
@@ -61,7 +61,7 @@ run_deployment() {
         bash bin/generate-wg-keys.sh deploy $DEPLOY_FLAGS
         print_success "WireGuard keys generated"
     fi
-    
+
     # Step 2: Setup Azure network
     print_header "Step 2: Setting up Azure Network"
     if [[ -f "$AZURE_MANIFEST" ]]; then
@@ -70,43 +70,43 @@ run_deployment() {
         bash bin/setup-azure-network.sh deploy $DEPLOY_FLAGS
         print_success "Azure network setup complete"
     fi
-    
+
     # Step 3: Generate cloud-init files
     print_header "Step 3: Generating Cloud-Init Files"
     bash bin/generate-cloud-init.sh deploy $DEPLOY_FLAGS
     print_success "Cloud-init files generated"
-    
+
     # Step 4: Create Azure VMs
     print_header "Step 4: Creating Azure VMs"
     bash bin/create-azure-vms.sh deploy $DEPLOY_FLAGS
     print_success "VM creation complete"
-    
+
     # Step 5: Generate laptop WireGuard configuration
     print_header "Step 5: Generating Laptop WireGuard Configuration"
     bash bin/generate-laptop-wg-config.sh deploy $DEPLOY_FLAGS
     print_success "Laptop WireGuard configuration generated"
-    
+
     # Step 6: Connect to WireGuard VPN
     print_header "Step 6: Connecting to WireGuard VPN"
-    bash bin/connect-laptop-wireguard.sh deploy $DEPLOY_FLAGS
+    bash bin/connect-laptop-wireguard.sh connect $DEPLOY_FLAGS
     print_success "WireGuard VPN connected"
-    
+
     # Step 7: Install k0s cluster
     print_header "Step 7: Installing k0s Cluster"
     bash bin/install-k0s.sh deploy $DEPLOY_FLAGS
     print_success "k0s cluster installation complete"
-    
+
     # Step 8: Install k0rdent on cluster
     print_header "Step 8: Installing k0rdent on Cluster"
     bash bin/install-k0rdent.sh deploy $DEPLOY_FLAGS
     print_success "k0rdent installation complete"
-    
+
     # Calculate and display total deployment time
     DEPLOYMENT_END_TIME=$(date +%s)
     DEPLOYMENT_DURATION=$((DEPLOYMENT_END_TIME - DEPLOYMENT_START_TIME))
     DEPLOYMENT_MINUTES=$((DEPLOYMENT_DURATION / 60))
     DEPLOYMENT_SECONDS=$((DEPLOYMENT_DURATION % 60))
-    
+
     print_header "Deployment Time"
     echo "Total deployment time: ${DEPLOYMENT_MINUTES} minutes and ${DEPLOYMENT_SECONDS} seconds"
 }
@@ -142,7 +142,7 @@ run_full_reset() {
     echo "  6. Cloud-init files"
     echo "  7. WireGuard keys"
     echo ""
-    
+
     if [[ "$SKIP_PROMPTS" == "false" ]]; then
         read -p "Are you sure you want to proceed? (yes/no): " -r
         if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
@@ -150,9 +150,9 @@ run_full_reset() {
             return
         fi
     fi
-    
+
     print_info "Resetting components..."
-    
+
     # Step 1: Uninstall k0rdent from cluster (requires VPN connection)
     if [[ -d "./k0sctl-config" ]]; then
         print_header "Step 1: Uninstalling k0rdent from Cluster"
@@ -161,7 +161,7 @@ run_full_reset() {
     else
         print_info "Step 1: No k0rdent to uninstall"
     fi
-    
+
     # Step 2: Reset k0s cluster (requires VPN connection)
     if [[ -d "./k0sctl-config" ]]; then
         print_header "Step 2: Removing k0s Cluster"
@@ -171,7 +171,7 @@ run_full_reset() {
     else
         print_info "Step 2: No k0s cluster to remove"
     fi
-    
+
     # Step 3: Disconnect WireGuard VPN if connected
     WG_PATH=$(get_wg_path)
     WG_QUICK_PATH=$(get_wg_quick_path)
@@ -182,7 +182,7 @@ run_full_reset() {
     else
         print_info "Step 3: WireGuard VPN not connected"
     fi
-    
+
     # Step 4: Reset laptop WireGuard configuration
     if [[ -d "./laptop-wg-config" ]]; then
         print_header "Step 4: Removing Laptop WireGuard Configuration"
@@ -191,7 +191,7 @@ run_full_reset() {
     else
         print_info "Step 4: No laptop WireGuard configuration to remove"
     fi
-    
+
     # Step 5: Reset Azure resources (VMs and network)
     if [[ -f "$AZURE_MANIFEST" ]] || check_resource_group_exists "$RG"; then
         print_header "Step 5: Removing Azure Resources"
@@ -200,7 +200,7 @@ run_full_reset() {
     else
         print_info "Step 5: No Azure resources to remove"
     fi
-    
+
     # Step 6: Reset cloud-init files
     if [[ -d "$CLOUDINITS" ]]; then
         print_header "Step 6: Removing Cloud-Init Files"
@@ -209,7 +209,7 @@ run_full_reset() {
     else
         print_info "Step 6: No cloud-init files to remove"
     fi
-    
+
     # Step 7: Reset WireGuard keys
     if [[ -d "$KEYDIR" ]]; then
         print_header "Step 7: Removing WireGuard Keys"
@@ -218,13 +218,22 @@ run_full_reset() {
     else
         print_info "Step 7: No WireGuard keys to remove"
     fi
-    
+
     # Clean up project suffix file (only when using deploy-k0rdent.sh reset)
     if [[ -f "$SUFFIX_FILE" ]]; then
         print_info "Removing project suffix file for fresh deployment"
         rm -f "$SUFFIX_FILE"
     fi
-    
+
+    # Step 8: Clean up logs directory
+    if [[ -d "./logs" ]]; then
+        print_header "Step 8: Removing Logs Directory"
+        rm -rf ./logs
+        print_success "Logs directory removed"
+    else
+        print_info "Step 8: No logs directory to remove"
+    fi
+
     print_header "Reset Complete"
     print_success "All k0rdent resources have been removed"
     print_info "You can now run a fresh deployment with: $0 deploy"
@@ -276,4 +285,4 @@ case "${POSITIONAL_ARGS[0]:-deploy}" in
         echo "Use '$0 help' for usage information."
         exit 1
         ;;
-esac 
+esac

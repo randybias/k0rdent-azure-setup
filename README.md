@@ -335,6 +335,34 @@ Each script supports standardized arguments and a `reset` option to clean up its
 ./bin/setup-azure-network.sh reset -y
 ```
 
+## Script Features
+
+### Logging and Output Management
+
+Azure commands generate verbose output that can clutter the console. The scripts now include:
+
+- **Timestamped log files**: Azure command output is captured in `logs/` directory with timestamps
+- **Clean console output**: Only essential progress messages and results are shown on screen
+- **Automatic log cleanup**: The `logs/` directory is removed during reset operations
+- **Git ignore**: Log files are automatically excluded from version control
+
+Example log file: `logs/setup-azure-network_20241204_143052.log`
+
+### Robust VM Creation
+
+The VM creation process has been enhanced for reliability:
+
+- **Existing VM detection**: Scripts continue gracefully if VMs already exist instead of failing
+- **Partial deployment support**: Only creates missing VMs, skips existing ones
+- **Retry-friendly**: Allows re-running deployment scripts without conflicts
+- **Clear status reporting**: Shows which VMs exist vs. which will be created
+
+### WireGuard Configuration Improvements
+
+- **Compatible file naming**: Configuration files use format `wgk0XXXXXXXX.conf` for compatibility with `wg-quick`
+- **Secure permissions**: Configuration files are automatically set to 600 permissions
+- **Interface name validation**: Ensures WireGuard interface names are valid and don't contain special characters
+
 ## SSH Access
 
 After deployment, SSH to any VM using the generated key:

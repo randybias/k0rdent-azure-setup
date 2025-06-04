@@ -6,6 +6,7 @@ CLAUDE.md
 azure-resources/
 wg-keys/
 cloud-init-yaml/
+logs/
 
 # IDE and editor files
 *.code-workspace

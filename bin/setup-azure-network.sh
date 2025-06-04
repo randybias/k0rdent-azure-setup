@@ -133,8 +133,8 @@ deploy_resources() {
     fi
     
     # Create resource group
-    print_info_quiet "Creating resource group: $RG in $LOCATION"
-    if ! az group create --name "$RG" --location "$LOCATION"; then
+    if ! log_azure_command "Creating resource group: $RG in $LOCATION" \
+        az group create --name "$RG" --location "$LOCATION"; then
         handle_error ${LINENO} "az group create"
     fi
     add_resource_to_manifest "resource_group" "$RG" "primary_resource_group"
@@ -152,8 +152,8 @@ deploy_resources() {
     fi
     
     # Import public key to Azure
-    print_info_quiet "Importing SSH public key to Azure: $SSH_KEY_NAME"
-    if ! az sshkey create \
+    if ! log_azure_command "Importing SSH public key to Azure: $SSH_KEY_NAME" \
+        az sshkey create \
         --name "$SSH_KEY_NAME" \
         --resource-group "$RG" \
         --location "$LOCATION" \
@@ -165,8 +165,8 @@ deploy_resources() {
     add_resource_to_manifest "local_ssh_public_key" "$SSH_PUBLIC_KEY" "local_public_key_file"
     
     # Create Virtual Network
-    print_info_quiet "Creating Virtual Network: $VNET_NAME ($VNET_PREFIX)"
-    if ! az network vnet create \
+    if ! log_azure_command "Creating Virtual Network: $VNET_NAME ($VNET_PREFIX)" \
+        az network vnet create \
         --resource-group "$RG" \
         --name "$VNET_NAME" \
         --address-prefix "$VNET_PREFIX" \
@@ -178,8 +178,8 @@ deploy_resources() {
     add_resource_to_manifest "subnet" "$SUBNET_NAME" "$SUBNET_PREFIX"
     
     # Create Network Security Group
-    print_info_quiet "Creating Network Security Group: $NSG_NAME"
-    if ! az network nsg create \
+    if ! log_azure_command "Creating Network Security Group: $NSG_NAME" \
+        az network nsg create \
         --resource-group "$RG" \
         --name "$NSG_NAME" \
         --location "$LOCATION"; then
@@ -188,8 +188,8 @@ deploy_resources() {
     add_resource_to_manifest "network_security_group" "$NSG_NAME" ""
     
     # Add WireGuard NSG rule
-    print_info_quiet "Adding NSG rule to allow WireGuard UDP port $WIREGUARD_PORT from anywhere"
-    if ! az network nsg rule create \
+    if ! log_azure_command "Adding NSG rule to allow WireGuard UDP port $WIREGUARD_PORT" \
+        az network nsg rule create \
         --resource-group "$RG" \
         --nsg-name "$NSG_NAME" \
         --name "AllowWireGuard" \
@@ -206,8 +206,8 @@ deploy_resources() {
     add_resource_to_manifest "nsg_rule" "AllowWireGuard" "UDP_port_$WIREGUARD_PORT"
     
     # Add SSH NSG rule
-    print_info_quiet "Adding NSG rule to allow SSH (22/tcp) from anywhere (for troubleshooting)"
-    if ! az network nsg rule create \
+    if ! log_azure_command "Adding NSG rule to allow SSH (22/tcp)" \
+        az network nsg rule create \
         --resource-group "$RG" \
         --nsg-name "$NSG_NAME" \
         --name "AllowSSH" \
@@ -224,8 +224,8 @@ deploy_resources() {
     add_resource_to_manifest "nsg_rule" "AllowSSH" "TCP_port_22"
     
     # Associate NSG with subnet
-    print_info_quiet "Associating NSG with subnet"
-    if ! az network vnet subnet update \
+    if ! log_azure_command "Associating NSG with subnet" \
+        az network vnet subnet update \
         --resource-group "$RG" \
         --vnet-name "$VNET_NAME" \
         --name "$SUBNET_NAME" \
@@ -262,8 +262,8 @@ uninstall_resources() {
     print_info "The manifest file will be preserved for reference."
     
     if confirm_action "Are you sure you want to delete all Azure resources?"; then
-        print_info_quiet "Deleting resource group: $RG"
-        az group delete --name "$RG" --yes --no-wait
+        log_azure_command "Deleting resource group: $RG" \
+            az group delete --name "$RG" --yes --no-wait
         print_success "Resource group deletion initiated (running in background)"
         print_info "You can check deletion status with: az group show --name $RG"
     else
@@ -280,8 +280,8 @@ reset_resources() {
     
     if confirm_action "Are you sure you want to reset everything?"; then
         if check_resource_group_exists "$RG"; then
-            print_info_quiet "Deleting resource group: $RG"
-            az group delete --name "$RG" --yes --no-wait
+            log_azure_command "Deleting resource group: $RG" \
+                az group delete --name "$RG" --yes --no-wait
             print_success "Resource group deletion initiated (running in background)"
         fi
         
@@ -303,6 +303,9 @@ add_resource_to_manifest() {
 }
 
 # Main execution
+# Initialize logging
+init_logging "setup-azure-network"
+
 # Parse command line arguments
 COMMAND="${1:-}"
 shift || true
