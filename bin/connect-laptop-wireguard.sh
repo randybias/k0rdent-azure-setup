@@ -11,6 +11,9 @@ set -euo pipefail
 source ./etc/k0rdent-config.sh
 source ./etc/common-functions.sh
 
+# Get WireGuard quick path once for the entire script
+WG_QUICK_PATH=$(get_wg_quick_path)
+
 # Script-specific functions
 show_usage() {
     print_usage "$0" \
@@ -18,6 +21,7 @@ show_usage() {
   disconnect Safely shut down WireGuard VPN connection
   test       Test existing WireGuard connectivity
   status     Show VPN connection status
+  cleanup    Clean up orphaned WireGuard interfaces (macOS)
   help       Show this help message" \
         "  -y, --yes        Skip confirmation prompts (use CLI tools)
   --no-wait        Skip waiting for connection establishment" \
@@ -25,7 +29,8 @@ show_usage() {
   $0 connect -y    # Automated setup with CLI tools
   $0 disconnect    # Safely disconnect WireGuard
   $0 test          # Test connectivity only
-  $0 status        # Check current VPN status"
+  $0 status        # Check current VPN status
+  $0 cleanup       # Clean up orphaned interfaces"
 }
 
 # Configuration file path (now defined in global config)
@@ -48,14 +53,64 @@ validate_prerequisites() {
     print_success "WireGuard configuration found: $WG_CONFIG_FILE"
 }
 
+# Setup WireGuard using GUI method
+setup_wireguard_gui() {
+    print_header "WireGuard GUI Setup"
+    echo "Steps to import configuration:"
+    echo "1. Open the WireGuard app (install from Mac App Store if needed)"
+    echo "2. Click 'Import Tunnel(s) from File...'"
+    echo "3. Select the configuration file: $WG_CONFIG_FILE"
+    echo "4. Activate the tunnel in the WireGuard app"
+    echo ""
+    read -p "Press Enter after you've imported and activated the tunnel in WireGuard app..."
+}
+
+# Setup WireGuard using CLI method
+setup_wireguard_cli() {
+    print_header "Command-line wg-quick Setup"
+    
+    # Start the interface directly from local config file
+    print_info "Starting WireGuard interface from: $WG_CONFIG_FILE"
+    if sudo "$WG_QUICK_PATH" up "$WG_CONFIG_FILE"; then
+        print_success "WireGuard interface started successfully"
+        return 0
+    else
+        print_error "Failed to start WireGuard interface"
+        return 1
+    fi
+}
+
+# Verify connection and show info
+verify_and_show_connection_info() {
+    print_header "Verifying WireGuard Connection"
+    
+    print_info "Testing VPN connectivity..."
+    if WORKING_COUNT=$(test_wireguard_connectivity); then
+        print_success "🎉 WireGuard VPN is working correctly ($WORKING_COUNT/${#VM_HOSTS[@]} VMs reachable)"
+        echo
+        print_info "You can now:"
+        echo "  • SSH to VMs: ssh -i ./azure-resources/${K0RDENT_PREFIX}-ssh-key k0rdent@<VM_WIREGUARD_IP>"
+        echo "  • Deploy k0rdent cluster using the WireGuard network"
+        echo "  • Access services running on the VMs via their internal IPs"
+        echo
+        print_info "To disconnect WireGuard:"
+        echo "  • GUI: Deactivate tunnel in WireGuard app"
+        echo "  • CLI: sudo ${WG_QUICK_PATH} down ${WG_CONFIG_FILE}"
+    else
+        print_error "WireGuard VPN is not working ($WORKING_COUNT/${#VM_HOSTS[@]} VMs reachable)"
+        print_info "Please check your WireGuard configuration and try again"
+        exit 1
+    fi
+}
+
 # Function to test if WireGuard VPN is actually working
 test_wireguard_connectivity() {
     local working_count=0
     local total_hosts=${#VM_HOSTS[@]}
-    
+
     for HOST in "${VM_HOSTS[@]}"; do
         local vm_ip="${WG_IPS[$HOST]}"
-        
+
         # Test ping connectivity (quick test)
         if ping -c 1 -W 2000 "$vm_ip" >/dev/null 2>&1; then
             # Test SSH port connectivity using netcat
@@ -64,7 +119,7 @@ test_wireguard_connectivity() {
             fi
         fi
     done
-    
+
     # Return success if more than half the hosts are reachable
     if [[ $working_count -gt $((total_hosts / 2)) ]]; then
         echo "$working_count"
@@ -75,37 +130,26 @@ test_wireguard_connectivity() {
     fi
 }
 
+# Main connection function - simplified to only handle connection
 connect_wireguard() {
     print_header "k0rdent WireGuard VPN Setup"
     validate_prerequisites
-    
+
     # Check current VPN status
     print_info "Checking current VPN connectivity..."
-if WORKING_COUNT=$(test_wireguard_connectivity); then
-    print_success "WireGuard VPN is already active ($WORKING_COUNT/${#VM_HOSTS[@]} VMs reachable)"
-    print_info "Skipping setup - proceeding to final connectivity test..."
-else
-    print_info "WireGuard VPN not detected ($WORKING_COUNT/${#VM_HOSTS[@]} VMs reachable)"
+    if WORKING_COUNT=$(test_wireguard_connectivity); then
+        print_success "WireGuard VPN is already active ($WORKING_COUNT/${#VM_HOSTS[@]} VMs reachable)"
+        verify_and_show_connection_info
+        return 0
+    fi
     
-    # Provide setup options
+    print_info "WireGuard VPN not detected ($WORKING_COUNT/${#VM_HOSTS[@]} VMs reachable)"
+
+    # Connect based on mode
     if [[ "$SKIP_PROMPTS" == "true" ]]; then
         # Non-interactive mode: use CLI tools
         print_info "Non-interactive mode: using wg-quick..."
-        
-        # Check if WireGuard tools are installed
-        if ! command -v wg &> /dev/null; then
-            print_error "WireGuard tools not found. Please install first:"
-            echo "  brew install wireguard-tools"
-            exit 1
-        fi
-        
-        # Start the interface directly from local config file
-        print_info "Starting WireGuard interface from: $WG_CONFIG_FILE"
-        WG_QUICK_PATH=$(get_wg_quick_path)
-        if sudo "$WG_QUICK_PATH" up "$WG_CONFIG_FILE"; then
-            print_success "WireGuard interface started successfully"
-        else
-            print_error "Failed to start WireGuard interface"
+        if ! setup_wireguard_cli; then
             exit 1
         fi
     else
@@ -117,154 +161,44 @@ else
         echo "2) Use command-line wg-quick (requires sudo)"
         echo "3) Run detailed connectivity test"
         echo ""
-        
+
         while true; do
             read -p "Enter your choice (1-3): " choice
-        case $choice in
-            1)
-                print_header "WireGuard GUI Setup"
-                echo "Steps to import configuration:"
-                echo "1. Open the WireGuard app (install from Mac App Store if needed)"
-                echo "2. Click 'Import Tunnel(s) from File...'"
-                echo "3. Select the configuration file: $WG_CONFIG_FILE"
-                echo "4. Activate the tunnel in the WireGuard app"
-                echo ""
-                read -p "Press Enter after you've imported and activated the tunnel in WireGuard app..."
-                break
-                ;;
-            2)
-                print_header "Command-line wg-quick Setup"
-                
-                # Check if WireGuard tools are installed
-                if ! command -v wg &> /dev/null; then
-                    print_error "WireGuard tools not found. Please install first:"
-                    echo "  brew install wireguard-tools"
-                    exit 1
-                fi
-                
-                # Start the interface directly from local config file
-                print_info "Starting WireGuard interface from: $WG_CONFIG_FILE"
-                WG_QUICK_PATH=$(get_wg_quick_path)
-                if sudo "$WG_QUICK_PATH" up "$WG_CONFIG_FILE"; then
-                    print_success "WireGuard interface started successfully"
-                else
-                    print_error "Failed to start WireGuard interface"
-                    exit 1
-                fi
-                break
-                ;;
-            3)
-                print_header "Detailed Connectivity Test"
-                
-                # Run detailed connectivity test
-                declare -A PING_RESULTS
-                declare -A SSH_RESULTS
-                ALL_REACHABLE=true
-                SSH_KEY="./azure-resources/${K0RDENT_PREFIX}-ssh-key"
-                
-                for HOST in "${VM_HOSTS[@]}"; do
-                    VM_IP="${WG_IPS[$HOST]}"
-                    print_info "Testing connectivity to $HOST ($VM_IP)..."
-                    
-                    # Test ping connectivity
-                    if ping -c 3 -W 5000 "$VM_IP" >/dev/null 2>&1; then
-                        print_success "  ✓ Ping to $HOST successful"
-                        PING_RESULTS["$HOST"]="success"
-                        
-                        # Test SSH connectivity if ping works
-                        if [[ -f "$SSH_KEY" ]]; then
-                            if ssh -i "$SSH_KEY" \
-                                   -o ConnectTimeout=10 \
-                                   -o StrictHostKeyChecking=no \
-                                   -o UserKnownHostsFile=/dev/null \
-                                   -o LogLevel=ERROR \
-                                   "k0rdent@$VM_IP" \
-                                   "echo 'SSH via WireGuard successful'" >/dev/null 2>&1; then
-                                print_success "  ✓ SSH to $HOST via WireGuard successful"
-                                SSH_RESULTS["$HOST"]="success"
-                            else
-                                print_warning "  ⚠ SSH to $HOST failed (ping works, check SSH keys)"
-                                SSH_RESULTS["$HOST"]="failed"
-                            fi
-                        else
-                            print_warning "  ⚠ SSH key not found, skipping SSH test for $HOST"
-                            SSH_RESULTS["$HOST"]="no_key"
-                        fi
-                    else
-                        print_error "  ✗ Ping to $HOST failed"
-                        PING_RESULTS["$HOST"]="failed"
-                        SSH_RESULTS["$HOST"]="no_ping"
-                        ALL_REACHABLE=false
+            case $choice in
+                1)
+                    setup_wireguard_gui
+                    break
+                    ;;
+                2)
+                    if ! setup_wireguard_cli; then
+                        exit 1
                     fi
-                done
-                
-                # Detailed summary
-                print_header "Detailed Test Results"
-                
-                for HOST in "${VM_HOSTS[@]}"; do
-                    VM_IP="${WG_IPS[$HOST]}"
-                    PING_STATUS="${PING_RESULTS[$HOST]}"
-                    SSH_STATUS="${SSH_RESULTS[$HOST]}"
-                    
-                    if [[ "$PING_STATUS" == "success" && "$SSH_STATUS" == "success" ]]; then
-                        print_success "  ✓ $HOST ($VM_IP) - Ping & SSH working"
-                    elif [[ "$PING_STATUS" == "success" && "$SSH_STATUS" == "failed" ]]; then
-                        print_warning "  ⚠ $HOST ($VM_IP) - Ping works, SSH failed"
-                    elif [[ "$PING_STATUS" == "success" && "$SSH_STATUS" == "no_key" ]]; then
-                        print_warning "  ⚠ $HOST ($VM_IP) - Ping works, SSH not tested (no key)"
-                    else
-                        print_error "  ✗ $HOST ($VM_IP) - Ping failed"
-                    fi
-                done
-                
-                if [[ "$ALL_REACHABLE" == "true" ]]; then
-                    print_success "🎉 All detailed tests passed!"
-                else
-                    print_warning "Some detailed connectivity issues detected."
-                fi
-                
-                exit 0
-                ;;
-            *)
-                print_error "Invalid choice. Please enter 1, 2, or 3."
-                ;;
-        esac
+                    break
+                    ;;
+                3)
+                    # Run detailed connectivity test using common function
+                    run_detailed_wireguard_connectivity_test "$K0RDENT_PREFIX"
+                    exit 0
+                    ;;
+                *)
+                    print_error "Invalid choice. Please enter 1, 2, or 3."
+                    ;;
+            esac
         done
     fi
-    
+
     # Wait a moment for connection to establish
     print_info "Waiting 5 seconds for connection to establish..."
     sleep 5
-fi
-
-# Final verification
-print_header "Verifying WireGuard Connection"
-
-print_info "Testing VPN connectivity..."
-if WORKING_COUNT=$(test_wireguard_connectivity); then
-    print_success "🎉 WireGuard VPN is working correctly ($WORKING_COUNT/${#VM_HOSTS[@]} VMs reachable)"
-    echo
-    print_info "You can now:"
-    echo "  • SSH to VMs: ssh -i ./azure-resources/${K0RDENT_PREFIX}-ssh-key k0rdent@<VM_WIREGUARD_IP>"
-    echo "  • Deploy k0rdent cluster using the WireGuard network"
-    echo "  • Access services running on the VMs via their internal IPs"
-else
-    print_error "WireGuard VPN is not working ($WORKING_COUNT/${#VM_HOSTS[@]} VMs reachable)"
-    print_info "Please check your WireGuard configuration and try again"
-    exit 1
-fi
-
-echo
-print_info "To disconnect WireGuard:"
-echo "  • GUI: Deactivate tunnel in WireGuard app"
-WG_QUICK_PATH=$(get_wg_quick_path)
-echo "  • CLI: sudo $WG_QUICK_PATH down $WG_CONFIG_FILE"
+    
+    # Final verification
+    verify_and_show_connection_info
 }
 
 test_connectivity() {
     validate_prerequisites
     print_header "Testing WireGuard Connectivity"
-    
+
     print_info "Testing VPN connectivity..."
     if WORKING_COUNT=$(test_wireguard_connectivity); then
         print_success "🎉 WireGuard VPN is working correctly ($WORKING_COUNT/${#VM_HOSTS[@]} VMs reachable)"
@@ -276,24 +210,24 @@ test_connectivity() {
 
 disconnect_wireguard() {
     print_header "Disconnecting WireGuard VPN"
-    
+
     # First validate the config exists
     if [[ ! -f "$WG_CONFIG_FILE" ]]; then
         print_warning "No WireGuard configuration found at $WG_CONFIG_FILE"
-        print_info "Attempting to disconnect any active ${K0RDENT_PREFIX}-laptop-wg interface..."
-        shutdown_wireguard_interface "${K0RDENT_PREFIX}-laptop-wg"
-        return
+        return 1
     fi
-    
+
     # Disconnect the interface
     if shutdown_wireguard_interface "$WG_CONFIG_FILE"; then
         print_success "WireGuard VPN disconnected successfully"
     else
         print_error "Failed to disconnect WireGuard VPN"
         print_info "You may need to manually disconnect using:"
-        echo "  sudo wg-quick down ${K0RDENT_PREFIX}-laptop-wg"
+        echo "  sudo wg-quick down ${WG_CONFIG_FILE}"
+        # Extract interface name from config file path for ip link delete
+        local interface_name=$(basename "$WG_CONFIG_FILE" .conf)
         echo "  or"
-        echo "  sudo ip link delete ${K0RDENT_PREFIX}-laptop-wg"
+        echo "  sudo ip link delete ${interface_name}"
         return 1
     fi
 }
@@ -301,12 +235,54 @@ disconnect_wireguard() {
 show_status() {
     validate_prerequisites
     print_header "WireGuard VPN Status"
-    
+
     print_info "Checking VPN connectivity..."
     if WORKING_COUNT=$(test_wireguard_connectivity); then
         print_success "WireGuard VPN is active ($WORKING_COUNT/${#VM_HOSTS[@]} VMs reachable)"
     else
         print_info "WireGuard VPN not detected ($WORKING_COUNT/${#VM_HOSTS[@]} VMs reachable)"
+    fi
+}
+
+cleanup_orphaned_interfaces() {
+    print_header "Clean Up Orphaned WireGuard Interfaces"
+    
+    if [[ "$(uname)" != "Darwin" ]]; then
+        print_info "This command is only available on macOS"
+        return 0
+    fi
+    
+    local orphaned_interfaces=($(list_macos_wireguard_interfaces))
+    
+    if [[ ${#orphaned_interfaces[@]} -eq 0 ]]; then
+        print_success "No orphaned WireGuard interfaces found"
+        return 0
+    fi
+    
+    print_warning "Found ${#orphaned_interfaces[@]} orphaned WireGuard interface(s):"
+    for i in "${!orphaned_interfaces[@]}"; do
+        echo "  $((i+1))) ${orphaned_interfaces[$i]}"
+    done
+    
+    if [[ "$SKIP_PROMPTS" == "true" ]]; then
+        # In non-interactive mode, clean up all orphaned interfaces
+        print_info "Non-interactive mode: cleaning up all orphaned interfaces..."
+        for intf in "${orphaned_interfaces[@]}"; do
+            cleanup_macos_wireguard_interface "$intf"
+        done
+    else
+        # Interactive mode: let user choose
+        echo ""
+        read -p "Enter number to clean up (1-${#orphaned_interfaces[@]}), 'a' for all, or Enter to skip: " -r choice
+        
+        if [[ "$choice" == "a" ]]; then
+            # Use the comprehensive cleanup function for 'all'
+            cleanup_all_macos_wireguard_interfaces
+        elif [[ "$choice" =~ ^[0-9]+$ ]] && [[ $choice -ge 1 ]] && [[ $choice -le ${#orphaned_interfaces[@]} ]]; then
+            cleanup_macos_wireguard_interface "${orphaned_interfaces[$((choice-1))]}"
+        else
+            print_info "Skipping cleanup"
+        fi
     fi
 }
 
@@ -340,6 +316,9 @@ case "$COMMAND" in
         ;;
     "status")
         show_status
+        ;;
+    "cleanup")
+        cleanup_orphaned_interfaces
         ;;
     "help")
         show_usage

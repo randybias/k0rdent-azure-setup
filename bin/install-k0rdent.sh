@@ -106,8 +106,14 @@ if [[ "$COMMAND" == "deploy" ]]; then
     ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "mkdir -p ~/.kube && sudo k0s kubeconfig admin > ~/.kube/config" &>/dev/null
     
     print_info "Installing k0rdent v1.0.0 using Helm..."
-    if ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "helm install kcm oci://ghcr.io/k0rdent/kcm/charts/kcm --version 1.0.0 -n kcm-system --create-namespace" &>/dev/null; then
+    
+    # Capture helm install output to a log file
+    local helm_log="./logs/k0rdent-helm-install-$(date +%Y%m%d_%H%M%S).log"
+    ensure_directory "./logs"
+    
+    if ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "helm install kcm oci://ghcr.io/k0rdent/kcm/charts/kcm --version 1.0.0 -n kcm-system --create-namespace --debug --timeout 10m" > "$helm_log" 2>&1; then
         print_success "k0rdent installed successfully!"
+        print_info "Installation log saved to: $helm_log"
         
         print_info "Waiting for k0rdent components to be ready..."
         sleep 30
@@ -126,6 +132,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
         echo ""
     else
         print_error "Failed to install k0rdent"
+        print_info "Check the installation log for details: $helm_log"
         exit 1
     fi
 else

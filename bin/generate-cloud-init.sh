@@ -175,6 +175,7 @@ write_files:
 runcmd:
   - [ systemctl, enable, wg-quick@wg0 ]
   - [ systemctl, start, wg-quick@wg0 ]
+  - [ touch, /var/lib/cloud/instance/locale-check.skip ]
 
 final_message: "Cloud-init finished for $HOST. WireGuard is configured (waiting for laptop/hub to connect)."
 EOF
