@@ -207,25 +207,6 @@ echo "WireGuard port: $WG_PORT"
 echo "VM peers configured: ${#VM_HOSTS[@]}"
 
 echo
-print_header "Next Steps"
-echo "1. Install the configuration on your laptop:"
-echo "   # macOS with WireGuard app:"
-echo "   open $WG_CONFIG_FILE"
-echo ""
-echo "   # Linux with wg-quick:"
-echo "   sudo cp $WG_CONFIG_FILE /etc/wireguard/"
-echo "   sudo systemctl enable wg-quick@${K0RDENT_PREFIX}-laptop-wg"
-echo "   sudo systemctl start wg-quick@${K0RDENT_PREFIX}-laptop-wg"
-echo ""
-echo "2. Test connectivity to VMs:"
-for HOST in "${VM_HOSTS[@]}"; do
-    echo "   ping ${WG_IPS[$HOST]}  # $HOST"
-done
-echo ""
-echo "3. Verify WireGuard status:"
-echo "   sudo wg show"
-
-echo
 print_info "Configuration file contents:"
 echo "----------------------------------------"
 cat "$WG_CONFIG_FILE"

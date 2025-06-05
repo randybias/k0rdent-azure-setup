@@ -122,14 +122,6 @@ if [[ "$COMMAND" == "deploy" ]]; then
         ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "sudo k0s kubectl get pods -n kcm-system"
         
         print_success "k0rdent installation completed!"
-        
-        print_header "Next Steps"
-        echo "Export kubeconfig to access your cluster:"
-        echo "  export KUBECONFIG=\$PWD/$KUBECONFIG_FILE"
-        echo ""
-        echo "Check k0rdent status:"
-        echo "  kubectl get pods -n kcm-system"
-        echo ""
     else
         print_error "Failed to install k0rdent"
         print_info "Check the installation log for details: $helm_log"
