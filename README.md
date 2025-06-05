@@ -20,32 +20,40 @@ This project provides shell scripts to automatically deploy a complete Azure inf
 Default HA topology (3 controllers + 2 workers):
 
 ```
-┌─────────────────┐    ┌──────────────────────────────────────┐
-│   Your Laptop   │    │              Azure Cloud             │
-│  172.24.24.1    │◄──►│                                      │
-│  (WireGuard     │    │  ┌─────────────┐  ┌─────────────┐    │
-│   Hub)          │    │  │k0s-controller│ │k0s-controller-2│ │
-└─────────────────┘    │  │172.24.24.11 │  │172.24.24.12 │    │
-                       │  │   Zone 2    │  │   Zone 3    │    │
-                       │  └─────────────┘  └─────────────┘    │
-                       │                                      │
-                       │  ┌─────────────┐                     │
-                       │  │k0s-controller-3│                  │
-                       │  │172.24.24.13 │                     │
-                       │  │   Zone 2    │                     │
-                       │  └─────────────┘                     │
-                       │                                      │
-                       │  ┌─────────────┐  ┌─────────────┐    │
-                       │  │k0s-worker-1 │  │k0s-worker-2 │    │
-                       │  │172.24.24.14 │  │172.24.24.15 │    │
-                       │  │   Zone 3    │  │   Zone 2    │    │
-                       │  └─────────────┘  └─────────────┘    │
-                       └──────────────────────────────────────┘
+┌─────────────────┐    ┌───────────────────────────────────────┐
+│   Your Laptop   │    │              Azure Cloud              │
+│  172.24.24.1    │◄──►│                                       │
+│  (WireGuard     │    │  ┌──────────────┐  ┌────────────────┐ │
+│   Hub)          │    │  │k0s-controller│  │k0s-controller-2│ │
+└─────────────────┘    │  │172.24.24.11  │  │172.24.24.12    │ │
+                       │  │   Zone 2     │  │   Zone 3       │ │
+                       │  └──────────────┘  └────────────────┘ │
+                       │                                       │
+                       │  ┌────────────────┐                   │
+                       │  │k0s-controller-3│                   │
+                       │  │172.24.24.13    │                   │
+                       │  │   Zone 2       │                   │
+                       │  └────────────────┘                   │
+                       │                                       │
+                       │  ┌─────────────┐  ┌─────────────┐     │
+                       │  │k0s-worker-1 │  │k0s-worker-2 │     │
+                       │  │172.24.24.14 │  │172.24.24.15 │     │
+                       │  │   Zone 3    │  │   Zone 2    │     │
+                       │  └─────────────┘  └─────────────┘     │
+                       └───────────────────────────────────────┘
 ```
 
 This HA setup provides controller redundancy across zones for high availability.
 
+## Video Demonstration
+
+[![Watch the video](demos/k0rdent-azure-script-setup.png)](demos/k0rdent-azure-script-setup.mp4)
+
 ## Quick Start
+
+1. git clone <repo>
+2. ./deploy-k0rdent.sh help
+3. ./deploy-k0rdent.sh deploy
 
 ### Prerequisites
 
