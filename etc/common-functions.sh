@@ -651,7 +651,8 @@ print_info_quiet() {
 confirm_action() {
     local prompt="$1"
     
-    if [[ "$YES_TO_ALL" == "true" ]]; then
+    # Check both legacy and new skip prompts variables
+    if [[ "${YES_TO_ALL:-false}" == "true" ]] || [[ "${SKIP_PROMPTS:-false}" == "true" ]]; then
         return 0
     fi
     
