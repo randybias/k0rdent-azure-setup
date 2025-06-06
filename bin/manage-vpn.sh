@@ -149,22 +149,6 @@ generate_laptop_config() {
         exit 1
     fi
     
-    # Check if VMs are deployed
-    print_info "Checking VM deployment status..."
-    local vm_count=0
-    for HOST in "${VM_HOSTS[@]}"; do
-        if check_azure_resource_exists "vm" "$HOST" "$RG"; then
-            ((vm_count++))
-        fi
-    done
-    
-    if [[ $vm_count -eq 0 ]]; then
-        print_error "No VMs found in resource group '$RG'."
-        print_info "Deploy VMs first with: bash bin/create-azure-vms.sh deploy"
-        exit 1
-    elif [[ $vm_count -lt ${#VM_HOSTS[@]} ]]; then
-        print_warning "Only $vm_count of ${#VM_HOSTS[@]} VMs found. Some VMs may be missing."
-    fi
     
     # Check if WireGuard keys exist
     if [[ ! -f "$WG_MANIFEST" ]]; then
