@@ -238,6 +238,8 @@ EOF
 [Peer]
 PublicKey = $VM_PUBLIC_KEY
 AllowedIPs = $WG_IP/32
+Endpoint = $PUBLIC_IP:$WG_PORT
+PersistentKeepalive = 25
 
 EOF
     done
