@@ -79,11 +79,11 @@ run_deployment() {
 
     # Step 5: Generate laptop WireGuard configuration
     print_header "Step 5: Generating Laptop WireGuard Configuration"
-    bash bin/generate-laptop-wg-config.sh deploy $DEPLOY_FLAGS
+    bash bin/manage-vpn.sh generate $DEPLOY_FLAGS
 
     # Step 6: Connect to WireGuard VPN
     print_header "Step 6: Connecting to WireGuard VPN"
-    bash bin/connect-laptop-wireguard.sh connect $DEPLOY_FLAGS
+    bash bin/manage-vpn.sh connect $DEPLOY_FLAGS
 
     # Step 7: Install k0s cluster
     print_header "Step 7: Installing k0s Cluster"
@@ -176,7 +176,7 @@ run_full_reset() {
     # Step 4: Reset laptop WireGuard configuration
     if [[ -d "./laptop-wg-config" ]]; then
         print_header "Step 4: Removing Laptop WireGuard Configuration"
-        bash bin/generate-laptop-wg-config.sh reset $DEPLOY_FLAGS
+        bash bin/manage-vpn.sh reset $DEPLOY_FLAGS
     else
         print_info "Step 4: No laptop WireGuard configuration to remove"
     fi
