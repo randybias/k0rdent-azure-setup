@@ -116,14 +116,14 @@ show_comprehensive_status() {
     return 0
 }
 
-# Enhanced prerequisite validation
+# Enhanced prerequisite validation using generic framework
 validate_full_prerequisites() {
-    print_info "Validating prerequisites..."
+    if ! check_prerequisites "manage-vpn" \
+        "wireguard_tools:WireGuard tools not found:Install with: sudo apt install wireguard-tools (Linux) or brew install wireguard-tools (macOS)"; then
+        return 1
+    fi
     
-    # Check WireGuard tools
-    check_wireguard_tools
-    
-    # Check netcat for connectivity testing
+    # Check netcat for connectivity testing (optional)
     if ! command -v nc &> /dev/null; then
         print_warning "netcat (nc) not found. Connectivity testing will be limited."
         print_info "Install with: brew install netcat (macOS) or apt install netcat (Linux)"

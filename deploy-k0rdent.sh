@@ -53,17 +53,17 @@ run_deployment() {
     # Record start time
     DEPLOYMENT_START_TIME=$(date +%s)
 
-    # Step 1: Setup Azure network
-    print_header "Step 1: Setting up Azure Network"
+    # Step 1: Prepare deployment (keys and cloud-init)
+    print_header "Step 1: Preparing Deployment (Keys & Cloud-Init)"
+    bash bin/prepare-deployment.sh deploy $DEPLOY_FLAGS
+
+    # Step 2: Setup Azure network
+    print_header "Step 2: Setting up Azure Network"
     if [[ -f "$AZURE_MANIFEST" ]]; then
         print_warning "Azure resources already exist. Skipping network setup."
     else
         bash bin/setup-azure-network.sh deploy $DEPLOY_FLAGS
     fi
-
-    # Step 2: Prepare deployment (keys and cloud-init)
-    print_header "Step 2: Preparing Deployment (Keys & Cloud-Init)"
-    bash bin/prepare-deployment.sh deploy $DEPLOY_FLAGS
 
     # Step 3: Create Azure VMs
     print_header "Step 3: Creating Azure VMs"

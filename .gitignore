@@ -1,5 +1,6 @@
 # Development guidelines (internal documentation)
 CLAUDE.md
+notebooks/
 
 # Generated deployment artifacts
 .k0rdent-suffix

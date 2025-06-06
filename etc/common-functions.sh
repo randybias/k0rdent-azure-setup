@@ -1362,3 +1362,144 @@ run_detailed_wireguard_connectivity_test() {
         return 1
     fi
 }
+# ---- Generic Resource Verification Framework ----
+
+# Generic prerequisite checker
+# Usage: check_prerequisites "script_name" "resource:error_msg:fix_cmd" ...
+check_prerequisites() {
+    local script_name="$1"
+    shift
+    
+    print_info "Validating prerequisites..."
+    local all_ok=true
+    
+    for check in "$@"; do
+        IFS=':' read -r resource error_msg fix_cmd <<< "$check"
+        
+        case "$resource" in
+            azure_cli)
+                if ! check_azure_cli_quiet; then
+                    print_error "$error_msg"
+                    [[ -n "$fix_cmd" ]] && print_info "$fix_cmd"
+                    all_ok=false
+                fi
+                ;;
+            wireguard_tools)
+                if ! command -v wg &> /dev/null || ! command -v wg-quick &> /dev/null; then
+                    print_error "$error_msg"
+                    [[ -n "$fix_cmd" ]] && print_info "$fix_cmd"
+                    all_ok=false
+                fi
+                ;;
+            resource_group)
+                if ! check_resource_group_exists "$RG"; then
+                    print_error "$error_msg"
+                    [[ -n "$fix_cmd" ]] && print_info "$fix_cmd"
+                    all_ok=false
+                fi
+                ;;
+            file:*)
+                local file_path="${resource#file:}"
+                if ! check_file_exists "$file_path" "$error_msg"; then
+                    [[ -n "$fix_cmd" ]] && print_info "$fix_cmd"
+                    all_ok=false
+                fi
+                ;;
+            dir:*)
+                local dir_path="${resource#dir:}"
+                if [[ ! -d "$dir_path" ]]; then
+                    print_error "$error_msg"
+                    [[ -n "$fix_cmd" ]] && print_info "$fix_cmd"
+                    all_ok=false
+                fi
+                ;;
+            manifest:*)
+                local manifest_type="${resource#manifest:}"
+                case "$manifest_type" in
+                    wg_keys)
+                        if [[ ! -f "$WG_MANIFEST" ]]; then
+                            print_error "$error_msg"
+                            [[ -n "$fix_cmd" ]] && print_info "$fix_cmd"
+                            all_ok=false
+                        fi
+                        ;;
+                    azure)
+                        if [[ ! -f "$AZURE_MANIFEST" ]]; then
+                            print_error "$error_msg"
+                            [[ -n "$fix_cmd" ]] && print_info "$fix_cmd"
+                            all_ok=false
+                        fi
+                        ;;
+                esac
+                ;;
+        esac
+    done
+    
+    if [[ "$all_ok" == "true" ]]; then
+        print_success "Prerequisites validated"
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Check Azure CLI quietly (no output)
+check_azure_cli_quiet() {
+    if ! command -v az &> /dev/null; then
+        return 1
+    fi
+    
+    if ! az account show &> /dev/null; then
+        return 1
+    fi
+    
+    return 0
+}
+
+# Generic status display framework
+# Usage: display_status "header" "check:description" ...
+display_status() {
+    local header="$1"
+    shift
+    
+    print_header "$header"
+    
+    for item in "$@"; do
+        IFS=':' read -r check description <<< "$item"
+        
+        case "$check" in
+            file:*)
+                local file_path="${check#file:}"
+                if [[ -f "$file_path" ]]; then
+                    print_success "$description"
+                else
+                    print_error "$description (missing)"
+                fi
+                ;;
+            dir:*)
+                local dir_path="${check#dir:}"
+                if [[ -d "$dir_path" ]]; then
+                    print_success "$description"
+                else
+                    print_error "$description (missing)"
+                fi
+                ;;
+            count:*)
+                local count_info="${check#count:}"
+                IFS='=' read -r actual expected <<< "$count_info"
+                if [[ "$actual" -eq "$expected" ]]; then
+                    print_success "$description: $actual of $expected"
+                else
+                    print_warning "$description: $actual of $expected"
+                fi
+                ;;
+            info:*)
+                local info="${check#info:}"
+                print_info "$description: $info"
+                ;;
+            *)
+                print_info "$description"
+                ;;
+        esac
+    done
+}

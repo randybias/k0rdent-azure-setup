@@ -91,28 +91,23 @@ For automated deployments without prompts:
 Or step-by-step:
 
 ```bash
-# Step 1: Generate WireGuard keys
-./bin/generate-wg-keys.sh
+# Step 1: Prepare deployment (WireGuard keys and cloud-init)
+./bin/prepare-deployment.sh deploy
 
 # Step 2: Setup Azure network infrastructure
-./bin/setup-azure-network.sh
+./bin/setup-azure-network.sh deploy
 
-# Step 3: Generate cloud-init configurations
-./bin/generate-cloud-init.sh
+# Step 3: Create VMs in parallel with verification
+./bin/create-azure-vms.sh deploy
 
-# Step 4: Create VMs in parallel with verification
-./bin/create-azure-vms.sh
+# Step 4: Setup and connect to WireGuard VPN
+./bin/manage-vpn.sh generate
+./bin/manage-vpn.sh connect
 
-# Step 5: Generate laptop WireGuard configuration
-./bin/generate-laptop-wg-config.sh
-
-# Step 6: Connect laptop to WireGuard VPN
-./bin/connect-laptop-wireguard.sh
-
-# Step 7: Install k0s cluster
+# Step 5: Install k0s cluster
 ./bin/install-k0s.sh deploy
 
-# Step 8: Install k0rdent on cluster  
+# Step 6: Install k0rdent on cluster  
 ./bin/install-k0rdent.sh deploy
 ```
 
@@ -247,23 +242,21 @@ k0rdent-azure-setup/
 │   ├── config-user.sh          # User-configurable settings
 │   ├── config-internal.sh      # Computed configuration (do not edit)
 │   ├── k0rdent-config.sh       # Central configuration loader
-│   └── common-functions.sh     # Shared utility functions
-├── bin/                        # Action scripts
-│   ├── generate-wg-keys.sh     # WireGuard key generation
-│   ├── setup-azure-network.sh # Azure infrastructure setup
-│   ├── generate-cloud-init.sh  # Cloud-init file generation
+│   └── common-functions.sh     # Shared utility functions (1,500+ lines)
+├── bin/                        # Action scripts (6 consolidated scripts)
+│   ├── prepare-deployment.sh   # Deployment preparation (keys & cloud-init)
+│   ├── setup-azure-network.sh  # Azure infrastructure setup
 │   ├── create-azure-vms.sh     # VM creation with parallel deployment
-│   ├── generate-laptop-wg-config.sh # Laptop WireGuard configuration
-│   ├── connect-laptop-wireguard.sh # WireGuard VPN connection setup
+│   ├── manage-vpn.sh           # Comprehensive VPN management
 │   ├── install-k0s.sh          # k0s cluster installation
 │   └── install-k0rdent.sh      # k0rdent installation on cluster
-├── azure-resources/            # Generated Azure resources
+├── azure-resources/            # Generated Azure resources  
 │   ├── azure-resource-manifest.csv
-│   ├── wireguard-port.txt
 │   ├── k0rdent-XXXXXXXX-ssh-key     # Private SSH key
 │   └── k0rdent-XXXXXXXX-ssh-key.pub # Public SSH key
-├── wg-keys/                    # WireGuard keys
+├── wireguard/                  # WireGuard configuration and keys
 │   ├── wg-key-manifest.csv
+│   ├── wireguard-port.txt
 │   ├── *_privkey
 │   └── *_pubkey
 ├── cloud-init-yaml/           # VM cloud-init configurations
@@ -299,18 +292,29 @@ The orchestrator automatically passes flags to all child scripts for consistent 
 
 ### Individual Scripts
 
+**prepare-deployment.sh**: Consolidated deployment preparation handling:
+- WireGuard key generation for all hosts
+- WireGuard port selection (30000-64000)
+- Cloud-init file generation with keys and configuration
+- Commands: `keys`, `cloudinit`, `deploy`, `reset`, `status`
+
+**setup-azure-network.sh**: Creates Azure infrastructure:
+- Resource group, VNet, subnet, and NSG
+- SSH key generation and import to Azure
+- Security rules for SSH and WireGuard
+- Tracks all resources in manifest for cleanup
+
 **create-azure-vms.sh**: Creates VMs in parallel and verifies deployment with:
 - SSH connectivity testing
 - Cloud-init completion monitoring  
 - WireGuard configuration verification
 - Support for `--no-wait` to skip verification
 
-**generate-laptop-wg-config.sh**: Generates WireGuard configuration for laptop connectivity
-
-**connect-laptop-wireguard.sh**: Sets up and tests WireGuard VPN connection with options for:
-- GUI app import (recommended for macOS)
-- Command-line wg-quick setup
-- Connection testing and verification
+**manage-vpn.sh**: Comprehensive VPN management combining:
+- WireGuard configuration generation for laptop
+- Connection management (CLI and GUI support)
+- Connectivity testing and troubleshooting
+- Commands: `generate`, `connect`, `disconnect`, `test`, `status`, `cleanup`, `reset`
 
 **install-k0s.sh**: Installs and configures k0s Kubernetes cluster with:
 - k0sctl configuration generation
@@ -323,24 +327,19 @@ The orchestrator automatically passes flags to all child scripts for consistent 
 - Automatic cluster detection and configuration
 - Installation status verification
 
-Each script supports standardized arguments and a `reset` option to clean up its resources:
+Each script supports standardized arguments and reset functionality:
 
 ```bash
-# Reset with confirmation
-./bin/install-k0rdent.sh uninstall  # Uninstall k0rdent from cluster
-./bin/install-k0s.sh uninstall       # Remove k0s cluster
-./bin/install-k0s.sh reset           # Remove k0s configuration files
-./bin/generate-wg-keys.sh reset      # Remove WireGuard keys
-./bin/setup-azure-network.sh reset  # Delete Azure resources
-./bin/generate-cloud-init.sh reset  # Remove cloud-init files
-./bin/create-azure-vms.sh reset     # Delete k0rdent VMs and OS disks individually
+# Reset individual components
+./bin/prepare-deployment.sh reset -y     # Remove keys and cloud-init files
+./bin/setup-azure-network.sh reset -y    # Delete Azure resources
+./bin/create-azure-vms.sh reset -y       # Delete VMs (prompts for each)
+./bin/manage-vpn.sh reset -y             # Remove VPN configuration
+./bin/install-k0s.sh uninstall -y        # Remove k0s cluster
+./bin/install-k0rdent.sh uninstall -y    # Uninstall k0rdent
 
-# Reset without confirmation
-./bin/install-k0rdent.sh uninstall -y
-./bin/install-k0s.sh uninstall -y
-./bin/install-k0s.sh reset -y
-./bin/generate-wg-keys.sh reset -y
-./bin/setup-azure-network.sh reset -y
+# Or use the main script to reset everything
+./deploy-k0rdent.sh reset -y
 ```
 
 ## Script Features
@@ -446,8 +445,7 @@ For individual component cleanup, you can also run:
 ./bin/install-k0rdent.sh uninstall    # Uninstall k0rdent only
 ./bin/install-k0s.sh uninstall        # Remove k0s cluster only
 ./bin/setup-azure-network.sh reset    # Remove Azure resources only
-./bin/generate-cloud-init.sh reset    # Remove cloud-init files only
-./bin/generate-wg-keys.sh reset       # Remove WireGuard keys only
+./bin/prepare-deployment.sh reset     # Remove WireGuard keys and cloud-init files
 ./bin/create-azure-vms.sh reset       # Delete k0rdent VMs and OS disks individually
 ```
 
