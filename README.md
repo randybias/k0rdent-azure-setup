@@ -310,11 +310,19 @@ The orchestrator automatically passes flags to all child scripts for consistent 
 - WireGuard configuration verification
 - Support for `--no-wait` to skip verification
 
-**manage-vpn.sh**: Comprehensive VPN management combining:
+**manage-vpn.sh**: Comprehensive VPN management with enhanced workflow:
+- **Two-step process**: `setup` (one-time configuration) and `connect` (fast, repeatable)
 - WireGuard configuration generation for laptop
 - Connection management (CLI and GUI support)
 - Connectivity testing and troubleshooting
-- Commands: `generate`, `connect`, `disconnect`, `test`, `status`, `cleanup`, `reset`
+- Commands: `setup`, `connect`, `disconnect`, `test`, `status`, `cleanup`, `reset`
+- Backwards compatibility with `generate` command
+
+**lockdown-ssh.sh**: Optional SSH security management:
+- Remove SSH access from internet after VPN is working
+- Restore SSH access when needed
+- Simple rule-based approach (no backup/restore complexity)
+- Commands: `lockdown`, `unlock`, `status`
 
 **install-k0s.sh**: Installs and configures k0s Kubernetes cluster with:
 - k0sctl configuration generation
@@ -335,6 +343,7 @@ Each script supports standardized arguments and reset functionality:
 ./bin/setup-azure-network.sh reset -y    # Delete Azure resources
 ./bin/create-azure-vms.sh reset -y       # Delete VMs (prompts for each)
 ./bin/manage-vpn.sh reset -y             # Remove VPN configuration
+./bin/lockdown-ssh.sh unlock -y          # Restore SSH access if locked down
 ./bin/install-k0s.sh uninstall -y        # Remove k0s cluster
 ./bin/install-k0rdent.sh uninstall -y    # Uninstall k0rdent
 
@@ -479,6 +488,24 @@ ssh -i ./azure-resources/k0rdent-*-ssh-key k0rdent@<vm-ip> 'sudo cat /var/log/cl
 - Network Security Groups with minimal required access
 - Private key files with proper permissions (600)
 - Resource naming with random suffixes for uniqueness
+- **Optional SSH lockdown**: Remove internet SSH access after VPN is working
+
+### SSH Lockdown (Optional)
+
+After WireGuard VPN is working, you can optionally remove SSH access from the internet:
+
+```bash
+# Remove SSH access from internet (VPN access still works)
+./bin/lockdown-ssh.sh lockdown
+
+# Check current SSH access status
+./bin/lockdown-ssh.sh status
+
+# Restore SSH access from internet if needed
+./bin/lockdown-ssh.sh unlock
+```
+
+This provides an additional security layer by ensuring all VM access goes through the encrypted WireGuard VPN.
 
 ## Next Steps
 
@@ -488,7 +515,8 @@ After successful deployment:
 2. **Install k0s cluster**: Run `./install-k0s.sh deploy` to set up Kubernetes
 3. **Install k0rdent**: Run `./install-k0rdent.sh deploy` to install k0rdent on the cluster
 4. **Access your cluster**: Export kubeconfig and verify with `kubectl get nodes`
-5. **Deploy your applications**: Your k0rdent cluster is ready for workloads
+5. **Optional security**: Consider using `./bin/lockdown-ssh.sh lockdown` for additional security
+6. **Deploy your applications**: Your k0rdent cluster is ready for workloads
 
 ### Manual Installation Steps
 

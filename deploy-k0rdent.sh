@@ -69,9 +69,9 @@ run_deployment() {
     print_header "Step 3: Creating Azure VMs"
     bash bin/create-azure-vms.sh deploy $DEPLOY_FLAGS
 
-    # Step 4: Generate laptop WireGuard configuration
-    print_header "Step 4: Generating Laptop WireGuard Configuration"
-    bash bin/manage-vpn.sh generate $DEPLOY_FLAGS
+    # Step 4: Setup WireGuard VPN (one-time setup)
+    print_header "Step 4: Setting Up WireGuard VPN"
+    bash bin/manage-vpn.sh setup $DEPLOY_FLAGS
 
     # Step 5: Connect to WireGuard VPN
     print_header "Step 5: Connecting to WireGuard VPN"
@@ -108,8 +108,8 @@ show_next_steps() {
     echo "  - Export kubeconfig: export KUBECONFIG=\$PWD/k0sctl-config/${K0RDENT_PREFIX}-kubeconfig"
     echo "  - Check cluster status: kubectl get nodes"
     echo "  - View k0rdent resources: kubectl get all -A"
-    echo "  - Disconnect VPN: sudo \$(which wg-quick) down k0rdent-laptop"
-    echo "  - Reconnect VPN: sudo \$(which wg-quick) up k0rdent-laptop"
+    echo "  - Disconnect VPN: ./bin/manage-vpn.sh disconnect"
+    echo "  - Reconnect VPN: ./bin/manage-vpn.sh connect"
     echo ""
     echo "To clean up all resources:"
     echo "  $0 reset"
@@ -120,11 +120,10 @@ run_full_reset() {
     print_warning "This will remove ALL k0rdent resources in the following order:"
     echo "  1. Uninstall k0rdent from cluster"
     echo "  2. Remove k0s cluster"
-    echo "  3. Disconnect WireGuard VPN"
-    echo "  4. Laptop WireGuard configuration"
-    echo "  5. Azure VMs and network resources"
-    echo "  6. Deployment preparation files (keys & cloud-init)"
-    echo "  7. Logs directory"
+    echo "  3. Disconnect and reset WireGuard VPN"
+    echo "  4. Azure VMs and network resources"
+    echo "  5. Deployment preparation files (keys & cloud-init)"
+    echo "  6. Logs directory"
     echo ""
 
     if [[ "$SKIP_PROMPTS" == "false" ]]; then
@@ -154,39 +153,28 @@ run_full_reset() {
         print_info "Step 2: No k0s cluster to remove"
     fi
 
-    # Step 3: Disconnect WireGuard VPN if connected
-    WG_PATH=$(get_wg_path)
-    WG_QUICK_PATH=$(get_wg_quick_path)
-    if sudo "$WG_PATH" show k0rdent-laptop &>/dev/null; then
-        print_header "Step 3: Disconnecting WireGuard VPN"
-        sudo "$WG_QUICK_PATH" down k0rdent-laptop || true
-        print_success "WireGuard VPN disconnected"
-    else
-        print_info "Step 3: WireGuard VPN not connected"
-    fi
-
-    # Step 4: Reset laptop WireGuard configuration
+    # Step 3: Disconnect and reset WireGuard VPN
     if [[ -d "./laptop-wg-config" ]]; then
-        print_header "Step 4: Removing Laptop WireGuard Configuration"
+        print_header "Step 3: Disconnecting and Resetting WireGuard VPN"
         bash bin/manage-vpn.sh reset $DEPLOY_FLAGS
     else
-        print_info "Step 4: No laptop WireGuard configuration to remove"
+        print_info "Step 3: No WireGuard VPN configuration to remove"
     fi
 
-    # Step 5: Reset Azure resources (VMs and network)
+    # Step 4: Reset Azure resources (VMs and network)
     if [[ -f "$AZURE_MANIFEST" ]] || check_resource_group_exists "$RG"; then
-        print_header "Step 5: Removing Azure Resources"
+        print_header "Step 4: Removing Azure Resources"
         bash bin/setup-azure-network.sh reset $DEPLOY_FLAGS
     else
-        print_info "Step 5: No Azure resources to remove"
+        print_info "Step 4: No Azure resources to remove"
     fi
 
-    # Step 6: Reset deployment preparation (keys and cloud-init)
+    # Step 5: Reset deployment preparation (keys and cloud-init)
     if [[ -d "$CLOUDINITS" ]] || [[ -d "$KEYDIR" ]]; then
-        print_header "Step 6: Removing Deployment Preparation Files"
+        print_header "Step 5: Removing Deployment Preparation Files"
         bash bin/prepare-deployment.sh reset $DEPLOY_FLAGS
     else
-        print_info "Step 6: No deployment preparation files to remove"
+        print_info "Step 5: No deployment preparation files to remove"
     fi
 
     # Clean up project suffix file (only when using deploy-k0rdent.sh reset)
@@ -195,13 +183,13 @@ run_full_reset() {
         rm -f "$SUFFIX_FILE"
     fi
 
-    # Step 7: Clean up logs directory
+    # Step 6: Clean up logs directory
     if [[ -d "./logs" ]]; then
-        print_header "Step 7: Removing Logs Directory"
+        print_header "Step 6: Removing Logs Directory"
         rm -rf ./logs
         print_success "Logs directory removed"
     else
-        print_info "Step 7: No logs directory to remove"
+        print_info "Step 6: No logs directory to remove"
     fi
 
     print_header "Reset Complete"

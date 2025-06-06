@@ -15,27 +15,30 @@ source ./etc/common-functions.sh
 # Get WireGuard quick path once for the entire script
 WG_QUICK_PATH=$(get_wg_quick_path)
 
+# Setup completion tracking
+SETUP_COMPLETE_FILE="$WG_CONFIG_DIR/.setup-complete"
+
 # Script-specific functions
 show_usage() {
     print_usage "$0" \
-        "  generate     Generate laptop WireGuard configuration
-  setup        Alias for generate (setup VPN without connecting)
-  connect      Connect to WireGuard VPN
+        "  setup        Generate and setup VPN configuration (one-time)
+  connect      Connect to WireGuard VPN (fast, repeatable)
   disconnect   Safely disconnect WireGuard VPN
   test         Test WireGuard connectivity
   status       Show comprehensive VPN status
   cleanup      Clean up orphaned interfaces (macOS)
   reset        Remove configurations and disconnect
+  generate     Alias for setup (backwards compatibility)
   help         Show this help message" \
         "  -y, --yes        Skip confirmation prompts
   --no-wait        Skip waiting for resources/connections
   -h, --help       Show help message" \
-        "  $0 generate          # Generate WireGuard config
+        "  $0 setup             # One-time VPN setup
   $0 connect           # Connect to VPN (interactive)
   $0 connect -y        # Connect to VPN (automated)
+  $0 disconnect        # Disconnect from VPN
   $0 status            # Show full VPN status
   $0 test              # Test connectivity only
-  $0 disconnect        # Safely disconnect
   $0 cleanup           # Clean up orphaned interfaces
   $0 reset -y          # Remove all config and disconnect"
 }
@@ -116,6 +119,27 @@ show_comprehensive_status() {
     return 0
 }
 
+# Check if setup is complete
+check_setup_complete() {
+    [[ -f "$SETUP_COMPLETE_FILE" ]]
+}
+
+# Get setup method (gui or cli)
+get_setup_method() {
+    if [[ -f "$SETUP_COMPLETE_FILE" ]]; then
+        cat "$SETUP_COMPLETE_FILE"
+    else
+        echo ""
+    fi
+}
+
+# Mark setup as complete
+mark_setup_complete() {
+    local method="$1"
+    ensure_directory "$WG_CONFIG_DIR"
+    echo "$method" > "$SETUP_COMPLETE_FILE"
+}
+
 # Enhanced prerequisite validation using generic framework
 validate_full_prerequisites() {
     if ! check_prerequisites "manage-vpn" \
@@ -132,8 +156,71 @@ validate_full_prerequisites() {
     return 0
 }
 
-# Configuration generation (from generate-laptop-wg-config.sh)
-generate_laptop_config() {
+# One-time VPN setup (combines config generation and setup)
+setup_vpn() {
+    print_header "Setting Up WireGuard VPN (One-Time Setup)"
+    
+    # Check if already set up
+    if check_setup_complete; then
+        local method=$(get_setup_method)
+        print_info "VPN setup already complete using method: $method"
+        print_info "Configuration file: $WG_CONFIG_FILE"
+        
+        if [[ "$SKIP_PROMPTS" == "false" ]]; then
+            read -p "Do you want to regenerate the setup? (yes/no): " -r
+            if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+                print_info "Setup unchanged. Use '$0 connect' to connect."
+                return 0
+            fi
+        fi
+    fi
+    
+    # Generate configuration first
+    generate_laptop_config_internal
+    
+    # Now setup the connection method
+    if [[ "$SKIP_PROMPTS" == "true" ]]; then
+        # Non-interactive mode: CLI setup only
+        print_info "Non-interactive mode: Setting up CLI connection..."
+        setup_wireguard_cli_for_setup
+        mark_setup_complete "cli"
+        print_success "VPN setup complete! Use '$0 connect' to connect."
+    else
+        # Interactive mode: ask user preference
+        echo
+        print_info "Choose setup method:"
+        echo "  1. CLI (command line with wg-quick)"
+        echo "  2. GUI (import config file into WireGuard app)"
+        echo
+        
+        while true; do
+            read -p "Enter choice (1 or 2): " -r choice
+            case $choice in
+                1)
+                    setup_wireguard_cli_for_setup
+                    mark_setup_complete "cli"
+                    print_success "CLI setup complete! Use '$0 connect' to connect."
+                    break
+                    ;;
+                2)
+                    setup_wireguard_gui
+                    mark_setup_complete "gui"
+                    print_success "GUI setup complete! Activate tunnel in WireGuard app."
+                    print_info "To connect via CLI instead, use '$0 connect'."
+                    break
+                    ;;
+                *)
+                    print_error "Invalid choice. Please enter 1 or 2."
+                    ;;
+            esac
+        done
+    fi
+    
+    return 0
+}
+
+# Configuration generation (internal function, from generate-laptop-wg-config.sh)
+generate_laptop_config_internal() {
     print_header "Generating Laptop WireGuard Configuration"
     
     # Enhanced prerequisite validation
@@ -275,6 +362,11 @@ EOF
     return 0
 }
 
+# Generate laptop config (backwards compatibility)
+generate_laptop_config() {
+    setup_vpn
+}
+
 # WireGuard connection setup (from connect-laptop-wireguard.sh)
 validate_connection_prerequisites() {
     # Check if configuration file exists
@@ -318,7 +410,14 @@ setup_wireguard_gui() {
     return 0
 }
 
-# CLI-based WireGuard setup
+# CLI setup for initial setup (doesn't start connection)
+setup_wireguard_cli_for_setup() {
+    print_info "CLI setup complete. Configuration ready for connection."
+    print_info "Configuration file: $WG_CONFIG_FILE"
+    return 0
+}
+
+# CLI-based WireGuard setup (for immediate connection)
 setup_wireguard_cli() {
     local interface_name=$(basename "$WG_CONFIG_FILE" .conf)
     
@@ -507,50 +606,34 @@ test_wireguard_connectivity() {
     fi
 }
 
-# Main connection function
+# Main connection function (fast, for repeat connections)
 connect_wireguard() {
     print_header "Connecting to WireGuard VPN"
+    
+    # Check if setup is complete
+    if ! check_setup_complete; then
+        print_error "VPN setup not complete. Run '$0 setup' first."
+        exit 1
+    fi
     
     # Validate prerequisites
     validate_connection_prerequisites
     
-    # Determine connection method
-    if [[ "$SKIP_PROMPTS" == "true" ]]; then
-        # Non-interactive mode: use CLI
-        print_info "Using CLI connection method (non-interactive mode)..."
-        if setup_wireguard_cli; then
-            verify_and_show_connection_info
-        else
-            return 1
-        fi
+    local setup_method=$(get_setup_method)
+    
+    if [[ "$setup_method" == "gui" ]]; then
+        print_info "VPN was set up for GUI use."
+        print_info "Please activate the tunnel in your WireGuard application."
+        print_info "Or run '$0 setup' to switch to CLI mode."
+        return 0
+    fi
+    
+    # CLI connection (fast path)
+    print_info "Connecting via CLI (fast connection)..."
+    if setup_wireguard_cli; then
+        verify_and_show_connection_info
     else
-        # Interactive mode: ask user preference
-        echo
-        print_info "Choose connection method:"
-        echo "  1. CLI (command line with wg-quick)"
-        echo "  2. GUI (import config file into WireGuard app)"
-        echo
-        
-        while true; do
-            read -p "Enter choice (1 or 2): " -r choice
-            case $choice in
-                1)
-                    if setup_wireguard_cli; then
-                        verify_and_show_connection_info
-                    else
-                        return 1
-                    fi
-                    break
-                    ;;
-                2)
-                    setup_wireguard_gui
-                    break
-                    ;;
-                *)
-                    print_error "Invalid choice. Please enter 1 or 2."
-                    ;;
-            esac
-        done
+        return 1
     fi
     
     return 0
@@ -660,7 +743,7 @@ reset_and_cleanup() {
         
         print_info "Removing WireGuard configuration directory: $WG_CONFIG_DIR"
         rm -rf "$WG_CONFIG_DIR"
-        print_success "WireGuard configuration removed."
+        print_success "WireGuard configuration and setup state removed."
     else
         print_info "No WireGuard configuration directory found."
     fi
@@ -674,13 +757,14 @@ reset_and_cleanup() {
 ORIGINAL_ARGS=("$@")
 
 # Use consolidated command handling
-handle_standard_commands "$0" "generate setup connect disconnect test status cleanup reset help" \
-    "generate" "generate_laptop_config" \
-    "setup" "generate_laptop_config" \
+handle_standard_commands "$0" "setup connect disconnect test status cleanup reset generate help" \
+    "setup" "setup_vpn" \
     "connect" "connect_wireguard" \
     "disconnect" "disconnect_wireguard" \
     "test" "test_connectivity" \
     "status" "show_comprehensive_status" \
     "cleanup" "cleanup_orphaned_interfaces" \
     "reset" "reset_and_cleanup" \
+    "generate" "generate_laptop_config" \
+    "help" "show_usage" \
     "usage" "show_usage"
