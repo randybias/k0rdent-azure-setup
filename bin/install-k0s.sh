@@ -34,6 +34,13 @@ show_usage() {
 
 uninstall_k0s() {
     print_info "Resetting k0s cluster..."
+    
+    # Check VPN connectivity for cluster operations
+    if ! check_vpn_connectivity; then
+        print_error "VPN connectivity required for cluster operations. Skipping k0s uninstall."
+        print_info "Connect to VPN first: ./bin/manage-vpn.sh connect"
+        return 1
+    fi
 
     if [[ -f "$K0SCTL_FILE" ]]; then
         print_info "Running k0sctl reset to destroy cluster..."
@@ -59,12 +66,6 @@ print_header "k0s Cluster Installation"
 # Validate prerequisites
 print_info "Validating prerequisites..."
 
-# Check for k0sctl
-if ! command -v k0sctl &> /dev/null; then
-    print_error "k0sctl is not installed. Please install it first."
-    echo "Visit: https://docs.k0sproject.io/stable/k0sctl-install/"
-    exit 1
-fi
 
 if ! check_file_exists "$WG_MANIFEST" "WireGuard key manifest"; then
     print_error "WireGuard keys not found. Run: ./generate-wg-keys.sh"

@@ -66,6 +66,70 @@ check_wireguard_tools() {
         echo "On macOS: brew install wireguard-tools"
         exit 1
     fi
+    print_success "WireGuard tools are installed"
+}
+
+# Check k0sctl installation
+check_k0sctl() {
+    if ! command -v k0sctl &> /dev/null; then
+        print_error "k0sctl is not installed. Please install it first."
+        echo "Visit: https://docs.k0sproject.io/stable/k0sctl-install/"
+        echo "Or install via:"
+        echo "  # macOS:"
+        echo "  brew install k0sproject/tap/k0sctl"
+        echo "  # Linux:"
+        echo "  curl -sSLf https://get.k0s.sh | sudo sh"
+        exit 1
+    fi
+    print_success "k0sctl is installed"
+}
+
+# Check netcat installation
+check_netcat() {
+    if ! command -v nc &> /dev/null; then
+        print_error "netcat (nc) not found. Please install netcat first:"
+        echo "  # macOS:"
+        echo "  brew install netcat"
+        echo "  # Ubuntu/Debian:"
+        echo "  sudo apt install netcat-openbsd"
+        echo "  # CentOS/RHEL:"
+        echo "  sudo yum install nmap-ncat"
+        exit 1
+    fi
+    print_success "netcat is installed"
+}
+
+# Check VPN connectivity for cluster operations
+check_vpn_connectivity() {
+    print_header "Verifying VPN Connectivity"
+    
+    # Check if VPN configuration exists
+    if [[ ! -d "./laptop-wg-config" ]]; then
+        print_warning "No VPN configuration found. Cluster operations may fail."
+        return 1
+    fi
+    
+    # Test VPN connectivity to at least one VM
+    print_info "Testing VPN connectivity to cluster nodes..."
+    local connected_count=0
+    
+    for HOST in "${VM_HOSTS[@]}"; do
+        local VM_IP="${WG_IPS[$HOST]}"
+        if ping -c 1 -W 2000 "$VM_IP" &>/dev/null; then
+            print_success "✓ $HOST ($VM_IP) reachable via VPN"
+            ((connected_count++))
+            break  # Only need one working connection
+        fi
+    done
+    
+    if [[ $connected_count -gt 0 ]]; then
+        print_success "VPN connectivity verified"
+        return 0
+    else
+        print_error "No VMs reachable via VPN"
+        print_info "Ensure WireGuard VPN is connected before cluster operations"
+        return 1
+    fi
 }
 
 # Detect orphaned WireGuard interfaces on macOS

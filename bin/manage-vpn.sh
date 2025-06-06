@@ -147,11 +147,6 @@ validate_full_prerequisites() {
         return 1
     fi
     
-    # Check netcat for connectivity testing (optional)
-    if ! command -v nc &> /dev/null; then
-        print_warning "netcat (nc) not found. Connectivity testing will be limited."
-        print_info "Install with: brew install netcat (macOS) or apt install netcat (Linux)"
-    fi
     
     return 0
 }
