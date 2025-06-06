@@ -81,6 +81,19 @@ fi
 
 print_success "Prerequisites validated"
 
+# Build controller and worker node arrays from VM configuration
+CONTROLLER_NODES=()
+WORKER_NODES=()
+for i in "${!VM_HOSTS[@]}"; do
+    host="${VM_HOSTS[$i]}"
+    type="${VM_TYPES[$i]}"
+    if [[ "$type" == "controller" ]]; then
+        CONTROLLER_NODES+=("$host")
+    elif [[ "$type" == "worker" ]]; then
+        WORKER_NODES+=("$host")
+    fi
+done
+
 # Create output directory
 ensure_directory "$K0SCTL_DIR"
 
