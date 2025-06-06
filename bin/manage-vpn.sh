@@ -390,10 +390,6 @@ verify_and_show_connection_info() {
     
     print_header "Verifying WireGuard Connection"
     
-    # DEBUG: Show what we're checking
-    print_info "DEBUG: Interface name to check: $interface_name"
-    print_info "DEBUG: Config file: $WG_CONFIG_FILE"
-    
     # Verify interface is active
     local interface_active=false
     
@@ -401,13 +397,8 @@ verify_and_show_connection_info() {
         local wg_run_dir="/var/run/wireguard"
         local name_file="$wg_run_dir/${interface_name}.name"
         
-        print_info "DEBUG: Looking for name file: $name_file"
-        print_info "DEBUG: Name file exists: $(if [[ -f "$name_file" ]]; then echo "YES"; else echo "NO"; fi)"
-        
         if [[ -f "$name_file" ]]; then
             local utun_name=$(sudo cat "$name_file" 2>/dev/null)
-            print_info "DEBUG: utun name from file: '$utun_name'"
-            print_info "DEBUG: ifconfig check: $(if ifconfig "$utun_name" &>/dev/null; then echo "SUCCESS"; else echo "FAILED"; fi)"
             
             if [[ -n "$utun_name" ]] && ifconfig "$utun_name" &>/dev/null; then
                 interface_active=true
@@ -418,13 +409,6 @@ verify_and_show_connection_info() {
                 if [[ -n "$laptop_ip" ]]; then
                     print_info "Laptop IP in VPN: $laptop_ip"
                 fi
-            fi
-        else
-            print_info "DEBUG: Checking what files exist in $wg_run_dir:"
-            if [[ -d "$wg_run_dir" ]]; then
-                ls -la "$wg_run_dir/" || print_info "DEBUG: Cannot list directory"
-            else
-                print_info "DEBUG: Directory $wg_run_dir does not exist"
             fi
         fi
     else
@@ -439,10 +423,6 @@ verify_and_show_connection_info() {
             fi
         fi
     fi
-    
-    # DEBUG: Show what wg show outputs regardless
-    print_info "DEBUG: Output of 'sudo wg show':"
-    sudo wg show 2>&1 | sed 's/^/DEBUG: /' || print_info "DEBUG: wg show failed"
     
     if [[ "$interface_active" == "false" ]]; then
         print_error "WireGuard interface is not active"
