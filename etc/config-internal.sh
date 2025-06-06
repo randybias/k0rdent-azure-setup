@@ -42,7 +42,7 @@ SSH_KEY_NAME="${K0RDENT_PREFIX}-admin"
 
 # Directory paths
 MANIFEST_DIR="./azure-resources"
-WG_KEYDIR="./wg-keys"
+WG_KEYDIR="./wireguard"
 CLOUD_INIT_DIR="./cloud-init-yaml"
 
 # ---- Generate VM Definitions ----

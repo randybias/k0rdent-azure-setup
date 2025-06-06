@@ -32,101 +32,67 @@ show_usage() {
 }
 
 show_status() {
-    print_header "Deployment Preparation Status"
-    
-    # WireGuard Keys Status
-    echo
-    print_info "=== WireGuard Keys ==="
-    
-    if [[ ! -d "$KEYDIR" ]]; then
-        print_error "Key directory does not exist: $KEYDIR"
-        print_info "No keys have been generated yet."
-    elif [[ ! -f "$WG_MANIFEST" ]]; then
-        print_error "Manifest file does not exist: $WG_MANIFEST"
-        print_info "Keys may be incomplete or corrupted."
-    else
-        # Count keys
-        local key_count=$(find "$KEYDIR" -name "*_privkey" | wc -l)
-        local expected_count=${#WG_IPS[@]}
-        
-        print_success "Key directory: $KEYDIR"
-        print_success "Manifest file: $WG_MANIFEST"
-        print_info "Keys generated: $key_count of $expected_count expected"
-        
-        # Show which hosts have keys
-        if [[ "$VERBOSE_MODE" == "true" ]]; then
-            echo ""
-            echo "Host Key Status:"
-            for HOST in "${!WG_IPS[@]}"; do
-                PRIV_FILE="$KEYDIR/${HOST}_privkey"
-                PUB_FILE="$KEYDIR/${HOST}_pubkey"
-                
-                if [[ -f "$PRIV_FILE" && -f "$PUB_FILE" ]]; then
-                    print_success "  $HOST: Keys exist"
-                else
-                    print_error "  $HOST: Keys missing"
-                fi
-            done
-        fi
+    # Count keys and files for status display
+    local key_count=0
+    local expected_key_count=${#WG_IPS[@]}
+    if [[ -d "$KEYDIR" ]]; then
+        key_count=$(find "$KEYDIR" -name "*_privkey" 2>/dev/null | wc -l)
     fi
     
-    # Cloud-Init Files Status
-    echo
-    print_info "=== Cloud-Init Files ==="
-    
-    if [[ ! -d "$CLOUDINITS" ]]; then
-        print_error "Cloud-init directory does not exist: $CLOUDINITS"
-        print_info "No cloud-init files have been generated yet."
-    else
-        # Count files
-        local file_count=$(find "$CLOUDINITS" -name "*-cloud-init.yaml" | wc -l)
-        local expected_count=${#VM_HOSTS[@]}
-        
-        print_success "Cloud-init directory: $CLOUDINITS"
-        print_info "Files generated: $file_count of $expected_count expected"
-        
-        # Check WireGuard port
-        if [[ -f "$WG_PORT_FILE" ]]; then
-            local port=$(cat "$WG_PORT_FILE")
-            print_info "WireGuard port configured: $port"
-        else
-            print_error "WireGuard port file missing: $WG_PORT_FILE"
-        fi
-        
-        # Show which hosts have cloud-init files
-        if [[ "$VERBOSE_MODE" == "true" ]]; then
-            echo ""
-            echo "Host Cloud-Init Status:"
-            for HOST in "${VM_HOSTS[@]}"; do
-                CLOUDINIT="$CLOUDINITS/${HOST}-cloud-init.yaml"
-                
-                if [[ -f "$CLOUDINIT" ]]; then
-                    print_success "  $HOST: Cloud-init file exists"
-                else
-                    print_error "  $HOST: Cloud-init file missing"
-                fi
-            done
-        fi
+    local file_count=0
+    local expected_file_count=${#VM_HOSTS[@]}
+    if [[ -d "$CLOUDINITS" ]]; then
+        file_count=$(find "$CLOUDINITS" -name "*-cloud-init.yaml" 2>/dev/null | wc -l)
     fi
     
-    # Dependencies Check
-    echo
-    print_info "=== Dependencies ==="
-    
-    # Check WireGuard tools
-    if command -v wg &> /dev/null && command -v wg-quick &> /dev/null; then
-        print_success "WireGuard tools available"
-    else
-        print_error "WireGuard tools missing"
-    fi
-    
-    # Check WireGuard port
+    local port_info=""
     if [[ -f "$WG_PORT_FILE" ]]; then
-        local port=$(cat "$WG_PORT_FILE")
-        print_success "WireGuard port configured: $port"
-    else
-        print_error "WireGuard port not configured"
-        print_info "Will be generated when running: $0 keys"
+        port_info=$(cat "$WG_PORT_FILE")
+    fi
+    
+    # Use generic status display framework
+    display_status "Deployment Preparation Status" \
+        "dir:$KEYDIR:WireGuard key directory" \
+        "file:$WG_MANIFEST:WireGuard manifest file" \
+        "count:$key_count=$expected_key_count:WireGuard keys" \
+        "dir:$CLOUDINITS:Cloud-init directory" \
+        "count:$file_count=$expected_file_count:Cloud-init files" \
+        "file:$WG_PORT_FILE:WireGuard port file" \
+        ${port_info:+"info:$port_info:WireGuard port configured"}
+    
+    # Show detailed host status if verbose
+    if [[ "$VERBOSE_MODE" == "true" ]]; then
+        echo
+        print_info "=== Host Key Status ==="
+        for HOST in "${!WG_IPS[@]}"; do
+            PRIV_FILE="$KEYDIR/${HOST}_privkey"
+            PUB_FILE="$KEYDIR/${HOST}_pubkey"
+            
+            if [[ -f "$PRIV_FILE" && -f "$PUB_FILE" ]]; then
+                print_success "  $HOST: Keys exist"
+            else
+                print_error "  $HOST: Keys missing"
+            fi
+        done
+        
+        echo
+        print_info "=== Host Cloud-Init Status ==="
+        for HOST in "${VM_HOSTS[@]}"; do
+            CLOUDINIT="$CLOUDINITS/${HOST}-cloud-init.yaml"
+            
+            if [[ -f "$CLOUDINIT" ]]; then
+                print_success "  $HOST: Cloud-init file exists"
+            else
+                print_error "  $HOST: Cloud-init file missing"
+            fi
+        done
+    fi
+    
+    # Check dependencies using generic framework
+    echo
+    if ! check_prerequisites "prepare-deployment" \
+        "wireguard_tools:WireGuard tools not found:Install with: sudo apt install wireguard-tools"; then
+        print_warning "Some dependencies are missing but preparation can continue"
     fi
 }
 
@@ -155,7 +121,6 @@ generate_wireguard_keys() {
     echo "hostname,wireguard_ip,private_key,public_key" > "$WG_MANIFEST"
     
     # Generate WireGuard port if it doesn't exist
-    ensure_directory "$MANIFEST_DIR"
     if [[ ! -f "$WG_PORT_FILE" ]]; then
         WIREGUARD_PORT=$((RANDOM % 34001 + 30000))
         echo "$WIREGUARD_PORT" > "$WG_PORT_FILE"
@@ -373,20 +338,15 @@ reset_preparation() {
         fi
     fi
     
-    # Remove directories and files
+    # Remove directories
     if [[ -d "$KEYDIR" ]]; then
-        print_info "Removing WireGuard keys directory: $KEYDIR"
+        print_info "Removing WireGuard directory: $KEYDIR"
         rm -rf "$KEYDIR"
     fi
     
     if [[ -d "$CLOUDINITS" ]]; then
         print_info "Removing cloud-init files directory: $CLOUDINITS"
         rm -rf "$CLOUDINITS"
-    fi
-    
-    if [[ -f "$WG_PORT_FILE" ]]; then
-        print_info "Removing WireGuard port file: $WG_PORT_FILE"
-        rm -f "$WG_PORT_FILE"
     fi
     
     print_success "Deployment preparation files removed"

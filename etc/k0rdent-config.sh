@@ -36,7 +36,7 @@ CLOUDINITS="$CLOUD_INIT_DIR"
 # File paths
 WG_MANIFEST="$KEYDIR/wg-key-manifest.csv"
 AZURE_MANIFEST="$MANIFEST_DIR/azure-resource-manifest.csv"
-WG_PORT_FILE="$MANIFEST_DIR/wireguard-port.txt"
+WG_PORT_FILE="$WG_KEYDIR/wireguard-port.txt"
 
 # WireGuard laptop configuration
 WG_CONFIG_DIR="./laptop-wg-config"

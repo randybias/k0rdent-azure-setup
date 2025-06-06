@@ -34,39 +34,53 @@ show_usage() {
 }
 
 show_status() {
-    print_header "Azure Network Resources Status"
-    
-    # Check manifest
-    if [[ ! -f "$AZURE_MANIFEST" ]]; then
-        print_info "Manifest file does not exist: $AZURE_MANIFEST"
-        print_info "No Azure resources have been created yet."
-        return
+    # Prepare status information
+    local SSH_PRIVATE_KEY="$MANIFEST_DIR/${K0RDENT_PREFIX}-ssh-key"
+    local SSH_PUBLIC_KEY="$SSH_PRIVATE_KEY.pub"
+    local port_info=""
+    if [[ -f "$WG_PORT_FILE" ]]; then
+        port_info=$(cat "$WG_PORT_FILE")
     fi
     
-    print_info "Manifest file: $AZURE_MANIFEST"
+    local resource_count=0
+    if [[ -f "$AZURE_MANIFEST" ]]; then
+        resource_count=$(tail -n +2 "$AZURE_MANIFEST" 2>/dev/null | wc -l)
+    fi
     
-    # Check resource group
-    if check_azure_resource_exists "group" "$RG"; then
-        print_success "Resource group exists: $RG"
+    # Use generic status display framework
+    display_status "Azure Network Resources Status" \
+        "file:$AZURE_MANIFEST:Azure manifest file" \
+        "info:$resource_count:Total Azure resources" \
+        "file:$SSH_PRIVATE_KEY:SSH private key" \
+        "file:$SSH_PUBLIC_KEY:SSH public key" \
+        "file:$WG_PORT_FILE:WireGuard port file" \
+        ${port_info:+"info:$port_info:WireGuard port configured"}
+    
+    # Check Azure resources if manifest exists
+    if [[ -f "$AZURE_MANIFEST" ]] && check_resource_group_exists "$RG"; then
+        echo
+        print_info "=== Azure Resource Details ==="
         
-        # Show resource details
-        print_info_verbose "Fetching resource details..."
+        # Check specific Azure resources
+        if check_azure_resource_exists "group" "$RG"; then
+            print_success "Resource group: $RG"
+        else
+            print_error "Resource group missing: $RG"
+        fi
         
-        # VNet status
         if check_azure_resource_exists "vnet" "$VNET_NAME" "$RG"; then
-            print_success "Virtual Network exists: $VNET_NAME ($VNET_PREFIX)"
+            print_success "Virtual Network: $VNET_NAME ($VNET_PREFIX)"
         else
             print_error "Virtual Network missing: $VNET_NAME"
         fi
         
-        # NSG status
         if check_azure_resource_exists "nsg" "$NSG_NAME" "$RG"; then
-            print_success "Network Security Group exists: $NSG_NAME"
+            print_success "Network Security Group: $NSG_NAME"
             
             # Show NSG rules if verbose
             if [[ "$VERBOSE_MODE" == "true" ]]; then
-                echo ""
-                echo "NSG Rules:"
+                echo
+                print_info "NSG Rules:"
                 az network nsg rule list --resource-group "$RG" --nsg-name "$NSG_NAME" \
                     --query "[].{Name:name, Port:destinationPortRange, Protocol:protocol, Priority:priority}" \
                     --output table
@@ -75,51 +89,23 @@ show_status() {
             print_error "Network Security Group missing: $NSG_NAME"
         fi
         
-        # SSH key status
         if check_azure_resource_exists "sshkey" "$SSH_KEY_NAME" "$RG"; then
-            print_success "SSH key exists in Azure: $SSH_KEY_NAME"
+            print_success "SSH key in Azure: $SSH_KEY_NAME"
         else
             print_error "SSH key missing in Azure: $SSH_KEY_NAME"
         fi
-        
-        # Local SSH key status
-        SSH_PRIVATE_KEY="$MANIFEST_DIR/${K0RDENT_PREFIX}-ssh-key"
-        SSH_PUBLIC_KEY="$SSH_PRIVATE_KEY.pub"
-        if check_local_ssh_key_exists "$SSH_PRIVATE_KEY" "$SSH_PUBLIC_KEY"; then
-            print_success "Local SSH keys exist"
-        else
-            print_error "Local SSH keys missing"
-        fi
-        
-        # WireGuard port
-        if [[ -f "$WG_PORT_FILE" ]]; then
-            local port=$(cat "$WG_PORT_FILE")
-            print_info "WireGuard port: $port"
-        else
-            print_warning "WireGuard port file missing"
-        fi
-        
-    else
-        print_error "Resource group does not exist: $RG"
-        print_info "Resources may have been deleted but manifest still exists."
-    fi
-    
-    # Resource count from manifest
-    if [[ -f "$AZURE_MANIFEST" ]]; then
-        echo ""
-        local count=$(tail -n +2 "$AZURE_MANIFEST" | wc -l)
-        print_info "Total resources in manifest: $count"
+    elif [[ -f "$AZURE_MANIFEST" ]]; then
+        echo
+        print_warning "Manifest exists but resource group '$RG' not found"
+        print_info "Resources may have been deleted externally"
     fi
 }
 
 deploy_resources() {
-    # Check Azure CLI prerequisites
-    check_azure_cli
-    
-    # Check for WireGuard port file
-    if ! check_file_exists "$WG_PORT_FILE" "WireGuard port file"; then
-        print_error "WireGuard port file not found. Run deployment preparation first."
-        print_info "Run: bash bin/prepare-deployment.sh deploy"
+    # Check prerequisites using generic framework
+    if ! check_prerequisites "setup-azure-network" \
+        "azure_cli:Azure CLI not available or not logged in:Run 'az login'" \
+        "file:$WG_PORT_FILE:WireGuard port file not found:Run: bash bin/prepare-deployment.sh deploy"; then
         exit 1
     fi
     
