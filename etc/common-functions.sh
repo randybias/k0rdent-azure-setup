@@ -794,6 +794,465 @@ log_azure_command() {
     log_command "$description" "$@"
 }
 
+# ---- Unified Command Handling Framework ----
+
+# Handle standard script commands with consistent behavior
+# Parameters:
+#   $1 - Script name (usually $0)
+#   $2 - Space-separated list of supported commands
+#   $3+ - Pairs of command_name function_name mappings
+# Usage:
+#   handle_standard_commands "$0" "deploy reset status help" \
+#       "deploy" "deploy_function" \
+#       "reset" "reset_function" \
+#       "status" "show_status" \
+#       "usage" "show_usage"
+handle_standard_commands() {
+    local script_name="$1"
+    local supported_commands="$2"
+    shift 2
+    
+    # Build command-to-function mapping
+    declare -A command_functions=()
+    while [[ $# -gt 0 ]]; do
+        command_functions["$1"]="$2"
+        shift 2
+    done
+    
+    # Parse standard arguments (assumes ORIGINAL_ARGS is available)
+    if [[ -n "${ORIGINAL_ARGS[*]:-}" ]]; then
+        PARSED_ARGS=$(parse_standard_args "${ORIGINAL_ARGS[@]}")
+    else
+        PARSED_ARGS=$(parse_standard_args "$@")
+    fi
+    eval "$PARSED_ARGS"
+    
+    # Get command from positional arguments
+    local command="${POSITIONAL_ARGS[0]:-}"
+    
+    # Handle help request
+    if [[ "$SHOW_HELP" == "true" ]] || [[ "$command" == "help" ]]; then
+        if [[ -n "${command_functions[usage]:-}" ]]; then
+            ${command_functions["usage"]}
+        else
+            print_error "No usage function defined for script: $script_name"
+        fi
+        exit 0
+    fi
+    
+    # Validate command
+    if [[ -z "$command" ]]; then
+        print_error "No command specified"
+        if [[ -n "${command_functions[usage]:-}" ]]; then
+            ${command_functions["usage"]}
+        fi
+        exit 1
+    fi
+    
+    if [[ ! " $supported_commands " =~ " $command " ]]; then
+        print_error "Invalid command: $command"
+        print_info "Supported commands: $supported_commands"
+        if [[ -n "${command_functions[usage]:-}" ]]; then
+            ${command_functions["usage"]}
+        fi
+        exit 1
+    fi
+    
+    # Execute command function
+    if [[ -n "${command_functions[$command]:-}" ]]; then
+        ${command_functions["$command"]}
+    else
+        print_error "No function defined for command: $command"
+        exit 1
+    fi
+}
+
+# ---- SSH Execution Framework ----
+
+# Execute SSH command with standard options and error handling
+# Parameters:
+#   $1 - Host (hostname or IP)
+#   $2 - Command to execute
+#   $3 - Description (optional, for logging)
+#   $4 - Timeout in seconds (optional, default 30)
+#   $5 - SSH key path (optional, uses SSH_PRIVATE_KEY if not provided)
+#   $6 - Admin user (optional, uses ADMIN_USER if not provided)
+# Returns: Exit code from SSH command
+execute_remote_command() {
+    local host="$1"
+    local command="$2"
+    local description="${3:-Remote command}"
+    local timeout="${4:-30}"
+    local ssh_key="${5:-${SSH_PRIVATE_KEY:-}}"
+    local admin_user="${6:-${ADMIN_USER:-k0rdent}}"
+    
+    # Validate parameters
+    if [[ -z "$host" ]]; then
+        print_error "Host parameter required for execute_remote_command"
+        return 1
+    fi
+    
+    if [[ -z "$command" ]]; then
+        print_error "Command parameter required for execute_remote_command"
+        return 1
+    fi
+    
+    if [[ -z "$ssh_key" ]]; then
+        print_error "SSH key not specified and SSH_PRIVATE_KEY not set"
+        return 1
+    fi
+    
+    if [[ ! -f "$ssh_key" ]]; then
+        print_error "SSH key not found: $ssh_key"
+        return 1
+    fi
+    
+    print_info "$description on $host..."
+    
+    # Execute SSH command with standard options
+    if ssh -i "$ssh_key" \
+           -o ConnectTimeout="$timeout" \
+           -o StrictHostKeyChecking=no \
+           -o UserKnownHostsFile=/dev/null \
+           -o LogLevel=ERROR \
+           "$admin_user@$host" \
+           "$command"; then
+        return 0
+    else
+        local exit_code=$?
+        print_error "$description failed on $host (exit code: $exit_code)"
+        return $exit_code
+    fi
+}
+
+# Execute SSH command and capture output
+# Parameters: Same as execute_remote_command
+# Returns: Sets global variable SSH_OUTPUT with command output
+execute_remote_command_with_output() {
+    local host="$1"
+    local command="$2"
+    local description="${3:-Remote command}"
+    local timeout="${4:-30}"
+    local ssh_key="${5:-${SSH_PRIVATE_KEY:-}}"
+    local admin_user="${6:-${ADMIN_USER:-k0rdent}}"
+    
+    # Validate parameters (same as execute_remote_command)
+    if [[ -z "$host" ]] || [[ -z "$command" ]] || [[ -z "$ssh_key" ]] || [[ ! -f "$ssh_key" ]]; then
+        print_error "Invalid parameters for execute_remote_command_with_output"
+        return 1
+    fi
+    
+    print_info "$description on $host..."
+    
+    # Execute and capture output
+    SSH_OUTPUT=$(ssh -i "$ssh_key" \
+                     -o ConnectTimeout="$timeout" \
+                     -o StrictHostKeyChecking=no \
+                     -o UserKnownHostsFile=/dev/null \
+                     -o LogLevel=ERROR \
+                     "$admin_user@$host" \
+                     "$command" 2>&1)
+    
+    local exit_code=$?
+    if [[ $exit_code -eq 0 ]]; then
+        return 0
+    else
+        print_error "$description failed on $host (exit code: $exit_code)"
+        return $exit_code
+    fi
+}
+
+# ---- Azure Operations Framework ----
+
+# Check if Azure resource exists with error handling
+# Parameters:
+#   $1 - Resource type (group, vm, vnet, etc.)
+#   $2 - Resource name
+#   $3 - Resource group (optional for resource group type)
+# Returns: 0 if exists, 1 if not exists, 2 if error
+check_azure_resource_exists() {
+    local resource_type="$1"
+    local resource_name="$2"
+    local resource_group="${3:-}"
+    
+    case "$resource_type" in
+        "group"|"resource-group")
+            az group show --name "$resource_name" >/dev/null 2>&1
+            ;;
+        "vm")
+            if [[ -z "$resource_group" ]]; then
+                print_error "Resource group required for VM existence check"
+                return 2
+            fi
+            az vm show --name "$resource_name" --resource-group "$resource_group" >/dev/null 2>&1
+            ;;
+        "vnet")
+            if [[ -z "$resource_group" ]]; then
+                print_error "Resource group required for VNet existence check"
+                return 2
+            fi
+            az network vnet show --name "$resource_name" --resource-group "$resource_group" >/dev/null 2>&1
+            ;;
+        "nsg")
+            if [[ -z "$resource_group" ]]; then
+                print_error "Resource group required for NSG existence check"
+                return 2
+            fi
+            az network nsg show --name "$resource_name" --resource-group "$resource_group" >/dev/null 2>&1
+            ;;
+        "sshkey")
+            if [[ -z "$resource_group" ]]; then
+                print_error "Resource group required for SSH key existence check"
+                return 2
+            fi
+            az sshkey show --name "$resource_name" --resource-group "$resource_group" >/dev/null 2>&1
+            ;;
+        *)
+            print_error "Unsupported resource type: $resource_type"
+            return 2
+            ;;
+    esac
+}
+
+# Execute Azure CLI command with error handling and logging
+# Parameters:
+#   $1 - Description of the operation
+#   $2+ - Azure CLI command and arguments
+# Returns: Exit code from az command
+execute_azure_command() {
+    local description="$1"
+    shift
+    
+    print_info "$description..."
+    
+    # Log the command if logging is enabled
+    if [[ -n "${CURRENT_LOG_FILE:-}" ]]; then
+        echo "==> Azure Command: $description" >> "$CURRENT_LOG_FILE"
+        echo "Command: az $*" >> "$CURRENT_LOG_FILE"
+        echo "Time: $(date)" >> "$CURRENT_LOG_FILE"
+        echo "---" >> "$CURRENT_LOG_FILE"
+    fi
+    
+    # Execute Azure CLI command
+    if az "$@"; then
+        print_success "$description completed"
+        return 0
+    else
+        local exit_code=$?
+        print_error "$description failed (exit code: $exit_code)"
+        return $exit_code
+    fi
+}
+
+# Wait for Azure operation to complete with status checking
+# Parameters:
+#   $1 - Resource type for status checking
+#   $2 - Resource name
+#   $3 - Resource group (if needed)
+#   $4 - Expected status (optional, default "Succeeded")
+#   $5 - Timeout in seconds (optional, default 300)
+#   $6 - Check interval in seconds (optional, default 30)
+wait_for_azure_operation() {
+    local resource_type="$1"
+    local resource_name="$2"
+    local resource_group="${3:-}"
+    local expected_status="${4:-Succeeded}"
+    local timeout="${5:-300}"
+    local check_interval="${6:-30}"
+    
+    print_info "Waiting for Azure operation to complete: $resource_name"
+    
+    local elapsed_seconds=0
+    while [[ $elapsed_seconds -lt $timeout ]]; do
+        local current_status=""
+        
+        case "$resource_type" in
+            "vm")
+                current_status=$(az vm show --name "$resource_name" --resource-group "$resource_group" \
+                    --query "provisioningState" -o tsv 2>/dev/null || echo "NotFound")
+                ;;
+            "deployment")
+                current_status=$(az deployment group show --name "$resource_name" --resource-group "$resource_group" \
+                    --query "properties.provisioningState" -o tsv 2>/dev/null || echo "NotFound")
+                ;;
+            *)
+                print_error "Unsupported resource type for wait operation: $resource_type"
+                return 1
+                ;;
+        esac
+        
+        if [[ "$current_status" == "$expected_status" ]]; then
+            print_success "Azure operation completed: $resource_name ($current_status)"
+            return 0
+        elif [[ "$current_status" == "Failed" ]]; then
+            print_error "Azure operation failed: $resource_name"
+            return 1
+        fi
+        
+        print_info "Current status: $current_status (elapsed: ${elapsed_seconds}s)"
+        sleep $check_interval
+        elapsed_seconds=$((elapsed_seconds + check_interval))
+    done
+    
+    print_error "Timeout waiting for Azure operation: $resource_name (after ${timeout}s)"
+    return 1
+}
+
+# ---- Resource Verification Framework ----
+
+# Generic resource verification with retry logic
+# Parameters:
+#   $1 - Resource type description
+#   $2 - Check function name
+#   $3 - Timeout in seconds (optional, default 300)
+#   $4 - Check interval in seconds (optional, default 30)
+#   $5+ - Resources to verify
+verify_resources() {
+    local resource_type="$1"
+    local check_function="$2"
+    local timeout="${3:-300}"
+    local interval="${4:-30}"
+    shift 4
+    local resources=("$@")
+    
+    if [[ ${#resources[@]} -eq 0 ]]; then
+        print_error "No resources specified for verification"
+        return 1
+    fi
+    
+    print_header "Verifying $resource_type"
+    
+    local elapsed_seconds=0
+    local all_ready=false
+    
+    while [[ $elapsed_seconds -lt $timeout ]]; do
+        local ready_count=0
+        local total_count=${#resources[@]}
+        
+        for resource in "${resources[@]}"; do
+            if $check_function "$resource"; then
+                ((ready_count++))
+            fi
+        done
+        
+        print_info "Ready: $ready_count/$total_count $resource_type (elapsed: ${elapsed_seconds}s)"
+        
+        if [[ $ready_count -eq $total_count ]]; then
+            all_ready=true
+            break
+        fi
+        
+        if [[ $elapsed_seconds -lt $timeout ]]; then
+            sleep $interval
+            elapsed_seconds=$((elapsed_seconds + interval))
+        fi
+    done
+    
+    if [[ "$all_ready" == "true" ]]; then
+        print_success "All $resource_type verified successfully"
+        return 0
+    else
+        print_error "Timeout verifying $resource_type after $((timeout / 60)) minutes"
+        return 1
+    fi
+}
+
+# ---- Status Display Framework ----
+
+# Generic status display for any resource type
+# Parameters:
+#   $1 - Title for the status section
+#   $2 - Function to check if resource exists
+#   $3 - Function to get resource details
+#   $4+ - Resources to check
+display_resource_status() {
+    local title="$1"
+    local check_exists_func="$2"
+    local get_details_func="$3"
+    shift 3
+    local resources=("$@")
+    
+    print_header "$title Status"
+    
+    if [[ ${#resources[@]} -eq 0 ]]; then
+        print_info "No resources to check"
+        return 0
+    fi
+    
+    for resource in "${resources[@]}"; do
+        if $check_exists_func "$resource"; then
+            if command -v "$get_details_func" >/dev/null 2>&1; then
+                local details
+                details=$($get_details_func "$resource" 2>/dev/null || echo "Details unavailable")
+                print_success "$resource: $details"
+            else
+                print_success "$resource: Available"
+            fi
+        else
+            print_error "$resource: Not found"
+        fi
+    done
+}
+
+# ---- Enhanced Prerequisite Checking ----
+
+# Check for k0sctl tool
+check_k0sctl() {
+    if ! command -v k0sctl &> /dev/null; then
+        print_error "k0sctl is not installed. Please install it first."
+        echo "Visit: https://github.com/k0sproject/k0sctl/releases"
+        return 1
+    fi
+    print_success "k0sctl is installed"
+    return 0
+}
+
+# Check for netcat tool  
+check_netcat() {
+    if ! command -v nc &> /dev/null; then
+        print_error "netcat (nc) is not installed. Please install it first."
+        echo "On Ubuntu/Debian: sudo apt install netcat"
+        echo "On CentOS/RHEL: sudo yum install netcat"
+        echo "On macOS: brew install netcat"
+        return 1
+    fi
+    print_success "netcat is installed"
+    return 0
+}
+
+# Comprehensive prerequisites check
+check_all_prerequisites() {
+    print_header "Checking Prerequisites"
+    
+    local failed=false
+    
+    # Core tools
+    if ! check_azure_cli; then
+        failed=true
+    fi
+    
+    if ! check_wireguard_tools; then
+        failed=true
+    fi
+    
+    # Optional tools (warn but don't fail)
+    if ! check_k0sctl; then
+        print_warning "k0sctl not found - required for k0s cluster installation"
+    fi
+    
+    if ! check_netcat; then
+        print_warning "netcat not found - required for connectivity testing"
+    fi
+    
+    if [[ "$failed" == "true" ]]; then
+        print_error "Some prerequisites are missing"
+        return 1
+    fi
+    
+    print_success "All prerequisites satisfied"
+    return 0
+}
+
 # ---- WireGuard Connectivity Testing ----
 
 # Run detailed WireGuard connectivity test

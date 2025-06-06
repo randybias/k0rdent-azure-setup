@@ -47,21 +47,21 @@ show_status() {
     print_info "Manifest file: $AZURE_MANIFEST"
     
     # Check resource group
-    if check_resource_group_exists "$RG"; then
+    if check_azure_resource_exists "group" "$RG"; then
         print_success "Resource group exists: $RG"
         
         # Show resource details
         print_info_verbose "Fetching resource details..."
         
         # VNet status
-        if az network vnet show --resource-group "$RG" --name "$VNET_NAME" &>/dev/null; then
+        if check_azure_resource_exists "vnet" "$VNET_NAME" "$RG"; then
             print_success "Virtual Network exists: $VNET_NAME ($VNET_PREFIX)"
         else
             print_error "Virtual Network missing: $VNET_NAME"
         fi
         
         # NSG status
-        if az network nsg show --resource-group "$RG" --name "$NSG_NAME" &>/dev/null; then
+        if check_azure_resource_exists "nsg" "$NSG_NAME" "$RG"; then
             print_success "Network Security Group exists: $NSG_NAME"
             
             # Show NSG rules if verbose
@@ -77,7 +77,7 @@ show_status() {
         fi
         
         # SSH key status
-        if check_ssh_key_exists "$SSH_KEY_NAME" "$RG"; then
+        if check_azure_resource_exists "sshkey" "$SSH_KEY_NAME" "$RG"; then
             print_success "SSH key exists in Azure: $SSH_KEY_NAME"
         else
             print_error "SSH key missing in Azure: $SSH_KEY_NAME"
@@ -120,7 +120,7 @@ deploy_resources() {
     # Check if resources already exist
     if [[ -f "$AZURE_MANIFEST" ]]; then
         print_warning "Azure manifest already exists."
-        if check_resource_group_exists "$RG"; then
+        if check_azure_resource_exists "group" "$RG"; then
             print_error "Resource group '$RG' already exists. Use 'reset' to clean up first."
             exit 1
         fi
@@ -253,7 +253,7 @@ uninstall_resources() {
         exit 0
     fi
     
-    if ! check_resource_group_exists "$RG"; then
+    if ! check_azure_resource_exists "group" "$RG"; then
         print_info "Resource group '$RG' does not exist. Nothing to uninstall."
         exit 0
     fi
@@ -274,12 +274,12 @@ uninstall_resources() {
 reset_resources() {
     print_warning "This will delete ALL Azure resources and the manifest!"
     
-    if [[ -f "$AZURE_MANIFEST" ]] && check_resource_group_exists "$RG"; then
+    if [[ -f "$AZURE_MANIFEST" ]] && check_azure_resource_exists "group" "$RG"; then
         print_warning "Resource Group to be deleted: $RG"
     fi
     
     if confirm_action "Are you sure you want to reset everything?"; then
-        if check_resource_group_exists "$RG"; then
+        if check_azure_resource_exists "group" "$RG"; then
             log_azure_command "Deleting resource group: $RG" \
                 az group delete --name "$RG" --yes --no-wait
             print_success "Resource group deletion initiated (running in background)"
@@ -306,51 +306,13 @@ add_resource_to_manifest() {
 # Initialize logging
 init_logging "setup-azure-network"
 
-# Parse command line arguments
-COMMAND="${1:-}"
-shift || true
+# Store original arguments for handle_standard_commands
+ORIGINAL_ARGS=("$@")
 
-# Parse options
-parse_result=0
-parse_common_args "$@" || parse_result=$?
-
-if [[ $parse_result -eq 1 ]]; then
-    # Help was requested
-    show_usage
-    exit 0
-elif [[ $parse_result -eq 2 ]]; then
-    # Unknown option
-    show_usage
-    exit 1
-fi
-
-# Check command support
-SUPPORTED_COMMANDS="deploy uninstall reset status help"
-if [[ -z "$COMMAND" ]]; then
-    show_usage
-    exit 1
-fi
-
-# Handle commands
-case "$COMMAND" in
-    "deploy")
-        deploy_resources
-        ;;
-    "uninstall")
-        uninstall_resources
-        ;;
-    "reset")
-        reset_resources
-        ;;
-    "status")
-        show_status
-        ;;
-    "help")
-        show_usage
-        ;;
-    *)
-        print_error "Unknown command: $COMMAND"
-        show_usage
-        exit 1
-        ;;
-esac
+# Use consolidated command handling
+handle_standard_commands "$0" "deploy uninstall reset status help" \
+    "deploy" "deploy_resources" \
+    "uninstall" "uninstall_resources" \
+    "reset" "reset_resources" \
+    "status" "show_status" \
+    "usage" "show_usage"

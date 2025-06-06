@@ -151,41 +151,12 @@ reset_keys() {
 }
 
 # Main execution
-# Default values
-SKIP_PROMPTS=false
-NO_WAIT=false
+# Store original arguments for handle_standard_commands
+ORIGINAL_ARGS=("$@")
 
-# Parse standard arguments
-PARSED_ARGS=$(parse_standard_args "$@")
-eval "$PARSED_ARGS"
-
-# Get command from positional arguments
-COMMAND="${POSITIONAL_ARGS[0]:-}"
-
-# Check command support
-SUPPORTED_COMMANDS="deploy reset status help"
-if [[ -z "$COMMAND" ]]; then
-    show_usage
-    exit 1
-fi
-
-# Handle commands
-case "$COMMAND" in
-    "deploy")
-        deploy_keys
-        ;;
-    "reset")
-        reset_keys
-        ;;
-    "status")
-        show_status
-        ;;
-    "help")
-        show_usage
-        ;;
-    *)
-        print_error "Unknown command: $COMMAND"
-        show_usage
-        exit 1
-        ;;
-esac
+# Use consolidated command handling
+handle_standard_commands "$0" "deploy reset status help" \
+    "deploy" "deploy_keys" \
+    "reset" "reset_keys" \
+    "status" "show_status" \
+    "usage" "show_usage"

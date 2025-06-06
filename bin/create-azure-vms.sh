@@ -22,7 +22,7 @@ verify_vm_connectivity() {
     print_info_quiet "Retrieving VM public IP addresses..."
     
     for HOST in "${VM_HOSTS[@]}"; do
-        PUBLIC_IP=$(az vm show --resource-group "$RG" --name "$HOST" --show-details --query "publicIps" -o tsv 2>/dev/null || echo "")
+        PUBLIC_IP=$(execute_azure_command "az vm show --resource-group $RG --name $HOST --show-details --query publicIps -o tsv" "Get public IP for $HOST" || echo "")
         if [[ -z "$PUBLIC_IP" ]]; then
             print_error "Could not retrieve public IP for $HOST"
             exit 1
@@ -186,8 +186,8 @@ show_usage() {
 show_status() {
     print_header "Azure VM Status"
     
-    # Check Azure CLI
-    check_azure_cli
+    # Use consolidated prerequisite validation
+    validate_azure_prerequisites
     
     # Check if resource group exists
     if ! check_resource_group_exists "$RG"; then
@@ -236,7 +236,7 @@ show_status() {
                 
                 # SSH connectivity test
                 if [[ -n "$SSH_PRIVATE_KEY" ]] && [[ "$public_ip" != "N/A" ]]; then
-                    if ssh -i "$SSH_PRIVATE_KEY" -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$ADMIN_USER@$public_ip" "echo 'SSH OK'" &>/dev/null; then
+                    if execute_remote_command "$public_ip" "echo 'SSH OK'" "Test SSH connection" 5 "$SSH_PRIVATE_KEY" "$ADMIN_USER" &>/dev/null; then
                         print_success "  SSH: Connected"
                     else
                         print_error "  SSH: Not accessible"
@@ -283,11 +283,11 @@ show_status() {
 }
 
 deploy_vms() {
-    # Check Azure CLI
-    check_azure_cli
+    # Use consolidated prerequisite validation
+    validate_azure_prerequisites
     
-    # Validate prerequisites
-    print_header "Validating prerequisites"
+    # Validate deployment prerequisites
+    print_header "Validating deployment prerequisites"
     
     # Check if resource group exists
     if ! check_resource_group_exists "$RG"; then
@@ -450,46 +450,11 @@ deploy_vms() {
     verify_vm_connectivity
 }
 
-# Main execution
-# Parse command line arguments
-COMMAND="${1:-}"
-shift || true
+# Store original arguments for handle_standard_commands
+ORIGINAL_ARGS=("$@")
 
-# Parse options
-parse_result=0
-parse_common_args "$@" || parse_result=$?
-
-if [[ $parse_result -eq 1 ]]; then
-    # Help was requested
-    show_usage
-    exit 0
-elif [[ $parse_result -eq 2 ]]; then
-    # Unknown option
-    show_usage
-    exit 1
-fi
-
-# Check command support
-SUPPORTED_COMMANDS="deploy status help"
-if [[ -z "$COMMAND" ]]; then
-    show_usage
-    exit 1
-fi
-
-# Handle commands
-case "$COMMAND" in
-    "deploy")
-        deploy_vms
-        ;;
-    "status")
-        show_status
-        ;;
-    "help")
-        show_usage
-        ;;
-    *)
-        print_error "Unknown command: $COMMAND"
-        show_usage
-        exit 1
-        ;;
-esac
+# Use consolidated command handling
+handle_standard_commands "$0" "deploy status help" \
+    "deploy" "deploy_vms" \
+    "status" "show_status" \
+    "usage" "show_usage"
