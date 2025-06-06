@@ -32,6 +32,13 @@ show_usage() {
 uninstall_k0rdent() {
     print_info "Uninstalling k0rdent from cluster..."
     
+    # Check VPN connectivity for cluster operations
+    if ! check_vpn_connectivity; then
+        print_error "VPN connectivity required for cluster operations. Skipping k0rdent uninstall."
+        print_info "Connect to VPN first: ./bin/manage-vpn.sh connect"
+        return 1
+    fi
+    
     # Find SSH private key
     SSH_KEY_PATH=$(find ./azure-resources -name "${K0RDENT_PREFIX}-ssh-key" -type f 2>/dev/null | head -1)
     

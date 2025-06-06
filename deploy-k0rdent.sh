@@ -27,24 +27,55 @@ if [[ "$NO_WAIT" == "true" ]]; then
     DEPLOY_FLAGS="$DEPLOY_FLAGS --no-wait"
 fi
 
-check_prerequisites() {
-    print_header "Checking Prerequisites"
-
-    # Check Azure CLI and WireGuard tools
-    check_azure_cli
-    check_wireguard_tools
-
-    print_success "All prerequisites satisfied"
-}
 
 show_config() {
-    print_header "Deployment Configuration"
-    echo "Prefix: $K0RDENT_PREFIX"
-    echo "Region: $LOCATION"
-    echo "Resource Group: $RG"
-    echo "VM Size: $VM_SIZE"
-    echo "VM Count: ${#VM_HOSTS[@]}"
-    echo "VMs: ${VM_HOSTS[*]}"
+    print_header "k0rdent Deployment Configuration"
+    
+    echo
+    echo "Project Settings:"
+    echo "  Prefix: $K0RDENT_PREFIX"
+    echo "  Region: $AZURE_LOCATION"
+    echo "  Resource Group: $RG"
+    
+    echo
+    echo "Cluster Topology:"
+    echo "  Controllers: $K0S_CONTROLLER_COUNT nodes ($AZURE_CONTROLLER_VM_SIZE)"
+    echo "  Workers: $K0S_WORKER_COUNT nodes ($AZURE_WORKER_VM_SIZE)"
+    echo "  Total VMs: ${#VM_HOSTS[@]} nodes"
+    
+    echo
+    echo "VM List:"
+    for HOST in "${VM_HOSTS[@]}"; do
+        if [[ "$HOST" =~ controller ]]; then
+            echo "  $HOST ($AZURE_CONTROLLER_VM_SIZE)"
+        else
+            echo "  $HOST ($AZURE_WORKER_VM_SIZE)"
+        fi
+    done
+    
+    echo
+    echo "Network Configuration:"
+    echo "  VNet: $VNET_PREFIX"
+    echo "  Subnet: $SUBNET_PREFIX"
+    echo "  WireGuard Network: $WG_NETWORK"
+    echo "  SSH User: $SSH_USERNAME"
+    
+    echo
+    echo "Software Versions:"
+    echo "  k0s: $K0S_VERSION"
+    echo "  k0rdent: $K0RDENT_VERSION"
+    echo "  Registry: $K0RDENT_OCI_REGISTRY"
+    
+    echo
+    echo "Azure Settings:"
+    echo "  VM Priority: $AZURE_VM_PRIORITY"
+    echo "  Image: $AZURE_VM_IMAGE"
+    
+    if [[ -f "./k0sctl-config/${K0RDENT_PREFIX}-kubeconfig" ]]; then
+        echo
+        echo "Kubeconfig:"
+        echo "  Location: ./k0sctl-config/${K0RDENT_PREFIX}-kubeconfig"
+    fi
 }
 
 run_deployment() {
@@ -136,7 +167,7 @@ run_full_reset() {
 
     print_info "Resetting components..."
 
-    # Step 1: Uninstall k0rdent from cluster (requires VPN connection)
+    # Step 1: Uninstall k0rdent from cluster (script will check VPN connectivity)
     if [[ -d "./k0sctl-config" ]]; then
         print_header "Step 1: Uninstalling k0rdent from Cluster"
         bash bin/install-k0rdent.sh uninstall $DEPLOY_FLAGS || true
@@ -144,7 +175,7 @@ run_full_reset() {
         print_info "Step 1: No k0rdent to uninstall"
     fi
 
-    # Step 2: Reset k0s cluster (requires VPN connection)
+    # Step 2: Reset k0s cluster (script will check VPN connectivity)
     if [[ -d "./k0sctl-config" ]]; then
         print_header "Step 2: Removing k0s Cluster"
         bash bin/install-k0s.sh uninstall $DEPLOY_FLAGS
@@ -200,7 +231,6 @@ run_full_reset() {
 # Main execution
 case "${POSITIONAL_ARGS[0]:-deploy}" in
     "deploy")
-        check_prerequisites
         show_config
         echo ""
         if [[ "$SKIP_PROMPTS" == "false" ]]; then
@@ -221,7 +251,8 @@ case "${POSITIONAL_ARGS[0]:-deploy}" in
         show_config
         ;;
     "check")
-        check_prerequisites
+        print_info "Prerequisites are checked in the preparation script:"
+        bash bin/prepare-deployment.sh check
         ;;
     "help"|"-h"|"--help")
         echo "Usage: $0 [command] [options]"

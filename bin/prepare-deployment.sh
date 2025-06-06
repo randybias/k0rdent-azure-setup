@@ -13,6 +13,25 @@ source ./etc/k0rdent-config.sh
 source ./etc/common-functions.sh
 
 # Script-specific functions
+# Global prerequisites check (moved from deploy-k0rdent.sh)
+check_global_prerequisites() {
+    print_header "Checking Prerequisites"
+
+    # Azure CLI (for Azure operations)
+    check_azure_cli
+    
+    # WireGuard tools (for VPN setup)
+    check_wireguard_tools
+    
+    # k0sctl (critical for k0s deployment)
+    check_k0sctl
+    
+    # netcat (needed for connectivity testing)
+    check_netcat
+
+    print_success "All prerequisites satisfied"
+}
+
 show_usage() {
     print_usage "$0" \
         "  keys         Generate WireGuard keys only
@@ -20,6 +39,7 @@ show_usage() {
   deploy       Generate both keys and cloud-init files
   reset        Remove all generated files
   status       Show generation status
+  check        Check prerequisites for deployment
   help         Show this help message" \
         "  -y, --yes        Skip confirmation prompts
   -q, --quiet      Suppress non-error output
@@ -88,12 +108,9 @@ show_status() {
         done
     fi
     
-    # Check dependencies using generic framework
+    # Check all prerequisites for full deployment
     echo
-    if ! check_prerequisites "prepare-deployment" \
-        "wireguard_tools:WireGuard tools not found:Install with: sudo apt install wireguard-tools"; then
-        print_warning "Some dependencies are missing but preparation can continue"
-    fi
+    check_global_prerequisites
 }
 
 generate_wireguard_keys() {
@@ -356,10 +373,12 @@ reset_preparation() {
 ORIGINAL_ARGS=("$@")
 
 # Use consolidated command handling
-handle_standard_commands "$0" "keys cloudinit deploy reset status help" \
+handle_standard_commands "$0" "keys cloudinit deploy reset status check help" \
     "keys" "generate_wireguard_keys" \
     "cloudinit" "generate_cloudinit_files" \
     "deploy" "deploy_preparation" \
     "reset" "reset_preparation" \
     "status" "show_status" \
+    "check" "check_global_prerequisites" \
+    "help" "show_usage" \
     "usage" "show_usage"
