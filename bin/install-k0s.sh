@@ -340,6 +340,13 @@ show_status() {
 # Store original arguments for handle_standard_commands
 ORIGINAL_ARGS=("$@")
 
+# Parse standard arguments to get COMMAND
+PARSED_ARGS=$(parse_standard_args "$@")
+eval "$PARSED_ARGS"
+
+# Get the command from positional arguments
+COMMAND="${POSITIONAL_ARGS[0]:-}"
+
 # Use consolidated command handling
 handle_standard_commands "$0" "deploy uninstall reset status help" \
     "deploy" "deploy_k0s" \
