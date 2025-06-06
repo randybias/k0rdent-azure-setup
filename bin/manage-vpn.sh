@@ -429,13 +429,6 @@ verify_and_show_connection_info() {
         return 1
     fi
     
-    # Show peer information
-    echo
-    print_info "Configured peers:"
-    grep -A 1 "^\[Peer\]" "$WG_CONFIG_FILE" | grep "^Endpoint" | while read -r line; do
-        local endpoint=$(echo "$line" | cut -d'=' -f2 | tr -d ' ')
-        print_info "  $endpoint"
-    done
     
     return 0
 }
