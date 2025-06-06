@@ -187,7 +187,7 @@ show_status() {
     print_header "Azure VM Status"
     
     # Use consolidated prerequisite validation
-    validate_azure_prerequisites
+    check_azure_cli
     
     # Check if resource group exists
     if ! check_resource_group_exists "$RG"; then
@@ -284,7 +284,7 @@ show_status() {
 
 deploy_vms() {
     # Use consolidated prerequisite validation
-    validate_azure_prerequisites
+    check_azure_cli
     
     # Validate deployment prerequisites
     print_header "Validating deployment prerequisites"
