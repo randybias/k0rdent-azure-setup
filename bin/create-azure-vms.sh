@@ -22,7 +22,7 @@ verify_vm_connectivity() {
     print_info_quiet "Retrieving VM public IP addresses..."
     
     for HOST in "${VM_HOSTS[@]}"; do
-        PUBLIC_IP=$(execute_azure_command "az vm show --resource-group $RG --name $HOST --show-details --query publicIps -o tsv" "Get public IP for $HOST" || echo "")
+        PUBLIC_IP=$(az vm show --resource-group "$RG" --name "$HOST" --show-details --query "publicIps" -o tsv 2>/dev/null || echo "")
         if [[ -z "$PUBLIC_IP" ]]; then
             print_error "Could not retrieve public IP for $HOST"
             exit 1
