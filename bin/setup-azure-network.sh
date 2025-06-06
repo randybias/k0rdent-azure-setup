@@ -15,7 +15,6 @@ source ./etc/common-functions.sh
 
 # Script-specific variables
 MANIFEST="$AZURE_MANIFEST"
-WIREGUARD_PORT=$((RANDOM % 34001 + 30000))
 
 # Script-specific functions
 show_usage() {
@@ -116,6 +115,17 @@ show_status() {
 deploy_resources() {
     # Check Azure CLI prerequisites
     check_azure_cli
+    
+    # Check for WireGuard port file
+    if ! check_file_exists "$WG_PORT_FILE" "WireGuard port file"; then
+        print_error "WireGuard port file not found. Run deployment preparation first."
+        print_info "Run: bash bin/prepare-deployment.sh deploy"
+        exit 1
+    fi
+    
+    # Read WireGuard port
+    WIREGUARD_PORT=$(cat "$WG_PORT_FILE")
+    print_info "Using WireGuard port: $WIREGUARD_PORT"
     
     # Check if resources already exist
     if [[ -f "$AZURE_MANIFEST" ]]; then
@@ -233,17 +243,14 @@ deploy_resources() {
         handle_error ${LINENO} "az network vnet subnet update"
     fi
     
-    # Save WireGuard port to a separate file for use by VM creation scripts
-    echo "$WIREGUARD_PORT" > "$WG_PORT_FILE"
-    
     if [[ "$QUIET_MODE" != "true" ]]; then
         echo
         print_success "Network, subnet, NSG, and SSH key are ready."
         print_success "Resource manifest created at: $AZURE_MANIFEST"
-        print_success "WireGuard port ($WIREGUARD_PORT) saved to: $WG_PORT_FILE"
+        print_success "Using WireGuard port: $WIREGUARD_PORT"
         print_success "SSH key '$SSH_KEY_NAME' created for VM access"
         echo
-        print_info "Next: Prepare cloud-init YAML for each VM, then deploy the VMs."
+        print_info "Next: Create Azure VMs with the prepared cloud-init files."
     fi
 }
 

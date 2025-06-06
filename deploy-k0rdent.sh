@@ -53,44 +53,36 @@ run_deployment() {
     # Record start time
     DEPLOYMENT_START_TIME=$(date +%s)
 
-    # Step 1: Generate WireGuard keys
-    print_header "Step 1: Generating WireGuard Keys"
-    if [[ -f "$WG_MANIFEST" ]]; then
-        print_warning "WireGuard keys already exist. Skipping generation."
-    else
-        bash bin/generate-wg-keys.sh deploy $DEPLOY_FLAGS
-    fi
-
-    # Step 2: Setup Azure network
-    print_header "Step 2: Setting up Azure Network"
+    # Step 1: Setup Azure network
+    print_header "Step 1: Setting up Azure Network"
     if [[ -f "$AZURE_MANIFEST" ]]; then
         print_warning "Azure resources already exist. Skipping network setup."
     else
         bash bin/setup-azure-network.sh deploy $DEPLOY_FLAGS
     fi
 
-    # Step 3: Generate cloud-init files
-    print_header "Step 3: Generating Cloud-Init Files"
-    bash bin/generate-cloud-init.sh deploy $DEPLOY_FLAGS
+    # Step 2: Prepare deployment (keys and cloud-init)
+    print_header "Step 2: Preparing Deployment (Keys & Cloud-Init)"
+    bash bin/prepare-deployment.sh deploy $DEPLOY_FLAGS
 
-    # Step 4: Create Azure VMs
-    print_header "Step 4: Creating Azure VMs"
+    # Step 3: Create Azure VMs
+    print_header "Step 3: Creating Azure VMs"
     bash bin/create-azure-vms.sh deploy $DEPLOY_FLAGS
 
-    # Step 5: Generate laptop WireGuard configuration
-    print_header "Step 5: Generating Laptop WireGuard Configuration"
+    # Step 4: Generate laptop WireGuard configuration
+    print_header "Step 4: Generating Laptop WireGuard Configuration"
     bash bin/manage-vpn.sh generate $DEPLOY_FLAGS
 
-    # Step 6: Connect to WireGuard VPN
-    print_header "Step 6: Connecting to WireGuard VPN"
+    # Step 5: Connect to WireGuard VPN
+    print_header "Step 5: Connecting to WireGuard VPN"
     bash bin/manage-vpn.sh connect $DEPLOY_FLAGS
 
-    # Step 7: Install k0s cluster
-    print_header "Step 7: Installing k0s Cluster"
+    # Step 6: Install k0s cluster
+    print_header "Step 6: Installing k0s Cluster"
     bash bin/install-k0s.sh deploy $DEPLOY_FLAGS
 
-    # Step 8: Install k0rdent on cluster
-    print_header "Step 8: Installing k0rdent on Cluster"
+    # Step 7: Install k0rdent on cluster
+    print_header "Step 7: Installing k0rdent on Cluster"
     bash bin/install-k0rdent.sh deploy $DEPLOY_FLAGS
 
     # Calculate and display total deployment time
@@ -131,8 +123,8 @@ run_full_reset() {
     echo "  3. Disconnect WireGuard VPN"
     echo "  4. Laptop WireGuard configuration"
     echo "  5. Azure VMs and network resources"
-    echo "  6. Cloud-init files"
-    echo "  7. WireGuard keys"
+    echo "  6. Deployment preparation files (keys & cloud-init)"
+    echo "  7. Logs directory"
     echo ""
 
     if [[ "$SKIP_PROMPTS" == "false" ]]; then
@@ -189,20 +181,12 @@ run_full_reset() {
         print_info "Step 5: No Azure resources to remove"
     fi
 
-    # Step 6: Reset cloud-init files
-    if [[ -d "$CLOUDINITS" ]]; then
-        print_header "Step 6: Removing Cloud-Init Files"
-        bash bin/generate-cloud-init.sh reset $DEPLOY_FLAGS
+    # Step 6: Reset deployment preparation (keys and cloud-init)
+    if [[ -d "$CLOUDINITS" ]] || [[ -d "$KEYDIR" ]]; then
+        print_header "Step 6: Removing Deployment Preparation Files"
+        bash bin/prepare-deployment.sh reset $DEPLOY_FLAGS
     else
-        print_info "Step 6: No cloud-init files to remove"
-    fi
-
-    # Step 7: Reset WireGuard keys
-    if [[ -d "$KEYDIR" ]]; then
-        print_header "Step 7: Removing WireGuard Keys"
-        bash bin/generate-wg-keys.sh reset $DEPLOY_FLAGS
-    else
-        print_info "Step 7: No WireGuard keys to remove"
+        print_info "Step 6: No deployment preparation files to remove"
     fi
 
     # Clean up project suffix file (only when using deploy-k0rdent.sh reset)
@@ -211,13 +195,13 @@ run_full_reset() {
         rm -f "$SUFFIX_FILE"
     fi
 
-    # Step 8: Clean up logs directory
+    # Step 7: Clean up logs directory
     if [[ -d "./logs" ]]; then
-        print_header "Step 8: Removing Logs Directory"
+        print_header "Step 7: Removing Logs Directory"
         rm -rf ./logs
         print_success "Logs directory removed"
     else
-        print_info "Step 8: No logs directory to remove"
+        print_info "Step 7: No logs directory to remove"
     fi
 
     print_header "Reset Complete"
