@@ -83,7 +83,7 @@ show_comprehensive_status() {
         local name_file="$wg_run_dir/${interface_name}.name"
         
         if [[ -f "$name_file" ]]; then
-            local utun_name=$(cat "$name_file" 2>/dev/null)
+            local utun_name=$(sudo cat "$name_file" 2>/dev/null)
             if [[ -n "$utun_name" ]] && ifconfig "$utun_name" &>/dev/null; then
                 interface_active=true
                 print_success "WireGuard interface active: $interface_name ($utun_name)"
@@ -405,7 +405,7 @@ verify_and_show_connection_info() {
         print_info "DEBUG: Name file exists: $(if [[ -f "$name_file" ]]; then echo "YES"; else echo "NO"; fi)"
         
         if [[ -f "$name_file" ]]; then
-            local utun_name=$(cat "$name_file" 2>/dev/null)
+            local utun_name=$(sudo cat "$name_file" 2>/dev/null)
             print_info "DEBUG: utun name from file: '$utun_name'"
             print_info "DEBUG: ifconfig check: $(if ifconfig "$utun_name" &>/dev/null; then echo "SUCCESS"; else echo "FAILED"; fi)"
             
