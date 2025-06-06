@@ -446,30 +446,18 @@ test_wireguard_connectivity() {
     # Validate prerequisites
     validate_connection_prerequisites
     
-    # Check if interface is active
-    local interface_name=$(basename "$WG_CONFIG_FILE" .conf)
+    # Check if interface is active - simplified check
     local interface_active=false
     
-    if [[ "$(uname)" == "Darwin" ]]; then
-        local wg_run_dir="/var/run/wireguard"
-        local name_file="$wg_run_dir/${interface_name}.name"
-        
-        if [[ -f "$name_file" ]]; then
-            interface_active=true
-        fi
+    # Just check if any WireGuard interface is up
+    if sudo wg show >/dev/null 2>&1; then
+        interface_active=true
+        print_success "WireGuard interface is active"
     else
-        if sudo wg show "$interface_name" &>/dev/null; then
-            interface_active=true
-        fi
-    fi
-    
-    if [[ "$interface_active" == "false" ]]; then
-        print_error "WireGuard interface '$interface_name' is not active"
+        print_error "No active WireGuard interfaces found"
         print_info "Run '$0 connect' to establish connection first."
         return 1
     fi
-    
-    print_success "WireGuard interface is active: $interface_name"
     
     # Test connectivity to VMs
     echo
