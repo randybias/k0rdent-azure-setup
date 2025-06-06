@@ -200,10 +200,26 @@ generate_laptop_config() {
         print_success "  $HOST: $PUBLIC_IP"
     done
     
-    # Generate laptop WireGuard private/public key pair
-    print_info "Generating laptop WireGuard key pair..."
-    LAPTOP_PRIVATE_KEY=$(wg genkey)
-    LAPTOP_PUBLIC_KEY=$(echo "$LAPTOP_PRIVATE_KEY" | wg pubkey)
+    # Read laptop private key from manifest
+    print_info "Reading laptop WireGuard key from manifest..."
+    LAPTOP_PRIVATE_KEY=""
+    while IFS=',' read -r hostname wg_ip private_key public_key; do
+        # Skip header line
+        if [[ "$hostname" == "hostname" ]]; then
+            continue
+        fi
+        
+        if [[ "$hostname" == "mylaptop" ]]; then
+            LAPTOP_PRIVATE_KEY="$private_key"
+            print_success "Found laptop private key"
+            break
+        fi
+    done < "$WG_MANIFEST"
+    
+    if [[ -z "$LAPTOP_PRIVATE_KEY" ]]; then
+        print_error "Laptop private key not found in manifest"
+        exit 1
+    fi
     
     # Start building configuration file
     print_info "Creating WireGuard configuration file: $WG_CONFIG_FILE"
@@ -215,7 +231,7 @@ generate_laptop_config() {
 
 [Interface]
 PrivateKey = $LAPTOP_PRIVATE_KEY
-Address = ${WG_IPS["mylaptop"]}/24
+Address = ${WG_IPS["mylaptop"]}/32
 DNS = 8.8.8.8, 1.1.1.1
 
 EOF
