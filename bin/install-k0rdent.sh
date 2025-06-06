@@ -40,7 +40,7 @@ uninstall_k0rdent() {
         CONTROLLER_IP="${WG_IPS[k0s-controller]}"
         
         print_info "Uninstalling k0rdent using Helm..."
-        if ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "helm uninstall kcm -n kcm-system" &>/dev/null; then
+        if execute_remote_command "$CONTROLLER_IP" "helm uninstall kcm -n kcm-system" "Uninstall k0rdent" 30 "$SSH_KEY_PATH" "$ADMIN_USER" &>/dev/null; then
             print_success "k0rdent uninstalled successfully"
         else
             print_warning "Failed to uninstall k0rdent (it may not be installed)"
@@ -83,18 +83,18 @@ if [[ "$COMMAND" == "deploy" ]]; then
     CONTROLLER_IP="${WG_IPS[k0s-controller]}"
     
     print_info "Testing SSH connectivity to controller node..."
-    if ! ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "echo 'SSH OK'" &>/dev/null; then
+    if ! execute_remote_command "$CONTROLLER_IP" "echo 'SSH OK'" "Test SSH to controller" 10 "$SSH_KEY_PATH" "$ADMIN_USER" &>/dev/null; then
         print_error "Cannot connect to controller node. Ensure WireGuard VPN is connected."
         exit 1
     fi
     
     print_info "Installing Helm on controller node k0s-controller..."
-    if ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "command -v helm &>/dev/null"; then
+    if execute_remote_command "$CONTROLLER_IP" "command -v helm" "Check if Helm is installed" 10 "$SSH_KEY_PATH" "$ADMIN_USER" &>/dev/null; then
         print_success "Helm already installed"
     else
         print_info "Installing Helm..."
-        ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash" &>/dev/null
-        if ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "command -v helm &>/dev/null"; then
+        execute_remote_command "$CONTROLLER_IP" "curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash" "Install Helm" 60 "$SSH_KEY_PATH" "$ADMIN_USER" &>/dev/null
+        if execute_remote_command "$CONTROLLER_IP" "command -v helm" "Verify Helm installation" 10 "$SSH_KEY_PATH" "$ADMIN_USER" &>/dev/null; then
             print_success "Helm installed successfully"
         else
             print_error "Failed to install Helm"
@@ -103,7 +103,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
     fi
     
     print_info "Setting up kubeconfig on controller node..."
-    ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "mkdir -p ~/.kube && sudo k0s kubeconfig admin > ~/.kube/config" &>/dev/null
+    execute_remote_command "$CONTROLLER_IP" "mkdir -p ~/.kube && sudo k0s kubeconfig admin > ~/.kube/config" "Setup kubeconfig" 30 "$SSH_KEY_PATH" "$ADMIN_USER" &>/dev/null
     
     print_info "Installing k0rdent v1.0.0 using Helm..."
     
@@ -111,7 +111,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
     local helm_log="./logs/k0rdent-helm-install-$(date +%Y%m%d_%H%M%S).log"
     ensure_directory "./logs"
     
-    if ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "helm install kcm oci://ghcr.io/k0rdent/kcm/charts/kcm --version 1.0.0 -n kcm-system --create-namespace --debug --timeout 10m" > "$helm_log" 2>&1; then
+    if execute_remote_command "$CONTROLLER_IP" "helm install kcm oci://ghcr.io/k0rdent/kcm/charts/kcm --version 1.0.0 -n kcm-system --create-namespace --debug --timeout 10m" "Install k0rdent" 600 "$SSH_KEY_PATH" "$ADMIN_USER" > "$helm_log" 2>&1; then
         print_success "k0rdent installed successfully!"
         print_info "Installation log saved to: $helm_log"
         
@@ -119,7 +119,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
         sleep 30
         
         print_info "Checking k0rdent pod status..."
-        ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "sudo k0s kubectl get pods -n kcm-system"
+        execute_remote_command "$CONTROLLER_IP" "sudo k0s kubectl get pods -n kcm-system" "Check k0rdent pods" 30 "$SSH_KEY_PATH" "$ADMIN_USER"
         
         print_success "k0rdent installation completed!"
     else
@@ -150,9 +150,9 @@ show_status() {
         CONTROLLER_IP="${WG_IPS[k0s-controller]}"
         
         print_info "Checking k0rdent installation status..."
-        if ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "helm list -n kcm-system | grep -q kcm" &>/dev/null; then
+        if execute_remote_command "$CONTROLLER_IP" "helm list -n kcm-system | grep -q kcm" "Check k0rdent installation" 10 "$SSH_KEY_PATH" "$ADMIN_USER" &>/dev/null; then
             print_success "k0rdent is installed"
-            ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$CONTROLLER_IP" "helm list -n kcm-system"
+            execute_remote_command "$CONTROLLER_IP" "helm list -n kcm-system" "Show k0rdent status" 10 "$SSH_KEY_PATH" "$ADMIN_USER"
         else
             print_info "k0rdent is not installed"
         fi
@@ -161,47 +161,12 @@ show_status() {
     fi
 }
 
-# Default values
-SKIP_PROMPTS=false
-NO_WAIT=false
+# Store original arguments for handle_standard_commands
+ORIGINAL_ARGS=("$@")
 
-# Parse standard arguments
-PARSED_ARGS=$(parse_standard_args "$@")
-eval "$PARSED_ARGS"
-
-# Get command from positional arguments
-COMMAND="${POSITIONAL_ARGS[0]:-}"
-
-# Check for help flag
-if [[ "$SHOW_HELP" == "true" ]]; then
-    show_usage
-    exit 0
-fi
-
-# Check command support
-SUPPORTED_COMMANDS="deploy uninstall status help"
-if [[ -z "$COMMAND" ]]; then
-    show_usage
-    exit 1
-fi
-
-# Execute command
-case "$COMMAND" in
-    "deploy")
-        deploy_k0rdent
-        ;;
-    "uninstall")
-        uninstall_k0rdent
-        ;;
-    "status")
-        show_status
-        ;;
-    "help")
-        show_usage
-        ;;
-    *)
-        print_error "Unknown command: $COMMAND"
-        show_usage
-        exit 1
-        ;;
-esac
+# Use consolidated command handling
+handle_standard_commands "$0" "deploy uninstall status help" \
+    "deploy" "deploy_k0rdent" \
+    "uninstall" "uninstall_k0rdent" \
+    "status" "show_status" \
+    "usage" "show_usage"

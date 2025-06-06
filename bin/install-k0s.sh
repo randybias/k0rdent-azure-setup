@@ -202,7 +202,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
         wg_ip="${WG_IPS[$host]}"
         print_info "Testing SSH to $host ($wg_ip)..."
 
-        if ssh -i "$SSH_KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ADMIN_USER@$wg_ip" "echo 'SSH OK'" &>/dev/null; then
+        if execute_remote_command "$wg_ip" "echo 'SSH OK'" "Test SSH to $host" 10 "$SSH_KEY_PATH" "$ADMIN_USER" &>/dev/null; then
             print_success "SSH connectivity to $host: OK"
         else
             print_error "SSH connectivity to $host: FAILED"
@@ -324,50 +324,13 @@ show_status() {
     fi
 }
 
-# Default values
-SKIP_PROMPTS=false
-NO_WAIT=false
+# Store original arguments for handle_standard_commands
+ORIGINAL_ARGS=("$@")
 
-# Parse standard arguments
-PARSED_ARGS=$(parse_standard_args "$@")
-eval "$PARSED_ARGS"
-
-# Get command from positional arguments
-COMMAND="${POSITIONAL_ARGS[0]:-}"
-
-# Check for help flag
-if [[ "$SHOW_HELP" == "true" ]]; then
-    show_usage
-    exit 0
-fi
-
-# Check command support
-SUPPORTED_COMMANDS="deploy uninstall reset help"
-if [[ -z "$COMMAND" ]]; then
-    show_usage
-    exit 1
-fi
-
-# Execute command
-case "$COMMAND" in
-    "deploy")
-        deploy_k0s
-        ;;
-    "uninstall")
-        uninstall_k0s
-        ;;
-    "reset")
-        reset_k0s
-        ;;
-    "status")
-        show_status
-        ;;
-    "help")
-        show_usage
-        ;;
-    *)
-        print_error "Unknown command: $COMMAND"
-        show_usage
-        exit 1
-        ;;
-esac
+# Use consolidated command handling
+handle_standard_commands "$0" "deploy uninstall reset status help" \
+    "deploy" "deploy_k0s" \
+    "uninstall" "uninstall_k0s" \
+    "reset" "reset_k0s" \
+    "status" "show_status" \
+    "usage" "show_usage"
