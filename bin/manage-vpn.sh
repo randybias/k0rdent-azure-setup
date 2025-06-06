@@ -215,7 +215,7 @@ generate_laptop_config() {
 
 [Interface]
 PrivateKey = $LAPTOP_PRIVATE_KEY
-Address = $LAPTOP_WG_IP/24
+Address = ${WG_IPS["mylaptop"]}/24
 DNS = 8.8.8.8, 1.1.1.1
 
 EOF
@@ -248,7 +248,7 @@ EOF
     
     print_success "WireGuard configuration generated successfully!"
     print_info "Configuration file: $WG_CONFIG_FILE"
-    print_info "Laptop WireGuard IP: $LAPTOP_WG_IP"
+    print_info "Laptop WireGuard IP: ${WG_IPS["mylaptop"]}"
     
     echo
     print_info "Next steps:"
