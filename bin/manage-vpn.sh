@@ -237,7 +237,6 @@ EOF
 # Peer: $HOST ($WG_IP)
 [Peer]
 PublicKey = $VM_PUBLIC_KEY
-Endpoint = $PUBLIC_IP:$WG_PORT
 AllowedIPs = $WG_IP/32
 
 EOF
@@ -499,7 +498,11 @@ test_wireguard_connectivity() {
         print_warning "Some VMs are not reachable. Check VM status and WireGuard configuration."
         return 1
     else
-        print_error "No VMs are reachable via WireGuard. Check configuration and network settings."
+        print_error "Ping tests failed - no VMs are reachable via WireGuard."
+        print_info "This indicates WireGuard connection issues. Check:"
+        print_info "  • WireGuard interface status: sudo wg show"
+        print_info "  • VM WireGuard services: may need time to start"
+        print_info "  • Network connectivity between laptop and VMs"
         return 1
     fi
 }
