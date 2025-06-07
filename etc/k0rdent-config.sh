@@ -16,8 +16,7 @@ AZURE_MANIFEST="$MANIFEST_DIR/azure-resource-manifest.csv"
 WG_PORT_FILE="$WG_DIR/wireguard-port.txt"
 
 # WireGuard laptop configuration
-WG_CONFIG_DIR="./laptop-wg-config"
-WG_CONFIG_FILE="$WG_CONFIG_DIR/wgk0${RANDOM_SUFFIX}.conf"
+WG_CONFIG_FILE="$WG_DIR/wgk0${RANDOM_SUFFIX}.conf"
 
 
 echo "==> k0rdent configuration loaded (prefix: $K0RDENT_PREFIX, region: $AZURE_LOCATION)" 
