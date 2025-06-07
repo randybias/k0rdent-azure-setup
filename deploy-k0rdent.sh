@@ -167,18 +167,55 @@ run_full_reset() {
 
     print_info "Resetting components..."
 
-    # Step 1: Uninstall k0rdent from cluster (script will check VPN connectivity)
+    # Check VPN connectivity for k0s and k0rdent operations
+    local vpn_connected=false
+    if check_vpn_connectivity &>/dev/null; then
+        vpn_connected=true
+    fi
+
+    # Step 1: Uninstall k0rdent from cluster
     if [[ -d "./k0sctl-config" ]]; then
         print_header "Step 1: Uninstalling k0rdent from Cluster"
-        bash bin/install-k0rdent.sh uninstall $DEPLOY_FLAGS || true
+        if [[ "$vpn_connected" == "false" ]]; then
+            print_warning "VPN is not connected. k0rdent uninstall requires VPN connectivity."
+            if [[ "$SKIP_PROMPTS" == "false" ]]; then
+                read -p "Continue without uninstalling k0rdent? (y/n): " -n 1 -r
+                echo
+                if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                    echo "Reset cancelled."
+                    return
+                fi
+                print_info "Skipping k0rdent uninstall due to no VPN connectivity"
+            else
+                print_info "Skipping k0rdent uninstall due to no VPN connectivity (-y flag used)"
+            fi
+        else
+            bash bin/install-k0rdent.sh uninstall $DEPLOY_FLAGS || true
+        fi
     else
         print_info "Step 1: No k0rdent to uninstall"
     fi
 
-    # Step 2: Reset k0s cluster (script will check VPN connectivity)
+    # Step 2: Reset k0s cluster
     if [[ -d "./k0sctl-config" ]]; then
         print_header "Step 2: Removing k0s Cluster"
-        bash bin/install-k0s.sh uninstall $DEPLOY_FLAGS
+        if [[ "$vpn_connected" == "false" ]]; then
+            print_warning "VPN is not connected. k0s uninstall requires VPN connectivity."
+            if [[ "$SKIP_PROMPTS" == "false" ]]; then
+                read -p "Continue without uninstalling k0s? (y/n): " -n 1 -r
+                echo
+                if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                    echo "Reset cancelled."
+                    return
+                fi
+                print_info "Skipping k0s uninstall due to no VPN connectivity"
+            else
+                print_info "Skipping k0s uninstall due to no VPN connectivity (-y flag used)"
+            fi
+        else
+            bash bin/install-k0s.sh uninstall $DEPLOY_FLAGS
+        fi
+        # Always attempt to reset configuration files even without VPN
         bash bin/install-k0s.sh reset $DEPLOY_FLAGS
     else
         print_info "Step 2: No k0s cluster to remove"

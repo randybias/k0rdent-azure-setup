@@ -14,8 +14,10 @@ AZURE_WORKER_VM_SIZE="Standard_D8pls_v6"      # Size for k0s worker nodes
 
 # ---- Cluster Topology ----
 # Number of nodes (minimum 1 each)
-K0S_CONTROLLER_COUNT=3  # Number of k0s controllers (minimum 1, odd number recommended for HA)
-K0S_WORKER_COUNT=2      # Number of k0s workers (minimum 1)
+K0S_CONTROLLER_COUNT=1  # Number of k0s controllers (minimum 1, odd number recommended for HA)
+K0S_WORKER_COUNT=1      # Number of k0s workers (minimum 1)
+#K0S_CONTROLLER_COUNT=3  # Number of k0s controllers (minimum 1, odd number recommended for HA)
+#K0S_WORKER_COUNT=2      # Number of k0s workers (minimum 1)
 
 # ---- Zone Distribution ----
 # How to distribute nodes across availability zones
