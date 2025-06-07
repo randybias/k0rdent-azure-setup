@@ -11,12 +11,16 @@ set -euo pipefail
 # Load central configuration and common functions
 source ./etc/k0rdent-config.sh
 source ./etc/common-functions.sh
+source ./etc/state-management.sh
 
 # Script-specific functions
 # Global prerequisites check (moved from deploy-k0rdent.sh)
 check_global_prerequisites() {
     print_header "Checking Prerequisites"
 
+    # yq (required for state management)
+    check_yq_available
+    
     # Azure CLI (for Azure operations)
     check_azure_cli
     
@@ -52,6 +56,11 @@ show_usage() {
 }
 
 show_status() {
+    # Show deployment state summary if available
+    if state_file_exists; then
+        show_state_summary
+    fi
+    
     # Count keys and files for status display
     local key_count=0
     local expected_key_count=${#WG_IPS[@]}
@@ -142,9 +151,13 @@ generate_wireguard_keys() {
         WIREGUARD_PORT=$((RANDOM % 34001 + 30000))
         echo "$WIREGUARD_PORT" > "$WG_PORT_FILE"
         print_info_quiet "Generated WireGuard port: $WIREGUARD_PORT"
+        # Update state with the generated port
+        update_state "config.wireguard_port" "$WIREGUARD_PORT"
     else
         WIREGUARD_PORT=$(cat "$WG_PORT_FILE")
         print_info_quiet "Using existing WireGuard port: $WIREGUARD_PORT"
+        # Update state with existing port
+        update_state "config.wireguard_port" "$WIREGUARD_PORT"
     fi
     
     # Generate keys for each host
@@ -205,8 +218,8 @@ generate_cloudinit_files() {
         rm -f "$CLOUD_INIT_DIR"/*-cloud-init.yaml
     fi
     
-    # Read the WireGuard port
-    WIREGUARD_PORT=$(cat "$WG_PORT_FILE")
+    # Get the WireGuard port from state
+    WIREGUARD_PORT=$(get_state "config.wireguard_port")
     print_info_quiet "Using WireGuard port: $WIREGUARD_PORT"
     
     ensure_directory "$CLOUD_INIT_DIR"
@@ -293,11 +306,23 @@ EOF
 deploy_preparation() {
     print_header "Comprehensive Deployment Preparation"
     
+    # Initialize deployment state if it doesn't exist
+    if ! state_file_exists; then
+        print_info "Initializing deployment state tracking..."
+        init_deployment_state "$K0RDENT_PREFIX"
+        add_event "preparation_started" "Beginning deployment preparation"
+    else
+        print_info "Using existing deployment state"
+        update_state "phase" "preparation"
+    fi
+    
     # Generate WireGuard keys first
     if ! generate_wireguard_keys; then
         print_error "Failed to generate WireGuard keys"
         exit 1
     fi
+    update_state "wg_keys_generated" "true"
+    add_event "wireguard_keys_generated" "WireGuard keys generated successfully"
     
     echo
     
@@ -306,6 +331,7 @@ deploy_preparation() {
         print_error "Failed to generate cloud-init files"
         exit 1
     fi
+    add_event "cloud_init_generated" "Cloud-init files generated successfully"
     
     if [[ "$QUIET_MODE" != "true" ]]; then
         echo
@@ -367,6 +393,10 @@ reset_preparation() {
     fi
     
     print_success "Deployment preparation files removed"
+    
+    # Update state
+    update_state "wg_keys_generated" "false"
+    add_event "preparation_reset" "WireGuard keys and cloud-init files removed"
 }
 
 # Store original arguments for handle_standard_commands

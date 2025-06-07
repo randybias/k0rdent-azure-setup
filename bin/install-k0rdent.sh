@@ -10,6 +10,7 @@ set -euo pipefail
 # Load central configuration and common functions
 source ./etc/k0rdent-config.sh
 source ./etc/common-functions.sh
+source ./etc/state-management.sh
 
 # Output directory and file
 K0SCTL_DIR="./k0sctl-config"
@@ -49,6 +50,10 @@ uninstall_k0rdent() {
         print_info "Uninstalling k0rdent using Helm..."
         if execute_remote_command "$CONTROLLER_IP" "helm uninstall kcm -n kcm-system" "Uninstall k0rdent" 30 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null; then
             print_success "k0rdent uninstalled successfully"
+            # Update state
+            update_state "k0rdent_installed" "false"
+            update_state "phase" "k0s_deployed"
+            add_event "k0rdent_uninstalled" "k0rdent successfully uninstalled from cluster"
         else
             print_warning "Failed to uninstall k0rdent (it may not be installed)"
         fi
@@ -86,6 +91,10 @@ print_success "Prerequisites validated"
 if [[ "$COMMAND" == "deploy" ]]; then
     print_header "Installing k0rdent on Cluster"
     
+    # Update state phase
+    update_state "phase" "k0rdent_installation"
+    add_event "k0rdent_installation_started" "Starting k0rdent installation process"
+    
     # Get the first controller IP
     CONTROLLER_IP="${WG_IPS[k0s-controller]}"
     
@@ -122,6 +131,11 @@ if [[ "$COMMAND" == "deploy" ]]; then
         print_success "k0rdent installed successfully!"
         print_info "Installation log saved to: $helm_log"
         
+        # Update state
+        update_state "k0rdent_installed" "true"
+        update_state "phase" "k0rdent_deployed"
+        add_event "k0rdent_installation_completed" "k0rdent successfully installed via Helm"
+        
         print_info "Waiting for k0rdent components to be ready..."
         sleep 30
         
@@ -129,6 +143,10 @@ if [[ "$COMMAND" == "deploy" ]]; then
         execute_remote_command "$CONTROLLER_IP" "sudo k0s kubectl get pods -n kcm-system" "Check k0rdent pods" 30 "$SSH_KEY_PATH" "$SSH_USERNAME"
         
         print_success "k0rdent installation completed!"
+        
+        # Final state update
+        update_state "status" "completed"
+        add_event "deployment_completed" "Full k0rdent deployment completed successfully"
     else
         print_error "Failed to install k0rdent"
         print_info "Check the installation log for details: $helm_log"

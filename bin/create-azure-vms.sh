@@ -10,6 +10,7 @@ set -euo pipefail
 # Load central configuration and common functions
 source ./etc/k0rdent-config.sh
 source ./etc/common-functions.sh
+source ./etc/state-management.sh
 
 # Script-specific functions
 verify_vm_connectivity() {
@@ -17,18 +18,28 @@ verify_vm_connectivity() {
     
     print_header "Verifying VM Configuration"
     
-    # Get VM public IP addresses
+    # Get VM public IP addresses from state (with single refresh if needed)
     declare -A VM_PUBLIC_IPS
     print_info_quiet "Retrieving VM public IP addresses..."
     
+    # Single bulk refresh if state is missing or empty
+    if ! state_file_exists || [[ $(get_state "vm_states" | yq eval '. | length' 2>/dev/null || echo "0") -eq 0 ]]; then
+        print_info_quiet "Refreshing VM data from Azure..."
+        refresh_all_vm_data
+    fi
+    
+    # Get IPs from cached state (empty/null is OK for VMs still provisioning)
     for HOST in "${VM_HOSTS[@]}"; do
-        PUBLIC_IP=$(az vm show --resource-group "$RG" --name "$HOST" --show-details --query "publicIps" -o tsv 2>/dev/null || echo "")
-        if [[ -z "$PUBLIC_IP" ]]; then
-            print_error "Could not retrieve public IP for $HOST"
-            exit 1
+        PUBLIC_IP=$(get_vm_info "$HOST" "public_ip")
+        if [[ "$PUBLIC_IP" == "null" ]]; then
+            PUBLIC_IP=""  # Convert null to empty string
         fi
         VM_PUBLIC_IPS["$HOST"]="$PUBLIC_IP"
-        print_info_quiet "  $HOST: $PUBLIC_IP"
+        if [[ -n "$PUBLIC_IP" ]]; then
+            print_info_quiet "  $HOST: $PUBLIC_IP"
+        else
+            print_info_quiet "  $HOST: (no public IP yet)"
+        fi
     done
     
     if [[ "$QUIET_MODE" != "true" ]]; then
@@ -217,22 +228,24 @@ show_status() {
     if [[ "$VERBOSE_MODE" == "true" ]]; then
         echo ""
         echo "VM Details:"
+        
+        # Single refresh to get current data
+        refresh_all_vm_data
+        
         for HOST in "${VM_HOSTS[@]}"; do
-            if az vm show --resource-group "$RG" --name "$HOST" &>/dev/null; then
+            local vm_state=$(get_vm_info "$HOST" "state")
+            if [[ "$vm_state" != "null" ]]; then
                 print_info "$HOST:"
                 
-                # Get public IP
-                local public_ip=$(az vm show --resource-group "$RG" --name "$HOST" --show-details --query "publicIps" -o tsv 2>/dev/null || echo "N/A")
+                # Get all VM info from cached state
+                local public_ip=$(get_vm_info "$HOST" "public_ip")
+                local private_ip=$(get_vm_info "$HOST" "private_ip")
+                [[ "$public_ip" == "null" ]] && public_ip="N/A"
+                [[ "$private_ip" == "null" ]] && private_ip="N/A"
+                
                 print_info_verbose "  Public IP: $public_ip"
-                
-                # Get private IP
-                local private_ip=$(az vm show --resource-group "$RG" --name "$HOST" --show-details --query "privateIps" -o tsv 2>/dev/null || echo "N/A")
                 print_info_verbose "  Private IP: $private_ip"
-                
-                # Get VM size and priority
-                local vm_size=$(az vm show --resource-group "$RG" --name "$HOST" --query "hardwareProfile.vmSize" -o tsv 2>/dev/null || echo "N/A")
-                local priority=$(az vm show --resource-group "$RG" --name "$HOST" --query "priority" -o tsv 2>/dev/null || echo "Regular")
-                print_info_verbose "  Size: $vm_size (Priority: $priority)"
+                print_info_verbose "  State: $vm_state"
                 
                 # SSH connectivity test
                 if [[ -n "$SSH_PRIVATE_KEY" ]] && [[ "$public_ip" != "N/A" ]]; then
@@ -388,6 +401,10 @@ deploy_vms() {
         
         # Execute the VM creation command (non-blocking)
         eval "$VM_CREATE_CMD"
+        
+        # Record VM creation in state
+        update_vm_state "$HOST" "" "" "Creating"
+        add_event "vm_creation_started" "Started creating VM: $HOST"
     done
     
     print_success "All VM creation jobs started in parallel"
@@ -411,9 +428,15 @@ deploy_vms() {
         ALL_READY=true
         VM_STATUS_OUTPUT=""
         
-        # Check status of VMs we're creating
+        # Single bulk refresh of all VM states
+        refresh_all_vm_data
+        
+        # Check status of VMs we're creating from cached state
         for HOST in "${vms_to_create[@]}"; do
-            VM_STATE=$(az vm show --resource-group "$RG" --name "$HOST" --query "provisioningState" -o tsv 2>/dev/null || echo "NotFound")
+            VM_STATE=$(get_vm_info "$HOST" "state")
+            if [[ "$VM_STATE" == "null" ]]; then
+                VM_STATE="NotFound"
+            fi
             
             VM_STATUS_OUTPUT="$VM_STATUS_OUTPUT\n  $HOST: $VM_STATE"
             
@@ -429,6 +452,8 @@ deploy_vms() {
         if [[ "$ALL_READY" == "true" ]]; then
             echo
             print_success "All VMs are ready and running!"
+            update_state "phase" "vms_ready"
+            add_event "vm_deployment_completed" "All VMs successfully deployed and running"
             break
         fi
         

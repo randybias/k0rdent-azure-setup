@@ -11,6 +11,7 @@ set -euo pipefail
 # Load central configuration and common functions
 source ./etc/k0rdent-config.sh
 source ./etc/common-functions.sh
+source ./etc/state-management.sh
 
 # Get WireGuard quick path once for the entire script
 WG_QUICK_PATH=$(get_wg_quick_path)
@@ -239,14 +240,14 @@ generate_laptop_config_internal() {
         exit 1
     fi
     
-    # Check if WireGuard port is available
-    if [[ ! -f "$WG_PORT_FILE" ]]; then
-        print_error "WireGuard port file not found: $WG_PORT_FILE"
-        print_info "This should have been created during Azure network setup."
+    # Get WireGuard port from state
+    WG_PORT=$(get_state "config.wireguard_port")
+    if [[ -z "$WG_PORT" || "$WG_PORT" == "null" ]]; then
+        print_error "WireGuard port not found in deployment state"
+        print_info "This should have been set during deployment preparation."
         exit 1
     fi
     
-    WG_PORT=$(cat "$WG_PORT_FILE")
     print_info "Using WireGuard port: $WG_PORT"
     
     # Check if configuration already exists
@@ -264,16 +265,22 @@ generate_laptop_config_internal() {
     # Create configuration directory
     # WireGuard directory already exists from key generation
     
-    # Get VM public IP addresses
-    print_info "Retrieving VM public IP addresses from Azure..."
+    # Get VM public IP addresses from state
+    print_info "Retrieving VM public IP addresses from state..."
     declare -A VM_PUBLIC_IPS
+    
+    # Refresh VM data if state doesn't exist or is empty
+    if ! state_file_exists || [[ $(get_state "vm_states" | yq eval '. | length' 2>/dev/null || echo "0") -eq 0 ]]; then
+        print_info "Refreshing VM data from Azure..."
+        refresh_all_vm_data
+    fi
     
     for HOST in "${VM_HOSTS[@]}"; do
         print_info "Getting public IP for $HOST..."
-        PUBLIC_IP=$(az vm show --resource-group "$RG" --name "$HOST" --show-details --query "publicIps" -o tsv 2>/dev/null || echo "")
+        PUBLIC_IP=$(get_vm_info "$HOST" "public_ip")
         
-        if [[ -z "$PUBLIC_IP" ]]; then
-            print_error "Could not retrieve public IP for $HOST"
+        if [[ -z "$PUBLIC_IP" || "$PUBLIC_IP" == "null" ]]; then
+            print_error "Could not retrieve public IP for $HOST from state"
             print_info "Ensure VM is running and has a public IP assigned."
             exit 1
         fi
@@ -348,6 +355,10 @@ EOF
     print_success "WireGuard configuration generated successfully!"
     print_info "Configuration file: $WG_CONFIG_FILE"
     print_info "Laptop WireGuard IP: ${WG_IPS["mylaptop"]}"
+    
+    # Update state
+    update_state "wg_laptop_config_created" "true"
+    add_event "vpn_config_generated" "WireGuard laptop configuration generated"
     
     echo
     print_info "Next steps:"
@@ -463,6 +474,8 @@ setup_wireguard_cli() {
     
     if sudo "$WG_QUICK_PATH" up "$WG_CONFIG_FILE"; then
         print_success "WireGuard interface started successfully!"
+        update_state "wg_vpn_connected" "true"
+        add_event "vpn_connected" "WireGuard VPN connected successfully"
     else
         print_error "Failed to start WireGuard interface"
         print_info "Check the configuration file and try again."
@@ -679,6 +692,8 @@ disconnect_wireguard() {
     
     if shutdown_wireguard_interface "$WG_CONFIG_FILE"; then
         print_success "WireGuard VPN disconnected successfully!"
+        update_state "wg_vpn_connected" "false"
+        add_event "vpn_disconnected" "WireGuard VPN disconnected"
     else
         print_error "Failed to disconnect WireGuard VPN"
         return 1
@@ -739,6 +754,11 @@ reset_and_cleanup() {
         print_info "Removing WireGuard laptop configuration: $WG_CONFIG_FILE"
         rm -f "$WG_CONFIG_FILE" "$SETUP_COMPLETE_FILE"
         print_success "WireGuard configuration and setup state removed."
+        
+        # Update state
+        update_state "wg_laptop_config_created" "false"
+        update_state "wg_vpn_connected" "false"
+        add_event "vpn_config_reset" "WireGuard laptop configuration removed"
     else
         print_info "No WireGuard configuration directory found."
     fi

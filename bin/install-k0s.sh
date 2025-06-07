@@ -10,6 +10,7 @@ set -euo pipefail
 # Load central configuration and common functions
 source ./etc/k0rdent-config.sh
 source ./etc/common-functions.sh
+source ./etc/state-management.sh
 
 # Output directory and file
 K0SCTL_DIR="./k0sctl-config"
@@ -19,14 +20,16 @@ KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_PREFIX}-kubeconfig"
 # Script-specific functions
 show_usage() {
     print_usage "$0" \
-        "  deploy     Generate k0sctl config and deploy k0s cluster
+        "  config     Generate k0sctl configuration only
+  deploy     Generate k0sctl config and deploy k0s cluster
   uninstall  Reset and remove k0s cluster
   reset      Remove k0sctl configuration files
   status     Show current configuration status
   help       Show this help message" \
         "  -y, --yes        Skip confirmation prompts
   --no-wait        Skip waiting for resources" \
-        "  $0 deploy        # Deploy k0s cluster
+        "  $0 config        # Generate k0sctl configuration only
+  $0 deploy        # Deploy k0s cluster
   $0 status        # Check configuration status
   $0 uninstall     # Remove k0s cluster
   $0 reset         # Remove configuration files"
@@ -46,6 +49,12 @@ uninstall_k0s() {
         print_info "Running k0sctl reset to destroy cluster..."
         k0sctl reset --config "$K0SCTL_FILE" --force || true
         print_success "k0s cluster reset completed"
+        
+        # Update state
+        update_state "k0s_cluster_deployed" "false"
+        update_state "k0rdent_installed" "false"
+        update_state "phase" "vms_ready"
+        add_event "k0s_cluster_uninstalled" "k0s cluster successfully reset and uninstalled"
     else
         print_warning "No k0sctl config found, skipping cluster reset"
     fi
@@ -57,55 +66,64 @@ reset_k0s() {
     print_info "Removing k0sctl configuration and kubeconfig..."
     rm -rf "$K0SCTL_DIR"
     print_success "k0sctl configuration and kubeconfig removed"
+    
+    # Update state
+    update_state "k0s_config_generated" "false"
+    add_event "k0s_config_reset" "k0sctl configuration and kubeconfig files removed"
 }
 
-deploy_k0s() {
+generate_k0s_config() {
+    print_header "k0s Configuration Generation"
 
-print_header "k0s Cluster Installation"
+    # Validate prerequisites
+    print_info "Validating prerequisites..."
 
-# Validate prerequisites
-print_info "Validating prerequisites..."
-
-
-if ! check_file_exists "$WG_MANIFEST" "WireGuard key manifest"; then
-    print_error "WireGuard keys not found. Run: ./generate-wg-keys.sh"
-    exit 1
-fi
-
-# Find SSH private key
-SSH_KEY_PATH=$(find ./azure-resources -name "${K0RDENT_PREFIX}-ssh-key" -type f 2>/dev/null | head -1)
-if [[ -z "$SSH_KEY_PATH" ]]; then
-    print_error "SSH private key not found. Expected: ./azure-resources/${K0RDENT_PREFIX}-ssh-key"
-    print_info "Run: ./setup-azure-network.sh"
-    exit 1
-fi
-
-print_success "Prerequisites validated"
-
-# Build controller and worker node arrays from VM configuration
-CONTROLLER_NODES=()
-WORKER_NODES=()
-for i in "${!VM_HOSTS[@]}"; do
-    host="${VM_HOSTS[$i]}"
-    type="${VM_TYPES[$i]}"
-    if [[ "$type" == "controller" ]]; then
-        CONTROLLER_NODES+=("$host")
-    elif [[ "$type" == "worker" ]]; then
-        WORKER_NODES+=("$host")
+    if ! check_file_exists "$WG_MANIFEST" "WireGuard key manifest"; then
+        print_error "WireGuard keys not found. Run: ./generate-wg-keys.sh"
+        exit 1
     fi
-done
 
-# Create output directory
-ensure_directory "$K0SCTL_DIR"
+    # Find SSH private key
+    SSH_KEY_PATH=$(find ./azure-resources -name "${K0RDENT_PREFIX}-ssh-key" -type f 2>/dev/null | head -1)
+    if [[ -z "$SSH_KEY_PATH" ]]; then
+        print_error "SSH private key not found. Expected: ./azure-resources/${K0RDENT_PREFIX}-ssh-key"
+        print_info "Run: ./setup-azure-network.sh"
+        exit 1
+    fi
 
-# Check if k0sctl file already exists
-if [[ -f "$K0SCTL_FILE" ]]; then
-    print_info "k0sctl configuration already exists: $K0SCTL_FILE"
-else
+    print_success "Prerequisites validated"
+
+    # Build controller and worker node arrays from VM configuration
+    CONTROLLER_NODES=()
+    WORKER_NODES=()
+    for i in "${!VM_HOSTS[@]}"; do
+        host="${VM_HOSTS[$i]}"
+        type="${VM_TYPES[$i]}"
+        if [[ "$type" == "controller" ]]; then
+            CONTROLLER_NODES+=("$host")
+        elif [[ "$type" == "worker" ]]; then
+            WORKER_NODES+=("$host")
+        fi
+    done
+
+    # Create output directory
+    ensure_directory "$K0SCTL_DIR"
+
+    # Check if k0sctl file already exists
+    if [[ -f "$K0SCTL_FILE" ]]; then
+        print_info "k0sctl configuration already exists: $K0SCTL_FILE"
+        # Update state if needed
+        update_state "k0s_config_generated" "true"
+        return 0
+    fi
+
     # Generate k0sctl YAML
     print_info "Generating ${K0RDENT_PREFIX}-k0sctl.yaml configuration file..."
+    
+    # Update state phase
+    update_state "phase" "k0s_config_generation"
 
-cat > "$K0SCTL_FILE" << EOF
+    cat > "$K0SCTL_FILE" << EOF
 apiVersion: k0sctl.k0sproject.io/v1beta1
 kind: Cluster
 metadata:
@@ -114,62 +132,62 @@ spec:
   hosts:
 EOF
 
-# Identify controller and worker nodes from VM configuration
-CONTROLLER_NODES=()
-WORKER_NODES=()
+    # Identify controller and worker nodes from VM configuration
+    CONTROLLER_NODES=()
+    WORKER_NODES=()
 
-for HOST in "${VM_HOSTS[@]}"; do
-    if [[ "${VM_TYPE_MAP[$HOST]}" == "controller" ]]; then
-        CONTROLLER_NODES+=("$HOST")
-    else
-        WORKER_NODES+=("$HOST")
-    fi
-done
-
-# Add controller nodes
-print_info "Adding ${#CONTROLLER_NODES[@]} controller nodes to configuration..."
-for i in "${!CONTROLLER_NODES[@]}"; do
-    host="${CONTROLLER_NODES[$i]}"
-    wg_ip="${WG_IPS[$host]}"
-
-    # For single controller or HA setup with multiple controllers
-    if [[ ${#CONTROLLER_NODES[@]} -eq 1 ]]; then
-        # Single controller - use controller+worker role
-        role="controller+worker"
-    else
-        # Multiple controllers - first is controller only, others are controller+work
-        # May want to change this so it's configurable or variable depending on size of the control plane
-        if [[ $i -eq 0 ]]; then
-            role="controller"
+    for HOST in "${VM_HOSTS[@]}"; do
+        if [[ "${VM_TYPE_MAP[$HOST]}" == "controller" ]]; then
+            CONTROLLER_NODES+=("$HOST")
         else
-            role="controller+worker"
+            WORKER_NODES+=("$HOST")
         fi
-    fi
+    done
 
-    cat >> "$K0SCTL_FILE" << EOF
+    # Add controller nodes
+    print_info "Adding ${#CONTROLLER_NODES[@]} controller nodes to configuration..."
+    for i in "${!CONTROLLER_NODES[@]}"; do
+        host="${CONTROLLER_NODES[$i]}"
+        wg_ip="${WG_IPS[$host]}"
+
+        # For single controller or HA setup with multiple controllers
+        if [[ ${#CONTROLLER_NODES[@]} -eq 1 ]]; then
+            # Single controller - use controller+worker role
+            role="controller+worker"
+        else
+            # Multiple controllers - first is controller only, others are controller+work
+            # May want to change this so it's configurable or variable depending on size of the control plane
+            if [[ $i -eq 0 ]]; then
+                role="controller"
+            else
+                role="controller+worker"
+            fi
+        fi
+
+        cat >> "$K0SCTL_FILE" << EOF
     - ssh:
         address: $wg_ip
         user: $SSH_USERNAME
         keyPath: $SSH_KEY_PATH
       role: $role
 EOF
-done
+    done
 
-# Add worker nodes
-print_info "Adding ${#WORKER_NODES[@]} worker nodes to configuration..."
-for host in "${WORKER_NODES[@]}"; do
-    wg_ip="${WG_IPS[$host]}"
-    cat >> "$K0SCTL_FILE" << EOF
+    # Add worker nodes
+    print_info "Adding ${#WORKER_NODES[@]} worker nodes to configuration..."
+    for host in "${WORKER_NODES[@]}"; do
+        wg_ip="${WG_IPS[$host]}"
+        cat >> "$K0SCTL_FILE" << EOF
     - ssh:
         address: $wg_ip
         user: $SSH_USERNAME
         keyPath: $SSH_KEY_PATH
       role: worker
 EOF
-done
+    done
 
-# Add k0s configuration
-cat >> "$K0SCTL_FILE" << EOF
+    # Add k0s configuration
+    cat >> "$K0SCTL_FILE" << EOF
   k0s:
     version: $K0S_VERSION
     dynamicConfig: false
@@ -180,34 +198,41 @@ cat >> "$K0SCTL_FILE" << EOF
 EOF
 
     print_success "k0sctl configuration generated: $K0SCTL_FILE"
-fi
+    
+    # Update state
+    update_state "k0s_config_generated" "true"
+    add_event "k0s_config_generated" "k0sctl configuration file generated successfully"
 
-# Display summary
-print_header "Configuration Summary"
-echo "Cluster Name: $K0RDENT_PREFIX"
-echo "SSH User: $SSH_USERNAME"
-echo "SSH Key: $SSH_KEY_PATH"
-echo "k0s Version: $K0S_VERSION"
-echo ""
-echo "Controller Nodes (${#CONTROLLER_NODES[@]}):"
-for host in "${CONTROLLER_NODES[@]}"; do
-    echo "  - $host: ${WG_IPS[$host]}"
-done
-echo ""
-echo "Worker Nodes (${#WORKER_NODES[@]}):"
-for host in "${WORKER_NODES[@]}"; do
-    echo "  - $host: ${WG_IPS[$host]}"
-done
+    # Display summary
+    print_header "Configuration Summary"
+    echo "Cluster Name: $K0RDENT_PREFIX"
+    echo "SSH User: $SSH_USERNAME"
+    echo "SSH Key: $SSH_KEY_PATH"
+    echo "k0s Version: $K0S_VERSION"
+    echo ""
+    echo "Controller Nodes (${#CONTROLLER_NODES[@]}):"
+    for host in "${CONTROLLER_NODES[@]}"; do
+        echo "  - $host: ${WG_IPS[$host]}"
+    done
+    echo ""
+    echo "Worker Nodes (${#WORKER_NODES[@]}):"
+    for host in "${WORKER_NODES[@]}"; do
+        echo "  - $host: ${WG_IPS[$host]}"
+    done
 
-# Show HA status
-if [[ ${#CONTROLLER_NODES[@]} -gt 1 ]]; then
-    print_info "High Availability: Enabled (${#CONTROLLER_NODES[@]} controllers)"
-else
-    print_info "High Availability: Disabled (single controller)"
-fi
+    # Show HA status
+    if [[ ${#CONTROLLER_NODES[@]} -gt 1 ]]; then
+        print_info "High Availability: Enabled (${#CONTROLLER_NODES[@]} controllers)"
+    else
+        print_info "High Availability: Disabled (single controller)"
+    fi
+}
 
-# Deploy k0s if requested
-if [[ "$COMMAND" == "deploy" ]]; then
+deploy_k0s() {
+    # First generate the config
+    generate_k0s_config
+
+    # Now deploy the cluster
     print_header "Testing SSH Connectivity"
 
     # Test SSH connectivity to all nodes
@@ -240,10 +265,19 @@ if [[ "$COMMAND" == "deploy" ]]; then
     done
 
     print_header "Deploying k0s Cluster"
+    
+    # Update state phase
+    update_state "phase" "k0s_deployment"
+    add_event "k0s_deployment_started" "Starting k0s cluster deployment"
 
     print_info "Running k0sctl apply to deploy k0s cluster..."
     if k0sctl apply --config "$K0SCTL_FILE"; then
         print_success "k0s cluster deployed successfully!"
+        
+        # Update state
+        update_state "k0s_cluster_deployed" "true"
+        update_state "phase" "k0s_deployed"
+        add_event "k0s_deployment_completed" "k0s cluster deployment successful"
 
         print_header "Retrieving Kubeconfig"
 
@@ -265,6 +299,9 @@ if [[ "$COMMAND" == "deploy" ]]; then
                     mv kubeconfig.tmp "$KUBECONFIG_FILE"
                     print_success "Kubeconfig saved to: $KUBECONFIG_FILE"
                     KUBECONFIG_SUCCESS=true
+                    
+                    # Update state
+                    add_event "kubeconfig_retrieved" "Kubeconfig successfully retrieved and saved"
                     break
                 else
                     print_warning "Kubeconfig incomplete (missing contexts), retrying in 30 seconds..."
@@ -296,26 +333,6 @@ if [[ "$COMMAND" == "deploy" ]]; then
         print_error "k0s cluster deployment failed"
         exit 1
     fi
-else
-    print_header "Next Steps"
-    echo "1. Ensure WireGuard VPN is connected to access the cluster nodes"
-    echo "2. Deploy k0s cluster:"
-    echo "   ./install-k0s.sh deploy"
-    echo ""
-    echo "Or manually:"
-    echo "3. Verify SSH connectivity to all nodes:"
-    if [[ ${#CONTROLLER_NODES[@]} -gt 0 ]]; then
-        first_controller="${CONTROLLER_NODES[0]}"
-        echo "   ssh -i $SSH_KEY_PATH $SSH_USERNAME@${WG_IPS[$first_controller]}  # $first_controller"
-    fi
-    echo ""
-    echo "4. Deploy k0s using k0sctl:"
-    echo "   k0sctl apply --config $K0SCTL_FILE"
-    echo ""
-    echo "5. Get kubeconfig after deployment:"
-    echo "   k0sctl kubeconfig --config $K0SCTL_FILE > $KUBECONFIG_FILE"
-    echo "   export KUBECONFIG=\$PWD/$KUBECONFIG_FILE"
-fi
 }
 
 show_status() {
@@ -349,7 +366,8 @@ eval "$PARSED_ARGS"
 COMMAND="${POSITIONAL_ARGS[0]:-}"
 
 # Use consolidated command handling
-handle_standard_commands "$0" "deploy uninstall reset status help" \
+handle_standard_commands "$0" "config deploy uninstall reset status help" \
+    "config" "generate_k0s_config" \
     "deploy" "deploy_k0s" \
     "uninstall" "uninstall_k0s" \
     "reset" "reset_k0s" \

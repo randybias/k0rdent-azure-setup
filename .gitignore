@@ -8,6 +8,10 @@ azure-resources/
 wg-keys/
 cloud-init-yaml/
 logs/
+.project-suffix
+k0sctl-config
+laptop-wg-config
+old_deployments/
 
 # IDE and editor files
 *.code-workspace
