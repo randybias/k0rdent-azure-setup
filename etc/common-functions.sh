@@ -104,7 +104,7 @@ check_vpn_connectivity() {
     print_header "Verifying VPN Connectivity"
     
     # Check if VPN configuration exists
-    if [[ ! -d "./laptop-wg-config" ]]; then
+    if [[ ! -f "$WG_CONFIG_FILE" ]]; then
         print_warning "No VPN configuration found. Cluster operations may fail."
         return 1
     fi

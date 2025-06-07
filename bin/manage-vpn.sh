@@ -16,7 +16,7 @@ source ./etc/common-functions.sh
 WG_QUICK_PATH=$(get_wg_quick_path)
 
 # Setup completion tracking
-SETUP_COMPLETE_FILE="$WG_CONFIG_DIR/.setup-complete"
+SETUP_COMPLETE_FILE="$WG_DIR/.vpn-setup-complete"
 
 # Script-specific functions
 show_usage() {
@@ -51,7 +51,7 @@ show_comprehensive_status() {
     echo
     print_info "=== Configuration Status ==="
     
-    if [[ ! -d "$WG_CONFIG_DIR" || ! -f "$WG_CONFIG_FILE" ]]; then
+    if [[ ! -f "$WG_CONFIG_FILE" ]]; then
         print_error "No laptop WireGuard configuration found."
         print_info "Run '$0 generate' to create configuration."
         echo
@@ -136,7 +136,7 @@ get_setup_method() {
 # Mark setup as complete
 mark_setup_complete() {
     local method="$1"
-    ensure_directory "$WG_CONFIG_DIR"
+    # WireGuard directory already exists from key generation
     echo "$method" > "$SETUP_COMPLETE_FILE"
 }
 
@@ -262,7 +262,7 @@ generate_laptop_config_internal() {
     fi
     
     # Create configuration directory
-    ensure_directory "$WG_CONFIG_DIR"
+    # WireGuard directory already exists from key generation
     
     # Get VM public IP addresses
     print_info "Retrieving VM public IP addresses from Azure..."
@@ -727,7 +727,7 @@ reset_and_cleanup() {
     fi
     
     # Remove configuration directory
-    if [[ -d "$WG_CONFIG_DIR" ]]; then
+    if [[ -f "$WG_CONFIG_FILE" ]]; then
         if [[ "$SKIP_PROMPTS" == "false" ]]; then
             read -p "This will remove all WireGuard configurations. Are you sure? (yes/no): " -r
             if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
@@ -736,8 +736,8 @@ reset_and_cleanup() {
             fi
         fi
         
-        print_info "Removing WireGuard configuration directory: $WG_CONFIG_DIR"
-        rm -rf "$WG_CONFIG_DIR"
+        print_info "Removing WireGuard laptop configuration: $WG_CONFIG_FILE"
+        rm -f "$WG_CONFIG_FILE" "$SETUP_COMPLETE_FILE"
         print_success "WireGuard configuration and setup state removed."
     else
         print_info "No WireGuard configuration directory found."

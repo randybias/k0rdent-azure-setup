@@ -222,7 +222,7 @@ run_full_reset() {
     fi
 
     # Step 3: Disconnect and reset WireGuard VPN
-    if [[ -d "./laptop-wg-config" ]]; then
+    if [[ -f "$WG_CONFIG_FILE" ]]; then
         print_header "Step 3: Disconnecting and Resetting WireGuard VPN"
         bash bin/manage-vpn.sh reset $DEPLOY_FLAGS
     else
