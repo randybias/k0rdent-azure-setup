@@ -149,7 +149,7 @@ for i in "${!CONTROLLER_NODES[@]}"; do
     cat >> "$K0SCTL_FILE" << EOF
     - ssh:
         address: $wg_ip
-        user: $ADMIN_USER
+        user: $SSH_USERNAME
         keyPath: $SSH_KEY_PATH
       role: $role
 EOF
@@ -162,7 +162,7 @@ for host in "${WORKER_NODES[@]}"; do
     cat >> "$K0SCTL_FILE" << EOF
     - ssh:
         address: $wg_ip
-        user: $ADMIN_USER
+        user: $SSH_USERNAME
         keyPath: $SSH_KEY_PATH
       role: worker
 EOF
@@ -185,7 +185,7 @@ fi
 # Display summary
 print_header "Configuration Summary"
 echo "Cluster Name: $K0RDENT_PREFIX"
-echo "SSH User: $ADMIN_USER"
+echo "SSH User: $SSH_USERNAME"
 echo "SSH Key: $SSH_KEY_PATH"
 echo "k0s Version: $K0S_VERSION"
 echo ""
@@ -216,7 +216,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
         wg_ip="${WG_IPS[$host]}"
         print_info "Testing SSH to $host ($wg_ip)..."
 
-        if execute_remote_command "$wg_ip" "echo 'SSH OK'" "Test SSH to $host" 10 "$SSH_KEY_PATH" "$ADMIN_USER" &>/dev/null; then
+        if execute_remote_command "$wg_ip" "echo 'SSH OK'" "Test SSH to $host" 10 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null; then
             print_success "SSH connectivity to $host: OK"
         else
             print_error "SSH connectivity to $host: FAILED"
@@ -306,7 +306,7 @@ else
     echo "3. Verify SSH connectivity to all nodes:"
     if [[ ${#CONTROLLER_NODES[@]} -gt 0 ]]; then
         first_controller="${CONTROLLER_NODES[0]}"
-        echo "   ssh -i $SSH_KEY_PATH $ADMIN_USER@${WG_IPS[$first_controller]}  # $first_controller"
+        echo "   ssh -i $SSH_KEY_PATH $SSH_USERNAME@${WG_IPS[$first_controller]}  # $first_controller"
     fi
     echo ""
     echo "4. Deploy k0s using k0sctl:"

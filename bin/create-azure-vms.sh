@@ -45,13 +45,13 @@ verify_vm_connectivity() {
     ALL_VERIFIED=false
     VERIFICATION_ATTEMPTS=0
     
-    while [[ "$ALL_VERIFIED" != "true" && $VERIFICATION_ATTEMPTS -lt $VERIFICATION_RETRY_COUNT ]]; do
+    while [[ "$ALL_VERIFIED" != "true" && $VERIFICATION_ATTEMPTS -lt $VERIFICATION_RETRIES ]]; do
         VERIFICATION_ATTEMPTS=$((VERIFICATION_ATTEMPTS + 1))
         
         if [[ $VERIFICATION_ATTEMPTS -gt 1 ]]; then
-            print_info_verbose "Verification attempt $VERIFICATION_ATTEMPTS of $VERIFICATION_RETRY_COUNT"
-            print_info_verbose "Waiting ${VERIFICATION_RETRY_DELAY_SECONDS}s before retry..."
-            sleep $VERIFICATION_RETRY_DELAY_SECONDS
+            print_info_verbose "Verification attempt $VERIFICATION_ATTEMPTS of $VERIFICATION_RETRIES"
+            print_info_verbose "Waiting ${VERIFICATION_RETRY_DELAY}s before retry..."
+            sleep $VERIFICATION_RETRY_DELAY
         fi
         
         # Test SSH connectivity for all VMs
@@ -61,7 +61,7 @@ verify_vm_connectivity() {
         
         for HOST in "${VM_HOSTS[@]}"; do
             if [[ "${SSH_VERIFIED[$HOST]:-false}" == "false" ]]; then
-                if test_ssh_connectivity "$HOST" "${VM_PUBLIC_IPS[$HOST]}" "$SSH_PRIVATE_KEY" "$ADMIN_USER" "$SSH_TIMEOUT_SECONDS"; then
+                if test_ssh_connectivity "$HOST" "${VM_PUBLIC_IPS[$HOST]}" "$SSH_PRIVATE_KEY" "$SSH_USERNAME" "$SSH_CONNECT_TIMEOUT"; then
                     SSH_VERIFIED["$HOST"]="true"
                 fi
             fi
@@ -74,7 +74,7 @@ verify_vm_connectivity() {
         
         for HOST in "${VM_HOSTS[@]}"; do
             if [[ "${SSH_VERIFIED[$HOST]:-false}" == "true" && "${CLOUD_INIT_VERIFIED[$HOST]:-false}" == "false" ]]; then
-                if wait_for_cloud_init "$HOST" "${VM_PUBLIC_IPS[$HOST]}" "$SSH_PRIVATE_KEY" "$ADMIN_USER" "$CLOUD_INIT_TIMEOUT_MINUTES" "$CLOUD_INIT_CHECK_INTERVAL_SECONDS"; then
+                if wait_for_cloud_init "$HOST" "${VM_PUBLIC_IPS[$HOST]}" "$SSH_PRIVATE_KEY" "$SSH_USERNAME" "$CLOUD_INIT_TIMEOUT" "$CLOUD_INIT_CHECK_INTERVAL"; then
                     CLOUD_INIT_VERIFIED["$HOST"]="true"
                 fi
             fi
@@ -87,7 +87,7 @@ verify_vm_connectivity() {
         
         for HOST in "${VM_HOSTS[@]}"; do
             if [[ "${CLOUD_INIT_VERIFIED[$HOST]:-false}" == "true" && "${WIREGUARD_VERIFIED[$HOST]:-false}" == "false" ]]; then
-                if verify_wireguard_config "$HOST" "${VM_PUBLIC_IPS[$HOST]}" "$SSH_PRIVATE_KEY" "$ADMIN_USER" "$SSH_TIMEOUT_SECONDS"; then
+                if verify_wireguard_config "$HOST" "${VM_PUBLIC_IPS[$HOST]}" "$SSH_PRIVATE_KEY" "$SSH_USERNAME" "$SSH_CONNECT_TIMEOUT"; then
                     WIREGUARD_VERIFIED["$HOST"]="true"
                 fi
             fi
@@ -236,7 +236,7 @@ show_status() {
                 
                 # SSH connectivity test
                 if [[ -n "$SSH_PRIVATE_KEY" ]] && [[ "$public_ip" != "N/A" ]]; then
-                    if execute_remote_command "$public_ip" "echo 'SSH OK'" "Test SSH connection" 5 "$SSH_PRIVATE_KEY" "$ADMIN_USER" &>/dev/null; then
+                    if execute_remote_command "$public_ip" "echo 'SSH OK'" "Test SSH connection" 5 "$SSH_PRIVATE_KEY" "$SSH_USERNAME" &>/dev/null; then
                         print_success "  SSH: Connected"
                     else
                         print_error "  SSH: Not accessible"
@@ -271,7 +271,7 @@ show_status() {
     # Cloud-init files
     local cloud_init_count=0
     for HOST in "${VM_HOSTS[@]}"; do
-        if [[ -f "$CLOUDINITS/${HOST}-cloud-init.yaml" ]]; then
+        if [[ -f "$CLOUD_INIT_DIR/${HOST}-cloud-init.yaml" ]]; then
             ((cloud_init_count++))
         fi
     done
@@ -314,7 +314,7 @@ deploy_vms() {
     
     # Check if cloud-init files exist
     for HOST in "${VM_HOSTS[@]}"; do
-        CLOUD_INIT="$CLOUDINITS/${HOST}-cloud-init.yaml"
+        CLOUD_INIT="$CLOUD_INIT_DIR/${HOST}-cloud-init.yaml"
         if ! check_file_exists "$CLOUD_INIT" "Cloud-init file for $HOST"; then
             print_error "Run: ./generate-cloud-init.sh deploy"
             exit 1
@@ -359,7 +359,7 @@ deploy_vms() {
     for HOST in "${vms_to_create[@]}"; do
         ZONE="${VM_ZONE_MAP[$HOST]}"
         VM_SIZE="${VM_SIZE_MAP[$HOST]}"
-        CLOUD_INIT="$CLOUDINITS/${HOST}-cloud-init.yaml"
+        CLOUD_INIT="$CLOUD_INIT_DIR/${HOST}-cloud-init.yaml"
         
         print_info_quiet "Starting VM creation: $HOST (zone $ZONE, size $VM_SIZE)"
         
@@ -367,11 +367,11 @@ deploy_vms() {
         VM_CREATE_CMD="az vm create \
             --resource-group $RG \
             --name $HOST \
-            --image $IMAGE \
+            --image $AZURE_VM_IMAGE \
             --size $VM_SIZE \
-            --priority $PRIORITY \
+            --priority $AZURE_VM_PRIORITY \
             --zone $ZONE \
-            --admin-username $ADMIN_USER \
+            --admin-username $SSH_USERNAME \
             --ssh-key-name $SSH_KEY_NAME \
             --vnet-name $VNET_NAME \
             --subnet $SUBNET_NAME \
@@ -382,8 +382,8 @@ deploy_vms() {
             --no-wait"
         
         # Add eviction policy only for Spot instances
-        if [[ "$PRIORITY" == "Spot" ]]; then
-            VM_CREATE_CMD="$VM_CREATE_CMD --eviction-policy $EVICTION_POLICY"
+        if [[ "$AZURE_VM_PRIORITY" == "Spot" ]]; then
+            VM_CREATE_CMD="$VM_CREATE_CMD --eviction-policy $AZURE_EVICTION_POLICY"
         fi
         
         # Execute the VM creation command (non-blocking)
@@ -397,9 +397,9 @@ deploy_vms() {
     # If we created any VMs, wait for them
     if [[ ${#vms_to_create[@]} -gt 0 ]]; then
         print_header "Waiting for new VMs to become ready"
-        print_info_quiet "Timeout: $VM_WAIT_TIMEOUT_MINUTES minutes, Check interval: $VM_CHECK_INTERVAL_SECONDS seconds"
+        print_info_quiet "Timeout: $VM_CREATION_TIMEOUT_MINUTES minutes, Check interval: $VM_WAIT_CHECK_INTERVAL seconds"
         
-        TIMEOUT_SECONDS=$((VM_WAIT_TIMEOUT_MINUTES * 60))
+        TIMEOUT_SECONDS=$((VM_CREATION_TIMEOUT_MINUTES * 60))
         ELAPSED_SECONDS=0
         
         while [[ $ELAPSED_SECONDS -lt $TIMEOUT_SECONDS ]]; do
@@ -433,14 +433,14 @@ deploy_vms() {
         fi
         
         if [[ $ELAPSED_SECONDS -lt $TIMEOUT_SECONDS ]]; then
-            print_info_verbose "Waiting $VM_CHECK_INTERVAL_SECONDS seconds before next check..."
-            sleep $VM_CHECK_INTERVAL_SECONDS
-            ELAPSED_SECONDS=$((ELAPSED_SECONDS + VM_CHECK_INTERVAL_SECONDS))
+            print_info_verbose "Waiting $VM_WAIT_CHECK_INTERVAL seconds before next check..."
+            sleep $VM_WAIT_CHECK_INTERVAL
+            ELAPSED_SECONDS=$((ELAPSED_SECONDS + VM_WAIT_CHECK_INTERVAL))
         fi
     done
     
     if [[ "$ALL_READY" != "true" ]]; then
-        print_error "Timeout reached! Not all VMs are ready after $VM_WAIT_TIMEOUT_MINUTES minutes."
+        print_error "Timeout reached! Not all VMs are ready after $VM_CREATION_TIMEOUT_MINUTES minutes."
         print_info "You can check VM status with: $0 status"
         exit 1
     fi
