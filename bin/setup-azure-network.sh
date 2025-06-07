@@ -12,6 +12,7 @@ set -euo pipefail
 # Load central configuration and common functions
 source ./etc/k0rdent-config.sh
 source ./etc/common-functions.sh
+source ./etc/state-management.sh
 
 # Script-specific variables
 MANIFEST="$AZURE_MANIFEST"
@@ -105,12 +106,17 @@ deploy_resources() {
     # Check prerequisites using generic framework
     if ! check_prerequisites "setup-azure-network" \
         "azure_cli:Azure CLI not available or not logged in:Run 'az login'" \
-        "file:$WG_PORT_FILE:WireGuard port file not found:Run: bash bin/prepare-deployment.sh deploy"; then
+        "state_file:deployment state required:Run: bash bin/prepare-deployment.sh deploy"; then
         exit 1
     fi
     
-    # Read WireGuard port
-    WIREGUARD_PORT=$(cat "$WG_PORT_FILE")
+    # Get WireGuard port from state
+    WIREGUARD_PORT=$(get_state "config.wireguard_port")
+    if [[ -z "$WIREGUARD_PORT" || "$WIREGUARD_PORT" == "null" ]]; then
+        print_error "WireGuard port not found in deployment state"
+        print_info "Run deployment preparation first: bash bin/prepare-deployment.sh deploy"
+        exit 1
+    fi
     print_info "Using WireGuard port: $WIREGUARD_PORT"
     
     # Check if resources already exist
@@ -135,6 +141,10 @@ deploy_resources() {
     fi
     add_resource_to_manifest "resource_group" "$RG" "primary_resource_group"
     
+    # Update state
+    update_state "azure_rg_status" "created"
+    add_event "azure_rg_created" "Resource group created: $RG"
+    
     # Generate local SSH key pair
     SSH_PRIVATE_KEY="$MANIFEST_DIR/${K0RDENT_PREFIX}-ssh-key"
     SSH_PUBLIC_KEY="$SSH_PRIVATE_KEY.pub"
@@ -157,6 +167,10 @@ deploy_resources() {
         handle_error ${LINENO} "az sshkey create"
     fi
     add_resource_to_manifest "ssh_key" "$SSH_KEY_NAME" "vm_access_key"
+    
+    # Update state
+    update_state "azure_ssh_key_status" "created"
+    add_event "azure_ssh_key_created" "SSH key imported to Azure: $SSH_KEY_NAME"
     add_resource_to_manifest "local_ssh_private_key" "$SSH_PRIVATE_KEY" "local_private_key_file"
     add_resource_to_manifest "local_ssh_public_key" "$SSH_PUBLIC_KEY" "local_public_key_file"
     
@@ -172,6 +186,10 @@ deploy_resources() {
     fi
     add_resource_to_manifest "virtual_network" "$VNET_NAME" "$VNET_PREFIX"
     add_resource_to_manifest "subnet" "$SUBNET_NAME" "$SUBNET_PREFIX"
+    
+    # Update state
+    update_state "azure_network_status" "created"
+    add_event "azure_network_created" "Virtual network and subnet created: $VNET_NAME"
     
     # Create Network Security Group
     if ! log_azure_command "Creating Network Security Group: $NSG_NAME" \
@@ -229,6 +247,10 @@ deploy_resources() {
         handle_error ${LINENO} "az network vnet subnet update"
     fi
     
+    # Update state to mark Azure setup complete
+    update_state "phase" "azure_ready"
+    add_event "azure_setup_completed" "Azure network infrastructure deployment completed"
+    
     if [[ "$QUIET_MODE" != "true" ]]; then
         echo
         print_success "Network, subnet, NSG, and SSH key are ready."
@@ -281,6 +303,15 @@ reset_resources() {
         print_info_quiet "Removing manifest directory"
         rm -rf "$(dirname "$AZURE_MANIFEST")"
         print_success "Manifest directory removed"
+        
+        # Update state
+        update_state "azure_rg_status" "deleted"
+        update_state "azure_network_status" "deleted" 
+        update_state "azure_ssh_key_status" "deleted"
+        update_state "vm_states" "{}"
+        update_state "phase" "reset"
+        add_event "azure_infrastructure_reset" "All Azure resources deleted and cleaned up"
+        
         print_success "Azure resources reset complete"
     else
         print_info "Reset cancelled."
