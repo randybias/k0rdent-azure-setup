@@ -201,7 +201,7 @@ run_full_reset() {
     fi
 
     # Step 5: Reset deployment preparation (keys and cloud-init)
-    if [[ -d "$CLOUDINITS" ]] || [[ -d "$KEYDIR" ]]; then
+    if [[ -d "$CLOUD_INIT_DIR" ]] || [[ -d "$WG_DIR" ]]; then
         print_header "Step 5: Removing Deployment Preparation Files"
         bash bin/prepare-deployment.sh reset $DEPLOY_FLAGS
     else

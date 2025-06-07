@@ -55,14 +55,14 @@ show_status() {
     # Count keys and files for status display
     local key_count=0
     local expected_key_count=${#WG_IPS[@]}
-    if [[ -d "$KEYDIR" ]]; then
-        key_count=$(find "$KEYDIR" -name "*_privkey" 2>/dev/null | wc -l)
+    if [[ -d "$WG_DIR" ]]; then
+        key_count=$(find "$WG_DIR" -name "*_privkey" 2>/dev/null | wc -l)
     fi
     
     local file_count=0
     local expected_file_count=${#VM_HOSTS[@]}
-    if [[ -d "$CLOUDINITS" ]]; then
-        file_count=$(find "$CLOUDINITS" -name "*-cloud-init.yaml" 2>/dev/null | wc -l)
+    if [[ -d "$CLOUD_INIT_DIR" ]]; then
+        file_count=$(find "$CLOUD_INIT_DIR" -name "*-cloud-init.yaml" 2>/dev/null | wc -l)
     fi
     
     local port_info=""
@@ -72,10 +72,10 @@ show_status() {
     
     # Use generic status display framework
     display_status "Deployment Preparation Status" \
-        "dir:$KEYDIR:WireGuard key directory" \
+        "dir:$WG_DIR:WireGuard key directory" \
         "file:$WG_MANIFEST:WireGuard manifest file" \
         "count:$key_count=$expected_key_count:WireGuard keys" \
-        "dir:$CLOUDINITS:Cloud-init directory" \
+        "dir:$CLOUD_INIT_DIR:Cloud-init directory" \
         "count:$file_count=$expected_file_count:Cloud-init files" \
         "file:$WG_PORT_FILE:WireGuard port file" \
         ${port_info:+"info:$port_info:WireGuard port configured"}
@@ -85,8 +85,8 @@ show_status() {
         echo
         print_info "=== Host Key Status ==="
         for HOST in "${!WG_IPS[@]}"; do
-            PRIV_FILE="$KEYDIR/${HOST}_privkey"
-            PUB_FILE="$KEYDIR/${HOST}_pubkey"
+            PRIV_FILE="$WG_DIR/${HOST}_privkey"
+            PUB_FILE="$WG_DIR/${HOST}_pubkey"
             
             if [[ -f "$PRIV_FILE" && -f "$PUB_FILE" ]]; then
                 print_success "  $HOST: Keys exist"
@@ -98,7 +98,7 @@ show_status() {
         echo
         print_info "=== Host Cloud-Init Status ==="
         for HOST in "${VM_HOSTS[@]}"; do
-            CLOUDINIT="$CLOUDINITS/${HOST}-cloud-init.yaml"
+            CLOUDINIT="$CLOUD_INIT_DIR/${HOST}-cloud-init.yaml"
             
             if [[ -f "$CLOUDINIT" ]]; then
                 print_success "  $HOST: Cloud-init file exists"
@@ -128,12 +128,12 @@ generate_wireguard_keys() {
         fi
         # Remove existing keys
         print_info "Removing existing keys..."
-        rm -rf "$KEYDIR"
+        rm -rf "$WG_DIR"
     fi
     
     # Create directory and manifest
-    print_info_quiet "Creating key directory: $KEYDIR"
-    ensure_directory "$KEYDIR"
+    print_info_quiet "Creating key directory: $WG_DIR"
+    ensure_directory "$WG_DIR"
     print_info_quiet "Creating new manifest file..."
     echo "hostname,wireguard_ip,private_key,public_key" > "$WG_MANIFEST"
     
@@ -150,8 +150,8 @@ generate_wireguard_keys() {
     # Generate keys for each host
     for HOST in "${!WG_IPS[@]}"; do
         WG_IP="${WG_IPS[$HOST]}"
-        PRIV_FILE="$KEYDIR/${HOST}_privkey"
-        PUB_FILE="$KEYDIR/${HOST}_pubkey"
+        PRIV_FILE="$WG_DIR/${HOST}_privkey"
+        PUB_FILE="$WG_DIR/${HOST}_pubkey"
         
         print_info_quiet "Generating keys for $HOST..."
         # Generate keys
@@ -171,7 +171,7 @@ generate_wireguard_keys() {
     done
     
     if [[ "$QUIET_MODE" != "true" ]]; then
-        print_success "WireGuard keys stored in $KEYDIR"
+        print_success "WireGuard keys stored in $WG_DIR"
         print_success "Manifest file at: $WG_MANIFEST"
     fi
     
@@ -195,21 +195,21 @@ generate_cloudinit_files() {
     fi
     
     # Check if files already exist
-    if [[ -d "$CLOUDINITS" ]] && [[ -n "$(find "$CLOUDINITS" -name "*-cloud-init.yaml" 2>/dev/null)" ]]; then
+    if [[ -d "$CLOUD_INIT_DIR" ]] && [[ -n "$(find "$CLOUD_INIT_DIR" -name "*-cloud-init.yaml" 2>/dev/null)" ]]; then
         print_warning "Cloud-init files already exist."
         if ! confirm_action "Do you want to regenerate all cloud-init files?"; then
             print_info "Cloud-init generation cancelled."
             return 0
         fi
         print_info_quiet "Removing existing cloud-init files..."
-        rm -f "$CLOUDINITS"/*-cloud-init.yaml
+        rm -f "$CLOUD_INIT_DIR"/*-cloud-init.yaml
     fi
     
     # Read the WireGuard port
     WIREGUARD_PORT=$(cat "$WG_PORT_FILE")
     print_info_quiet "Using WireGuard port: $WIREGUARD_PORT"
     
-    ensure_directory "$CLOUDINITS"
+    ensure_directory "$CLOUD_INIT_DIR"
     
     # Load manifest as associative arrays
     declare -A PRIVKEYS
@@ -232,7 +232,7 @@ generate_cloudinit_files() {
         WG_PUBKEY="${PUBKEYS[$HOST]}"
         WG_IP="${WGIPS[$HOST]}"
         
-        CLOUDINIT="$CLOUDINITS/${HOST}-cloud-init.yaml"
+        CLOUDINIT="$CLOUD_INIT_DIR/${HOST}-cloud-init.yaml"
         
         print_info_quiet "Generating cloud-init for $HOST..."
         
@@ -283,7 +283,7 @@ EOF
     done
     
     if [[ "$QUIET_MODE" != "true" ]]; then
-        print_success "All per-node cloud-init YAMLs written to: $CLOUDINITS/"
+        print_success "All per-node cloud-init YAMLs written to: $CLOUD_INIT_DIR/"
         print_info "Using WireGuard port: $WIREGUARD_PORT"
     fi
     
@@ -312,8 +312,8 @@ deploy_preparation() {
         print_success "🎉 Deployment preparation completed successfully!"
         echo
         print_info "Generated files:"
-        print_info "  • WireGuard keys: $KEYDIR/"
-        print_info "  • Cloud-init files: $CLOUDINITS/"
+        print_info "  • WireGuard keys: $WG_DIR/"
+        print_info "  • Cloud-init files: $CLOUD_INIT_DIR/"
         print_info "  • Key manifest: $WG_MANIFEST"
         echo
         print_info "Next steps:"
@@ -330,11 +330,11 @@ reset_preparation() {
     local has_files=false
     
     # Check what exists
-    if [[ -d "$KEYDIR" ]]; then
+    if [[ -d "$WG_DIR" ]]; then
         has_files=true
     fi
     
-    if [[ -d "$CLOUDINITS" ]]; then
+    if [[ -d "$CLOUD_INIT_DIR" ]]; then
         has_files=true
     fi
     
@@ -345,8 +345,8 @@ reset_preparation() {
     
     if [[ "$SKIP_PROMPTS" == "false" ]]; then
         echo "This will remove:"
-        [[ -d "$KEYDIR" ]] && echo "  • WireGuard keys directory: $KEYDIR"
-        [[ -d "$CLOUDINITS" ]] && echo "  • Cloud-init files directory: $CLOUDINITS"
+        [[ -d "$WG_DIR" ]] && echo "  • WireGuard keys directory: $WG_DIR"
+        [[ -d "$CLOUD_INIT_DIR" ]] && echo "  • Cloud-init files directory: $CLOUD_INIT_DIR"
         echo
         read -p "Are you sure you want to remove all preparation files? (yes/no): " -r
         if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
@@ -356,14 +356,14 @@ reset_preparation() {
     fi
     
     # Remove directories
-    if [[ -d "$KEYDIR" ]]; then
-        print_info "Removing WireGuard directory: $KEYDIR"
-        rm -rf "$KEYDIR"
+    if [[ -d "$WG_DIR" ]]; then
+        print_info "Removing WireGuard directory: $WG_DIR"
+        rm -rf "$WG_DIR"
     fi
     
-    if [[ -d "$CLOUDINITS" ]]; then
-        print_info "Removing cloud-init files directory: $CLOUDINITS"
-        rm -rf "$CLOUDINITS"
+    if [[ -d "$CLOUD_INIT_DIR" ]]; then
+        print_info "Removing cloud-init files directory: $CLOUD_INIT_DIR"
+        rm -rf "$CLOUD_INIT_DIR"
     fi
     
     print_success "Deployment preparation files removed"

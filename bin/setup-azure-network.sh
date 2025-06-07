@@ -129,8 +129,8 @@ deploy_resources() {
     fi
     
     # Create resource group
-    if ! log_azure_command "Creating resource group: $RG in $LOCATION" \
-        az group create --name "$RG" --location "$LOCATION"; then
+    if ! log_azure_command "Creating resource group: $RG in $AZURE_LOCATION" \
+        az group create --name "$RG" --location "$AZURE_LOCATION"; then
         handle_error ${LINENO} "az group create"
     fi
     add_resource_to_manifest "resource_group" "$RG" "primary_resource_group"
@@ -152,7 +152,7 @@ deploy_resources() {
         az sshkey create \
         --name "$SSH_KEY_NAME" \
         --resource-group "$RG" \
-        --location "$LOCATION" \
+        --location "$AZURE_LOCATION" \
         --public-key "@$SSH_PUBLIC_KEY"; then
         handle_error ${LINENO} "az sshkey create"
     fi
@@ -178,7 +178,7 @@ deploy_resources() {
         az network nsg create \
         --resource-group "$RG" \
         --name "$NSG_NAME" \
-        --location "$LOCATION"; then
+        --location "$AZURE_LOCATION"; then
         handle_error ${LINENO} "az network nsg create"
     fi
     add_resource_to_manifest "network_security_group" "$NSG_NAME" ""
@@ -292,7 +292,7 @@ add_resource_to_manifest() {
     local resource_type="$1"
     local resource_name="$2"
     local additional_info="${3:-}"
-    add_to_manifest "$AZURE_MANIFEST" "$resource_type" "$resource_name" "$RG" "$LOCATION" "$additional_info"
+    add_to_manifest "$AZURE_MANIFEST" "$resource_type" "$resource_name" "$RG" "$AZURE_LOCATION" "$additional_info"
 }
 
 # Main execution

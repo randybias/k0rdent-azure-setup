@@ -47,7 +47,7 @@ uninstall_k0rdent() {
         CONTROLLER_IP="${WG_IPS[k0s-controller]}"
         
         print_info "Uninstalling k0rdent using Helm..."
-        if execute_remote_command "$CONTROLLER_IP" "helm uninstall kcm -n kcm-system" "Uninstall k0rdent" 30 "$SSH_KEY_PATH" "$ADMIN_USER" &>/dev/null; then
+        if execute_remote_command "$CONTROLLER_IP" "helm uninstall kcm -n kcm-system" "Uninstall k0rdent" 30 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null; then
             print_success "k0rdent uninstalled successfully"
         else
             print_warning "Failed to uninstall k0rdent (it may not be installed)"
@@ -90,18 +90,18 @@ if [[ "$COMMAND" == "deploy" ]]; then
     CONTROLLER_IP="${WG_IPS[k0s-controller]}"
     
     print_info "Testing SSH connectivity to controller node..."
-    if ! execute_remote_command "$CONTROLLER_IP" "echo 'SSH OK'" "Test SSH to controller" 10 "$SSH_KEY_PATH" "$ADMIN_USER" &>/dev/null; then
+    if ! execute_remote_command "$CONTROLLER_IP" "echo 'SSH OK'" "Test SSH to controller" 10 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null; then
         print_error "Cannot connect to controller node. Ensure WireGuard VPN is connected."
         exit 1
     fi
     
     print_info "Installing Helm on controller node k0s-controller..."
-    if execute_remote_command "$CONTROLLER_IP" "command -v helm" "Check if Helm is installed" 10 "$SSH_KEY_PATH" "$ADMIN_USER" &>/dev/null; then
+    if execute_remote_command "$CONTROLLER_IP" "command -v helm" "Check if Helm is installed" 10 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null; then
         print_success "Helm already installed"
     else
         print_info "Installing Helm..."
-        execute_remote_command "$CONTROLLER_IP" "curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash" "Install Helm" 60 "$SSH_KEY_PATH" "$ADMIN_USER" &>/dev/null
-        if execute_remote_command "$CONTROLLER_IP" "command -v helm" "Verify Helm installation" 10 "$SSH_KEY_PATH" "$ADMIN_USER" &>/dev/null; then
+        execute_remote_command "$CONTROLLER_IP" "curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash" "Install Helm" 60 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null
+        if execute_remote_command "$CONTROLLER_IP" "command -v helm" "Verify Helm installation" 10 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null; then
             print_success "Helm installed successfully"
         else
             print_error "Failed to install Helm"
@@ -110,7 +110,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
     fi
     
     print_info "Setting up kubeconfig on controller node..."
-    execute_remote_command "$CONTROLLER_IP" "mkdir -p ~/.kube && sudo k0s kubeconfig admin > ~/.kube/config" "Setup kubeconfig" 30 "$SSH_KEY_PATH" "$ADMIN_USER" &>/dev/null
+    execute_remote_command "$CONTROLLER_IP" "mkdir -p ~/.kube && sudo k0s kubeconfig admin > ~/.kube/config" "Setup kubeconfig" 30 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null
     
     print_info "Installing k0rdent v1.0.0 using Helm..."
     
@@ -118,7 +118,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
     local helm_log="./logs/k0rdent-helm-install-$(date +%Y%m%d_%H%M%S).log"
     ensure_directory "./logs"
     
-    if execute_remote_command "$CONTROLLER_IP" "helm install kcm oci://ghcr.io/k0rdent/kcm/charts/kcm --version 1.0.0 -n kcm-system --create-namespace --debug --timeout 10m" "Install k0rdent" 600 "$SSH_KEY_PATH" "$ADMIN_USER" > "$helm_log" 2>&1; then
+    if execute_remote_command "$CONTROLLER_IP" "helm install kcm oci://ghcr.io/k0rdent/kcm/charts/kcm --version 1.0.0 -n kcm-system --create-namespace --debug --timeout 10m" "Install k0rdent" 600 "$SSH_KEY_PATH" "$SSH_USERNAME" > "$helm_log" 2>&1; then
         print_success "k0rdent installed successfully!"
         print_info "Installation log saved to: $helm_log"
         
@@ -126,7 +126,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
         sleep 30
         
         print_info "Checking k0rdent pod status..."
-        execute_remote_command "$CONTROLLER_IP" "sudo k0s kubectl get pods -n kcm-system" "Check k0rdent pods" 30 "$SSH_KEY_PATH" "$ADMIN_USER"
+        execute_remote_command "$CONTROLLER_IP" "sudo k0s kubectl get pods -n kcm-system" "Check k0rdent pods" 30 "$SSH_KEY_PATH" "$SSH_USERNAME"
         
         print_success "k0rdent installation completed!"
     else
@@ -157,9 +157,9 @@ show_status() {
         CONTROLLER_IP="${WG_IPS[k0s-controller]}"
         
         print_info "Checking k0rdent installation status..."
-        if execute_remote_command "$CONTROLLER_IP" "helm list -n kcm-system | grep -q kcm" "Check k0rdent installation" 10 "$SSH_KEY_PATH" "$ADMIN_USER" &>/dev/null; then
+        if execute_remote_command "$CONTROLLER_IP" "helm list -n kcm-system | grep -q kcm" "Check k0rdent installation" 10 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null; then
             print_success "k0rdent is installed"
-            execute_remote_command "$CONTROLLER_IP" "helm list -n kcm-system" "Show k0rdent status" 10 "$SSH_KEY_PATH" "$ADMIN_USER"
+            execute_remote_command "$CONTROLLER_IP" "helm list -n kcm-system" "Show k0rdent status" 10 "$SSH_KEY_PATH" "$SSH_USERNAME"
         else
             print_info "k0rdent is not installed"
         fi

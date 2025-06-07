@@ -941,7 +941,7 @@ handle_standard_commands() {
 #   $3 - Description (optional, for logging)
 #   $4 - Timeout in seconds (optional, default 30)
 #   $5 - SSH key path (optional, uses SSH_PRIVATE_KEY if not provided)
-#   $6 - Admin user (optional, uses ADMIN_USER if not provided)
+#   $6 - Admin user (optional, uses SSH_USERNAME if not provided)
 # Returns: Exit code from SSH command
 execute_remote_command() {
     local host="$1"
@@ -949,7 +949,7 @@ execute_remote_command() {
     local description="${3:-Remote command}"
     local timeout="${4:-30}"
     local ssh_key="${5:-${SSH_PRIVATE_KEY:-}}"
-    local admin_user="${6:-${ADMIN_USER:-k0rdent}}"
+    local admin_user="${6:-${SSH_USERNAME:-k0rdent}}"
     
     # Validate parameters
     if [[ -z "$host" ]]; then
@@ -999,7 +999,7 @@ execute_remote_command_with_output() {
     local description="${3:-Remote command}"
     local timeout="${4:-30}"
     local ssh_key="${5:-${SSH_PRIVATE_KEY:-}}"
-    local admin_user="${6:-${ADMIN_USER:-k0rdent}}"
+    local admin_user="${6:-${SSH_USERNAME:-k0rdent}}"
     
     # Validate parameters (same as execute_remote_command)
     if [[ -z "$host" ]] || [[ -z "$command" ]] || [[ -z "$ssh_key" ]] || [[ ! -f "$ssh_key" ]]; then
