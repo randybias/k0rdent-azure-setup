@@ -85,13 +85,28 @@ for (( i=0; i<$K0S_WORKER_COUNT; i++ )); do
 done
 
 # ---- WireGuard IP Mapping ----
+# WireGuard IPs are now managed in state file
+# Initialize the associative array for backwards compatibility
 declare -A WG_IPS
-WG_IPS["mylaptop"]="172.24.24.1"
-ip_counter=1
-for host in "${VM_HOSTS[@]}"; do
-    WG_IPS["$host"]="172.24.24.$((10 + ip_counter))"
-    ((ip_counter++))
-done
+
+# Load state management functions if not already loaded
+if ! command -v get_wireguard_ip &> /dev/null; then
+    source ./etc/state-management.sh
+fi
+
+# If state file exists, populate WG_IPS from state
+if [[ -f "./deployment-state.yaml" ]]; then
+    populate_wg_ips_array
+else
+    # Fallback: compute IPs temporarily for scripts that need them before state is initialized
+    # This will be replaced by assign_wireguard_ips() call during deployment preparation
+    WG_IPS["mylaptop"]="172.24.24.1"
+    ip_counter=1
+    for host in "${VM_HOSTS[@]}"; do
+        WG_IPS["$host"]="172.24.24.$((10 + ip_counter))"
+        ((ip_counter++))
+    done
+fi
 
 # ---- Export Arrays for Scripts ----
 # Create associative arrays for easy lookup

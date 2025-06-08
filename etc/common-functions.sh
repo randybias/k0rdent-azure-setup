@@ -1481,7 +1481,7 @@ check_prerequisites() {
                 local manifest_type="${resource#manifest:}"
                 case "$manifest_type" in
                     wg_keys)
-                        if [[ ! -f "$WG_MANIFEST" ]]; then
+                        if [[ "$(get_wireguard_private_key "mylaptop" 2>/dev/null || echo "null")" == "null" ]]; then
                             print_error "$error_msg"
                             [[ -n "$fix_cmd" ]] && print_info "$fix_cmd"
                             all_ok=false

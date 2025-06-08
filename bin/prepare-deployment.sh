@@ -74,19 +74,20 @@ show_status() {
         file_count=$(find "$CLOUD_INIT_DIR" -name "*-cloud-init.yaml" 2>/dev/null | wc -l)
     fi
     
+    # Get port from state
     local port_info=""
-    if [[ -f "$WG_PORT_FILE" ]]; then
-        port_info=$(cat "$WG_PORT_FILE")
+    local wg_port=$(get_state "config.wireguard_port")
+    if [[ "$wg_port" != "null" ]]; then
+        port_info="$wg_port"
     fi
     
     # Use generic status display framework
     display_status "Deployment Preparation Status" \
         "dir:$WG_DIR:WireGuard key directory" \
-        "file:$WG_MANIFEST:WireGuard manifest file" \
+        "state:deployment-state.yaml:WireGuard peer data in state" \
         "count:$key_count=$expected_key_count:WireGuard keys" \
         "dir:$CLOUD_INIT_DIR:Cloud-init directory" \
         "count:$file_count=$expected_file_count:Cloud-init files" \
-        "file:$WG_PORT_FILE:WireGuard port file" \
         ${port_info:+"info:$port_info:WireGuard port configured"}
     
     # Show detailed host status if verbose
@@ -128,36 +129,43 @@ generate_wireguard_keys() {
     # Check if WireGuard tools are installed
     check_wireguard_tools
     
-    # Check if keys already exist
-    if [[ -f "$WG_MANIFEST" ]]; then
-        print_warning "WireGuard keys already exist."
+    # Assign WireGuard IPs to all hosts (stores in state)
+    print_info_quiet "Assigning WireGuard IP addresses..."
+    assign_wireguard_ips "${VM_HOSTS[@]}"
+    
+    # Check if keys already exist in state
+    local existing_keys=false
+    for HOST in "${!WG_IPS[@]}"; do
+        if [[ "$(get_wireguard_private_key "$HOST")" != "null" ]]; then
+            existing_keys=true
+            break
+        fi
+    done
+    
+    if [[ "$existing_keys" == "true" ]]; then
+        print_warning "WireGuard keys already exist in state."
         if ! confirm_action "Do you want to regenerate all keys?"; then
             print_info "Key generation cancelled."
             return 0
         fi
-        # Remove existing keys
-        print_info "Removing existing keys..."
+        # Remove existing keys from filesystem (state will be updated)
+        print_info "Removing existing key files..."
         rm -rf "$WG_DIR"
     fi
     
-    # Create directory and manifest
+    # Create directory for key files (for backwards compatibility)
     print_info_quiet "Creating key directory: $WG_DIR"
     ensure_directory "$WG_DIR"
-    print_info_quiet "Creating new manifest file..."
-    echo "hostname,wireguard_ip,private_key,public_key" > "$WG_MANIFEST"
     
-    # Generate WireGuard port if it doesn't exist
-    if [[ ! -f "$WG_PORT_FILE" ]]; then
+    # Generate WireGuard port if not already in state
+    local existing_port=$(get_state "config.wireguard_port")
+    if [[ "$existing_port" == "null" ]]; then
         WIREGUARD_PORT=$((RANDOM % 34001 + 30000))
-        echo "$WIREGUARD_PORT" > "$WG_PORT_FILE"
         print_info_quiet "Generated WireGuard port: $WIREGUARD_PORT"
-        # Update state with the generated port
         update_state "config.wireguard_port" "$WIREGUARD_PORT"
     else
-        WIREGUARD_PORT=$(cat "$WG_PORT_FILE")
+        WIREGUARD_PORT="$existing_port"
         print_info_quiet "Using existing WireGuard port: $WIREGUARD_PORT"
-        # Update state with existing port
-        update_state "config.wireguard_port" "$WIREGUARD_PORT"
     fi
     
     # Generate keys for each host
@@ -173,10 +181,10 @@ generate_wireguard_keys() {
         PRIV=$(cat "$PRIV_FILE")
         PUB=$(cat "$PUB_FILE")
         
-        # Output CSV manifest line
-        echo "$HOST,$WG_IP,$PRIV,$PUB" >> "$WG_MANIFEST"
+        # Store keys in state (this is the primary storage now)
+        update_wireguard_peer "$HOST" "$PRIV" "$PUB"
         
-        # File permissions
+        # File permissions for compatibility files
         chmod 600 "$PRIV_FILE"
         chmod 644 "$PUB_FILE"
         
@@ -184,8 +192,8 @@ generate_wireguard_keys() {
     done
     
     if [[ "$QUIET_MODE" != "true" ]]; then
-        print_success "WireGuard keys stored in $WG_DIR"
-        print_success "Manifest file at: $WG_MANIFEST"
+        print_success "WireGuard keys stored in deployment state"
+        print_success "Compatibility key files in: $WG_DIR"
     fi
     
     return 0
@@ -194,15 +202,17 @@ generate_wireguard_keys() {
 generate_cloudinit_files() {
     print_header "Generating Cloud-Init Files"
     
-    # Check for required files
-    if ! check_file_exists "$WG_MANIFEST" "WireGuard manifest"; then
+    # Check if WireGuard keys exist in state
+    if [[ "$(get_wireguard_private_key "mylaptop")" == "null" ]]; then
         print_error "WireGuard keys must be generated first."
         print_info "Run: $0 keys"
         exit 1
     fi
     
-    if ! check_file_exists "$WG_PORT_FILE" "WireGuard port file"; then
-        print_error "WireGuard port file missing. This should have been created during key generation."
+    # Check if WireGuard port exists in state
+    WIREGUARD_PORT=$(get_state "config.wireguard_port")
+    if [[ "$WIREGUARD_PORT" == "null" ]]; then
+        print_error "WireGuard port missing from state. Keys must be generated first."
         print_info "Run: $0 keys"
         exit 1
     fi
@@ -218,32 +228,19 @@ generate_cloudinit_files() {
         rm -f "$CLOUD_INIT_DIR"/*-cloud-init.yaml
     fi
     
-    # Get the WireGuard port from state
-    WIREGUARD_PORT=$(get_state "config.wireguard_port")
     print_info_quiet "Using WireGuard port: $WIREGUARD_PORT"
     
     ensure_directory "$CLOUD_INIT_DIR"
     
-    # Load manifest as associative arrays
-    declare -A PRIVKEYS
-    declare -A PUBKEYS
-    declare -A WGIPS
-    
-    while IFS=, read -r host wgip priv pub; do
-      PRIVKEYS["$host"]="$priv"
-      PUBKEYS["$host"]="$pub"
-      WGIPS["$host"]="$wgip"
-    done < <(tail -n +2 "$WG_MANIFEST")  # Skip header
-    
-    # Get laptop public key and IP for peer config
-    LAPTOP_PUBKEY="${PUBKEYS[mylaptop]}"
-    LAPTOP_WGIP="${WGIPS[mylaptop]}"
+    # Get laptop public key and IP for peer config from state
+    LAPTOP_PUBKEY=$(get_wireguard_public_key "mylaptop")
+    LAPTOP_WGIP=$(get_wireguard_ip "mylaptop")
     
     # Generate cloud-init for each VM
     for HOST in "${VM_HOSTS[@]}"; do
-        WG_PRIVKEY="${PRIVKEYS[$HOST]}"
-        WG_PUBKEY="${PUBKEYS[$HOST]}"
-        WG_IP="${WGIPS[$HOST]}"
+        WG_PRIVKEY=$(get_wireguard_private_key "$HOST")
+        WG_PUBKEY=$(get_wireguard_public_key "$HOST")
+        WG_IP=$(get_wireguard_ip "$HOST")
         
         CLOUDINIT="$CLOUD_INIT_DIR/${HOST}-cloud-init.yaml"
         
@@ -338,9 +335,9 @@ deploy_preparation() {
         print_success "🎉 Deployment preparation completed successfully!"
         echo
         print_info "Generated files:"
-        print_info "  • WireGuard keys: $WG_DIR/"
+        print_info "  • WireGuard keys: stored in deployment state"
         print_info "  • Cloud-init files: $CLOUD_INIT_DIR/"
-        print_info "  • Key manifest: $WG_MANIFEST"
+        print_info "  • Compatibility key files: $WG_DIR/"
         echo
         print_info "Next steps:"
         print_info "  1. Create Azure VMs: bash bin/create-azure-vms.sh deploy"

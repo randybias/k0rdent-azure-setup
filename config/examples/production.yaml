@@ -1,0 +1,34 @@
+# k0rdent Production Configuration
+# High-availability multi-zone setup for production workloads
+metadata:
+  version: "1.0"
+  schema: "k0rdent-config"
+  description: "Production HA setup with multiple controllers and workers"
+
+# Production-grade VM sizes
+vm_sizing:
+  controller:
+    size: "Standard_D4s_v5"  # 4 vCPU, 16GB RAM - adequate for control plane
+  worker:
+    size: "Standard_D8s_v5"  # 8 vCPU, 32GB RAM - good for workloads
+
+# High-availability cluster topology
+cluster:
+  controllers:
+    count: 3  # Odd number for HA etcd consensus
+    zones: [1, 2, 3]  # Spread across multiple zones
+  workers:
+    count: 3
+    zones: [1, 2, 3]  # Spread across multiple zones
+
+# Extended timeouts for production stability
+timeouts:
+  ssh_connect: 60
+  ssh_command: 600
+  k0s_install_wait: 120
+  k0rdent_install_wait: 60
+  vm_creation_minutes: 20
+  verification_retries: 5
+  verification_retry_delay: 15
+
+# All other settings inherit from defaults

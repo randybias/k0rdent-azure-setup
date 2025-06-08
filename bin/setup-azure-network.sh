@@ -39,8 +39,9 @@ show_status() {
     local SSH_PRIVATE_KEY="$MANIFEST_DIR/${K0RDENT_PREFIX}-ssh-key"
     local SSH_PUBLIC_KEY="$SSH_PRIVATE_KEY.pub"
     local port_info=""
-    if [[ -f "$WG_PORT_FILE" ]]; then
-        port_info=$(cat "$WG_PORT_FILE")
+    local wg_port=$(get_state "config.wireguard_port" 2>/dev/null || echo "null")
+    if [[ "$wg_port" != "null" ]]; then
+        port_info="$wg_port"
     fi
     
     local resource_count=0
@@ -54,8 +55,7 @@ show_status() {
         "info:$resource_count:Total Azure resources" \
         "file:$SSH_PRIVATE_KEY:SSH private key" \
         "file:$SSH_PUBLIC_KEY:SSH public key" \
-        "file:$WG_PORT_FILE:WireGuard port file" \
-        ${port_info:+"info:$port_info:WireGuard port configured"}
+        ${port_info:+"info:$port_info:WireGuard port (from state)"}
     
     # Check Azure resources if manifest exists
     if [[ -f "$AZURE_MANIFEST" ]] && check_resource_group_exists "$RG"; then
