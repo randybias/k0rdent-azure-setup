@@ -5,15 +5,19 @@ notebooks/
 # Generated deployment artifacts
 .k0rdent-suffix
 azure-resources/
-wg-keys/
-cloud-init-yaml/
+wireguard/
+cloud-inits/
 logs/
 .project-suffix
-k0sctl-config
-laptop-wg-config
+k0sctl-config/
 old_deployments/
 deployment-state.yaml
 deployment-events.yaml
+
+# Legacy files (no longer used)
+.vpn-setup-complete
+wg-key-manifest.csv
+wireguard-port.txt
 
 # IDE and editor files
 *.code-workspace

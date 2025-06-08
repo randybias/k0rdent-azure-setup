@@ -14,8 +14,7 @@ source ./etc/k0rdent-config.sh
 source ./etc/common-functions.sh
 source ./etc/state-management.sh
 
-# Script-specific variables
-MANIFEST="$AZURE_MANIFEST"
+# Note: Resource tracking now uses deployment-state.yaml instead of CSV manifest
 
 # Script-specific functions
 show_usage() {
@@ -44,21 +43,21 @@ show_status() {
         port_info="$wg_port"
     fi
     
-    local resource_count=0
-    if [[ -f "$AZURE_MANIFEST" ]]; then
-        resource_count=$(tail -n +2 "$AZURE_MANIFEST" 2>/dev/null | wc -l)
-    fi
+    local azure_rg_status=$(get_state "azure_rg_status" 2>/dev/null || echo "not_created")
+    local azure_network_status=$(get_state "azure_network_status" 2>/dev/null || echo "not_created")
+    local azure_ssh_key_status=$(get_state "azure_ssh_key_status" 2>/dev/null || echo "not_created")
     
     # Use generic status display framework
     display_status "Azure Network Resources Status" \
-        "file:$AZURE_MANIFEST:Azure manifest file" \
-        "info:$resource_count:Total Azure resources" \
+        "info:$azure_rg_status:Resource group status" \
+        "info:$azure_network_status:Network status" \
+        "info:$azure_ssh_key_status:SSH key status" \
         "file:$SSH_PRIVATE_KEY:SSH private key" \
         "file:$SSH_PUBLIC_KEY:SSH public key" \
         ${port_info:+"info:$port_info:WireGuard port (from state)"}
     
-    # Check Azure resources if manifest exists
-    if [[ -f "$AZURE_MANIFEST" ]] && check_resource_group_exists "$RG"; then
+    # Check Azure resources if state exists
+    if state_file_exists && check_resource_group_exists "$RG"; then
         echo
         print_info "=== Azure Resource Details ==="
         
@@ -95,10 +94,10 @@ show_status() {
         else
             print_error "SSH key missing in Azure: $SSH_KEY_NAME"
         fi
-    elif [[ -f "$AZURE_MANIFEST" ]]; then
+    elif state_file_exists; then
         echo
-        print_warning "Manifest exists but resource group '$RG' not found"
-        print_info "Resources may have been deleted externally"
+        print_warning "Deployment state exists but resource group '$RG' not found"
+        print_info "Resources may have been deleted externally or deployment may be incomplete"
     fi
 }
 
@@ -119,35 +118,41 @@ deploy_resources() {
     fi
     print_info "Using WireGuard port: $WIREGUARD_PORT"
     
-    # Check if resources already exist
-    if [[ -f "$AZURE_MANIFEST" ]]; then
-        print_warning "Azure manifest already exists."
-        if check_azure_resource_exists "group" "$RG"; then
-            print_error "Resource group '$RG' already exists. Use 'reset' to clean up first."
+    # Check if network setup is already complete
+    if state_file_exists; then
+        local azure_rg_status=$(get_state "azure_rg_status" 2>/dev/null || echo "not_created")
+        local azure_network_status=$(get_state "azure_network_status" 2>/dev/null || echo "not_created")
+        local azure_ssh_key_status=$(get_state "azure_ssh_key_status" 2>/dev/null || echo "not_created")
+        
+        if [[ "$azure_rg_status" == "created" && "$azure_network_status" == "created" && "$azure_ssh_key_status" == "created" ]]; then
+            print_error "Azure network setup is already complete. Use 'reset' to clean up first."
             exit 1
         fi
-        print_warning "Manifest exists but resource group is missing. Creating new resources..."
+        
+        if [[ "$azure_rg_status" == "created" ]] || [[ "$azure_network_status" == "created" ]] || [[ "$azure_ssh_key_status" == "created" ]]; then
+            print_warning "Partial Azure setup detected. Completing missing components..."
+        fi
     fi
     
-    # Create manifest
-    if [[ ! -f "$AZURE_MANIFEST" ]]; then
-        init_manifest "$AZURE_MANIFEST"
+    # Create resource group (if not already created)
+    if [[ "$(get_state "azure_rg_status" 2>/dev/null)" != "created" ]]; then
+        if ! log_azure_command "Creating resource group: $RG in $AZURE_LOCATION" \
+            az group create --name "$RG" --location "$AZURE_LOCATION"; then
+            handle_error ${LINENO} "az group create"
+        fi
+        # Update state
+        update_state "azure_rg_status" "created"
+        add_event "azure_rg_created" "Resource group created: $RG"
+    else
+        print_info "Resource group already exists: $RG"
     fi
-    
-    # Create resource group
-    if ! log_azure_command "Creating resource group: $RG in $AZURE_LOCATION" \
-        az group create --name "$RG" --location "$AZURE_LOCATION"; then
-        handle_error ${LINENO} "az group create"
-    fi
-    add_resource_to_manifest "resource_group" "$RG" "primary_resource_group"
-    
-    # Update state
-    update_state "azure_rg_status" "created"
-    add_event "azure_rg_created" "Resource group created: $RG"
     
     # Generate local SSH key pair
     SSH_PRIVATE_KEY="$MANIFEST_DIR/${K0RDENT_PREFIX}-ssh-key"
     SSH_PUBLIC_KEY="$SSH_PRIVATE_KEY.pub"
+    
+    # Ensure SSH key directory exists
+    ensure_directory "$MANIFEST_DIR"
     
     print_info_quiet "Generating local SSH key pair: $SSH_PRIVATE_KEY"
     if [[ ! -f "$SSH_PRIVATE_KEY" ]]; then
@@ -157,39 +162,40 @@ deploy_resources() {
         print_info_verbose "SSH key pair already exists locally"
     fi
     
-    # Import public key to Azure
-    if ! log_azure_command "Importing SSH public key to Azure: $SSH_KEY_NAME" \
-        az sshkey create \
-        --name "$SSH_KEY_NAME" \
-        --resource-group "$RG" \
-        --location "$AZURE_LOCATION" \
-        --public-key "@$SSH_PUBLIC_KEY"; then
-        handle_error ${LINENO} "az sshkey create"
+    # Import public key to Azure (if not already done)
+    if [[ "$(get_state "azure_ssh_key_status" 2>/dev/null)" != "created" ]]; then
+        if ! log_azure_command "Importing SSH public key to Azure: $SSH_KEY_NAME" \
+            az sshkey create \
+            --name "$SSH_KEY_NAME" \
+            --resource-group "$RG" \
+            --location "$AZURE_LOCATION" \
+            --public-key "@$SSH_PUBLIC_KEY"; then
+            handle_error ${LINENO} "az sshkey create"
+        fi
+        # Update state
+        update_state "azure_ssh_key_status" "created"
+        add_event "azure_ssh_key_created" "SSH key imported to Azure: $SSH_KEY_NAME"
+    else
+        print_info "SSH key already exists in Azure: $SSH_KEY_NAME"
     fi
-    add_resource_to_manifest "ssh_key" "$SSH_KEY_NAME" "vm_access_key"
     
-    # Update state
-    update_state "azure_ssh_key_status" "created"
-    add_event "azure_ssh_key_created" "SSH key imported to Azure: $SSH_KEY_NAME"
-    add_resource_to_manifest "local_ssh_private_key" "$SSH_PRIVATE_KEY" "local_private_key_file"
-    add_resource_to_manifest "local_ssh_public_key" "$SSH_PUBLIC_KEY" "local_public_key_file"
-    
-    # Create Virtual Network
-    if ! log_azure_command "Creating Virtual Network: $VNET_NAME ($VNET_PREFIX)" \
-        az network vnet create \
-        --resource-group "$RG" \
-        --name "$VNET_NAME" \
-        --address-prefix "$VNET_PREFIX" \
-        --subnet-name "$SUBNET_NAME" \
-        --subnet-prefix "$SUBNET_PREFIX"; then
-        handle_error ${LINENO} "az network vnet create"
+    # Create Virtual Network (if not already created)
+    if [[ "$(get_state "azure_network_status" 2>/dev/null)" != "created" ]]; then
+        if ! log_azure_command "Creating Virtual Network: $VNET_NAME ($VNET_PREFIX)" \
+            az network vnet create \
+            --resource-group "$RG" \
+            --name "$VNET_NAME" \
+            --address-prefix "$VNET_PREFIX" \
+            --subnet-name "$SUBNET_NAME" \
+            --subnet-prefix "$SUBNET_PREFIX"; then
+            handle_error ${LINENO} "az network vnet create"
+        fi
+        # Update state
+        update_state "azure_network_status" "created"
+        add_event "azure_network_created" "Virtual network and subnet created: $VNET_NAME"
+    else
+        print_info "Virtual network already exists: $VNET_NAME"
     fi
-    add_resource_to_manifest "virtual_network" "$VNET_NAME" "$VNET_PREFIX"
-    add_resource_to_manifest "subnet" "$SUBNET_NAME" "$SUBNET_PREFIX"
-    
-    # Update state
-    update_state "azure_network_status" "created"
-    add_event "azure_network_created" "Virtual network and subnet created: $VNET_NAME"
     
     # Create Network Security Group
     if ! log_azure_command "Creating Network Security Group: $NSG_NAME" \
@@ -199,7 +205,7 @@ deploy_resources() {
         --location "$AZURE_LOCATION"; then
         handle_error ${LINENO} "az network nsg create"
     fi
-    add_resource_to_manifest "network_security_group" "$NSG_NAME" ""
+    # NSG creation tracked in state management automatically
     
     # Add WireGuard NSG rule
     if ! log_azure_command "Adding NSG rule to allow WireGuard UDP port $WIREGUARD_PORT" \
@@ -217,7 +223,7 @@ deploy_resources() {
         --destination-port-ranges "$WIREGUARD_PORT"; then
         handle_error ${LINENO} "az network nsg rule create (WireGuard)"
     fi
-    add_resource_to_manifest "nsg_rule" "AllowWireGuard" "UDP_port_$WIREGUARD_PORT"
+    # NSG rules tracked in state management automatically
     
     # Add SSH NSG rule
     if ! log_azure_command "Adding NSG rule to allow SSH (22/tcp)" \
@@ -235,7 +241,7 @@ deploy_resources() {
         --destination-port-ranges 22; then
         handle_error ${LINENO} "az network nsg rule create (SSH)"
     fi
-    add_resource_to_manifest "nsg_rule" "AllowSSH" "TCP_port_22"
+    # NSG rules tracked in state management automatically
     
     # Associate NSG with subnet
     if ! log_azure_command "Associating NSG with subnet" \
@@ -254,7 +260,7 @@ deploy_resources() {
     if [[ "$QUIET_MODE" != "true" ]]; then
         echo
         print_success "Network, subnet, NSG, and SSH key are ready."
-        print_success "Resource manifest created at: $AZURE_MANIFEST"
+        print_success "Azure resources tracked in deployment state"
         print_success "Using WireGuard port: $WIREGUARD_PORT"
         print_success "SSH key '$SSH_KEY_NAME' created for VM access"
         echo
@@ -263,8 +269,8 @@ deploy_resources() {
 }
 
 uninstall_resources() {
-    if [[ ! -f "$AZURE_MANIFEST" ]]; then
-        print_info "No manifest found. Nothing to uninstall."
+    if ! state_file_exists; then
+        print_info "No deployment state found. Nothing to uninstall."
         exit 0
     fi
     
@@ -274,7 +280,7 @@ uninstall_resources() {
     fi
     
     print_warning "This will delete ALL Azure resources in resource group: $RG"
-    print_info "The manifest file will be preserved for reference."
+    print_info "The deployment state will be updated to reflect the deletion."
     
     if confirm_action "Are you sure you want to delete all Azure resources?"; then
         log_azure_command "Deleting resource group: $RG" \
@@ -289,7 +295,7 @@ uninstall_resources() {
 reset_resources() {
     print_warning "This will delete ALL Azure resources and the manifest!"
     
-    if [[ -f "$AZURE_MANIFEST" ]] && check_azure_resource_exists "group" "$RG"; then
+    if state_file_exists && check_azure_resource_exists "group" "$RG"; then
         print_warning "Resource Group to be deleted: $RG"
     fi
     
@@ -300,9 +306,8 @@ reset_resources() {
             print_success "Resource group deletion initiated (running in background)"
         fi
         
-        print_info_quiet "Removing manifest directory"
-        rm -rf "$(dirname "$AZURE_MANIFEST")"
-        print_success "Manifest directory removed"
+        print_info_quiet "Updating deployment state"
+        # Azure resources directory cleanup handled by state management
         
         # Update state
         update_state "azure_rg_status" "deleted"
@@ -318,13 +323,8 @@ reset_resources() {
     fi
 }
 
-# Wrapper function for manifest operations
-add_resource_to_manifest() {
-    local resource_type="$1"
-    local resource_name="$2"
-    local additional_info="${3:-}"
-    add_to_manifest "$AZURE_MANIFEST" "$resource_type" "$resource_name" "$RG" "$AZURE_LOCATION" "$additional_info"
-}
+# Note: Resource tracking now handled via deployment state management
+# Legacy CSV manifest functions removed
 
 # Main execution
 # Initialize logging

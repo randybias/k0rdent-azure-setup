@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Internal computed variables - DO NOT EDIT
 
-# Load user configuration first
-[[ -f ./etc/config-user.sh ]] || { echo "ERROR: config-user.sh not found"; exit 1; }
-source ./etc/config-user.sh
+# Note: User configuration now loaded via YAML in k0rdent-config.sh
+# Shell-based config-user.sh is no longer used
 
 # ---- Validation ----
 # Ensure minimum node counts

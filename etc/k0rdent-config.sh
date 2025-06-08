@@ -25,8 +25,8 @@ source ./etc/config-internal.sh
 
 # ---- Directory Configuration ----
 
-# File paths
-AZURE_MANIFEST="$MANIFEST_DIR/azure-resource-manifest.csv"
+# Note: Azure resource tracking now handled via deployment-state.yaml
+# Legacy CSV manifest support removed in favor of state management
 
 # WireGuard laptop configuration
 WG_CONFIG_FILE="$WG_DIR/wgk0${RANDOM_SUFFIX}.conf"
