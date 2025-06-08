@@ -1,7 +1,0 @@
-hostname,wireguard_ip,private_key,public_key
-k0s-controller-3,172.24.24.13,2NM2PkOfqzIxBBC8jKCHIyOUvzschSIHeAjoF5h7eW0=,XrHGOxPrjUYKsqV6UfBbzNzlEHd3BUQl86eNVgDyxHs=
-k0s-controller-2,172.24.24.12,6KY+Lh8Em87qsRSAJX9qP/EUD7B7CS8Thne/P2hf130=,Tuz4806Da8dgK6p7LYXqgrxjQ82wsfrh3IOj+4pv6gk=
-mylaptop,172.24.24.1,ANYIlPSky/iOf0Hp5IzTPtIN6lV3TarecNA5TRYMfHM=,y1IZMI4LM57AiQwBhiH33+aOmEAylpgYlL4Kb15qjlM=
-k0s-worker-1,172.24.24.14,oJ8IiOrdZYktUNAyw3zWE+53NGT00v0uhLPFRl1VgX8=,h6pvfghVre45hYFjFaIYYTezItL6oge9f2/NVJJvRgc=
-k0s-worker-2,172.24.24.15,GOBG6oDay09mRFwrQbYgYpyfLvu7zHLIds3jB1vn9nI=,z2AqH1UoJuU34ZnxR6gn1zQ5dbMKfvsM7givxyQ5Hwo=
-k0s-controller,172.24.24.11,WC7r1NExUPLtNzVb7WRkUktlBsjQ0O5gfS7znyFVql8=,MjfuTvQdjwSkUKU/ccIWZLDdRexzQMd0s1+mVBMgl18=
