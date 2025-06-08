@@ -148,9 +148,13 @@ if [[ "$COMMAND" == "deploy" ]]; then
         
         if [[ "$ready_check" =~ ^[0-9]+$ ]] && [[ "$ready_check" -eq 0 ]]; then
             print_success "All k0rdent components are ready!"
+            update_state "k0rdent_ready" "true"
+            update_state "k0rdent_ready_partial" "false"
             add_event "k0rdent_ready" "All k0rdent components verified running and ready"
         else
             print_warning "Some k0rdent components may not be fully ready yet"
+            update_state "k0rdent_ready" "false"
+            update_state "k0rdent_ready_partial" "true"
             add_event "k0rdent_ready_partial" "k0rdent installed but some components may still be starting"
         fi
         
