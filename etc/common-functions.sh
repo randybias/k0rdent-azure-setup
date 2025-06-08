@@ -1488,7 +1488,7 @@ check_prerequisites() {
                         fi
                         ;;
                     azure)
-                        if [[ ! -f "$AZURE_MANIFEST" ]]; then
+                        if ! state_file_exists; then
                             print_error "$error_msg"
                             [[ -n "$fix_cmd" ]] && print_info "$fix_cmd"
                             all_ok=false

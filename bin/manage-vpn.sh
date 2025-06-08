@@ -16,8 +16,8 @@ source ./etc/state-management.sh
 # Get WireGuard quick path once for the entire script
 WG_QUICK_PATH=$(get_wg_quick_path)
 
-# Setup completion tracking
-SETUP_COMPLETE_FILE="$WG_DIR/.vpn-setup-complete"
+# Note: Setup completion now tracked in deployment state
+# Legacy .vpn-setup-complete file removed in favor of state management
 
 # Script-specific functions
 show_usage() {
@@ -122,23 +122,22 @@ show_comprehensive_status() {
 
 # Check if setup is complete
 check_setup_complete() {
-    [[ -f "$SETUP_COMPLETE_FILE" ]]
+    local setup_status=$(get_state "wg_laptop_config_created" 2>/dev/null || echo "false")
+    [[ "$setup_status" == "true" ]]
 }
 
 # Get setup method (gui or cli)
 get_setup_method() {
-    if [[ -f "$SETUP_COMPLETE_FILE" ]]; then
-        cat "$SETUP_COMPLETE_FILE"
-    else
-        echo ""
-    fi
+    local setup_method=$(get_state "wg_setup_method" 2>/dev/null || echo "")
+    echo "$setup_method"
 }
 
 # Mark setup as complete
 mark_setup_complete() {
     local method="$1"
-    # WireGuard directory already exists from key generation
-    echo "$method" > "$SETUP_COMPLETE_FILE"
+    # Update state instead of creating file
+    update_state "wg_setup_method" "$method"
+    update_state "wg_laptop_config_created" "true"
 }
 
 # Enhanced prerequisite validation using generic framework
@@ -741,7 +740,7 @@ reset_and_cleanup() {
         fi
         
         print_info "Removing WireGuard laptop configuration: $WG_CONFIG_FILE"
-        rm -f "$WG_CONFIG_FILE" "$SETUP_COMPLETE_FILE"
+        rm -f "$WG_CONFIG_FILE"
         print_success "WireGuard configuration and setup state removed."
         
         # Update state

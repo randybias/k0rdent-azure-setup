@@ -9,6 +9,7 @@ set -euo pipefail
 # Load central configuration and common functions
 source ./etc/k0rdent-config.sh
 source ./etc/common-functions.sh
+source ./etc/state-management.sh
 
 # Default values
 SKIP_PROMPTS=false
@@ -90,8 +91,12 @@ run_deployment() {
 
     # Step 2: Setup Azure network
     print_header "Step 2: Setting up Azure Network"
-    if [[ -f "$AZURE_MANIFEST" ]]; then
-        print_warning "Azure resources already exist. Skipping network setup."
+    local azure_rg_status=$(get_state "azure_rg_status" 2>/dev/null || echo "not_created")
+    local azure_network_status=$(get_state "azure_network_status" 2>/dev/null || echo "not_created")
+    local azure_ssh_key_status=$(get_state "azure_ssh_key_status" 2>/dev/null || echo "not_created")
+    
+    if [[ "$azure_rg_status" == "created" && "$azure_network_status" == "created" && "$azure_ssh_key_status" == "created" ]]; then
+        print_warning "Azure network setup already complete. Skipping network setup."
     else
         bash bin/setup-azure-network.sh deploy $DEPLOY_FLAGS
     fi
@@ -230,7 +235,7 @@ run_full_reset() {
     fi
 
     # Step 4: Reset Azure resources (VMs and network)
-    if [[ -f "$AZURE_MANIFEST" ]] || check_resource_group_exists "$RG"; then
+    if state_file_exists || check_resource_group_exists "$RG"; then
         print_header "Step 4: Removing Azure Resources"
         bash bin/setup-azure-network.sh reset $DEPLOY_FLAGS
     else

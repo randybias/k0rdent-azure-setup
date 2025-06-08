@@ -102,7 +102,7 @@ Or step-by-step:
 ./bin/create-azure-vms.sh deploy
 
 # Step 4: Setup and connect to WireGuard VPN
-./bin/manage-vpn.sh generate
+./bin/manage-vpn.sh setup
 ./bin/manage-vpn.sh connect
 
 # Step 5: Install k0s cluster
@@ -145,83 +145,100 @@ Examples:
 
 ## Configuration
 
-Configuration is split into user-configurable settings and internal computed values:
+k0rdent uses a YAML-based configuration system for easy customization:
 
-### User Configuration (`etc/config-user.sh`)
+### YAML Configuration
 
-Modify `etc/config-user.sh` to customize your deployment:
+Configure your deployment using YAML files:
 
-#### Cluster Topology
 ```bash
-K0S_CONTROLLER_COUNT=3    # Number of k0s controllers (1, 3, 5, etc.)
-K0S_WORKER_COUNT=2        # Number of k0s workers
+# Initialize configuration
+./bin/configure.sh init
+
+# Interactive configuration (recommended)
+./bin/configure.sh interactive
+
+# Edit configuration manually
+vim ./config/k0rdent.yaml
 ```
 
-#### VM Sizing
-```bash
-AZURE_CONTROLLER_VM_SIZE="Standard_D4pls_v6"  # Controllers (4 vCPUs, 8GB ARM64)
-AZURE_WORKER_VM_SIZE="Standard_D4pls_v6"      # Workers (4 vCPUs, 8GB ARM64)
+#### Example YAML Configuration
+```yaml
+# Cluster Topology
+cluster:
+  controllers:
+    count: 3  # Number of k0s controllers (1, 3, 5, etc.)
+  workers:
+    count: 2  # Number of k0s workers
+
+# VM Sizing
+vm_sizing:
+  controller:
+    size: "Standard_D4pls_v6"  # Controllers (4 vCPUs, 8GB ARM64)
+  worker:
+    size: "Standard_D4pls_v6"  # Workers (4 vCPUs, 8GB ARM64)
+
+# Azure Settings
+azure:
+  location: "southeastasia"  # Azure region
+  vm_image: "Debian:debian-12:12-arm64:latest"
+  vm_priority: "Regular"  # Regular or Spot
+  eviction_policy: "Deallocate"  # For Spot VMs
 ```
 
-#### Azure Settings
-```bash
-AZURE_LOCATION="southeastasia"               # Azure region
-AZURE_VM_IMAGE="Debian:debian-12:12-arm64:latest"
-AZURE_VM_PRIORITY="Regular"                  # Regular or Spot
-AZURE_EVICTION_POLICY="Deallocate"          # For Spot VMs
-```
-
-#### Zone Distribution
-```bash
-CONTROLLER_ZONES=(2 3 2)   # Zones for controllers
-WORKER_ZONES=(3 2 3 2)     # Zones for workers (cycles if needed)
-```
-
-#### Network Settings
-```bash
-VNET_PREFIX="10.240.0.0/16"
-SUBNET_PREFIX="10.240.1.0/24"
-WG_NETWORK="172.24.24.0/24"
-```
-
-#### k0rdent Settings
-```bash
-K0S_VERSION="v1.33.1+k0s.0"
-K0RDENT_VERSION="1.0.0"
-K0RDENT_OCI_REGISTRY="oci://ghcr.io/k0rdent/kcm/charts/kcm"
-K0RDENT_NAMESPACE="kcm-system"
-```
+See `config/examples/` for more configuration templates:
+- `minimal.yaml` - Single controller + worker setup  
+- `production.yaml` - HA setup with 3 controllers
+- `development.yaml` - Optimized for development/testing
 
 ### Configuration Examples
 
-#### HA Setup with 3 Controllers (Default)
-```bash
-K0S_CONTROLLER_COUNT=3
-K0S_WORKER_COUNT=2
+#### HA Setup with 3 Controllers
+```yaml
+cluster:
+  controllers:
+    count: 3
+  workers:
+    count: 2
 ```
 Creates: `k0s-controller`, `k0s-controller-2`, `k0s-controller-3`, `k0s-worker-1`, `k0s-worker-2`
 
 #### Single Controller Setup
-```bash
-K0S_CONTROLLER_COUNT=1
-K0S_WORKER_COUNT=4
+```yaml
+cluster:
+  controllers:
+    count: 1
+  workers:
+    count: 4
 ```
 Creates: `k0s-controller`, `k0s-worker-1`, `k0s-worker-2`, `k0s-worker-3`, `k0s-worker-4`
 
 #### Small Development Setup
-```bash
-K0S_CONTROLLER_COUNT=1
-K0S_WORKER_COUNT=2
-AZURE_CONTROLLER_VM_SIZE="Standard_B2s"     # Smaller/cheaper
-AZURE_WORKER_VM_SIZE="Standard_B2ms"
+```yaml
+cluster:
+  controllers:
+    count: 1
+  workers:
+    count: 2
+vm_sizing:
+  controller:
+    size: "Standard_B2s"     # Smaller/cheaper
+  worker:
+    size: "Standard_B2ms"
 ```
 
 #### Large Production Setup
-```bash
-K0S_CONTROLLER_COUNT=3
-K0S_WORKER_COUNT=10
-AZURE_CONTROLLER_VM_SIZE="Standard_D4s_v3"
-AZURE_WORKER_VM_SIZE="Standard_D8s_v3"      # Larger workers
+```yaml
+cluster:
+  controllers:
+    count: 3
+  workers:
+    count: 10
+vm_sizing:
+  controller:
+    size: "Standard_D4s_v3"
+  worker:
+    size: "Standard_D8s_v3"      # Larger workers
 ```
 
 ### Internal Configuration (`etc/config-internal.sh`)
@@ -280,7 +297,7 @@ k0rdent-azure-setup/
 ├── deployment-state.yaml       # Current deployment state (auto-generated)
 ├── deployment-events.yaml      # Deployment event log (auto-generated)
 ├── etc/                        # Configuration files
-│   ├── config-user.sh          # User-configurable settings
+│   ├── config-user.sh          # DEPRECATED (use YAML config instead)
 │   ├── config-internal.sh      # Computed configuration (do not edit)
 │   ├── k0rdent-config.sh       # Central configuration loader
 │   ├── state-management.sh     # State tracking functions
@@ -293,15 +310,12 @@ k0rdent-azure-setup/
 │   ├── install-k0s.sh          # k0s cluster installation
 │   └── install-k0rdent.sh      # k0rdent installation on cluster
 ├── azure-resources/            # Generated Azure resources  
-│   ├── azure-resource-manifest.csv
 │   ├── k0rdent-XXXXXXXX-ssh-key     # Private SSH key
 │   └── k0rdent-XXXXXXXX-ssh-key.pub # Public SSH key
 ├── wireguard/                  # WireGuard configuration and keys
-│   ├── wg-key-manifest.csv
-│   ├── wireguard-port.txt
-│   ├── *_privkey
-│   └── *_pubkey
-├── cloud-init-yaml/           # VM cloud-init configurations
+│   ├── *_privkey and *_pubkey files # WireGuard keys per host
+│   └── wgk0XXXXXXXX.conf           # Laptop WireGuard config
+├── cloud-inits/               # VM cloud-init configurations
 │   ├── k0s-controller-cloud-init.yaml
 │   ├── k0s-controller-2-cloud-init.yaml
 │   ├── k0s-controller-3-cloud-init.yaml
@@ -517,7 +531,7 @@ For individual component cleanup, you can also run:
 
 ### Common Issues
 
-1. **Quota Exceeded**: Reduce VM size in `etc/config-user.sh`
+1. **Quota Exceeded**: Reduce VM size in your YAML configuration
 2. **Zone Availability**: Check ARM64 VM availability in your region
 3. **Network Conflicts**: Ensure no existing resources conflict with names
 
