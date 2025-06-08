@@ -233,10 +233,10 @@ generate_laptop_config_internal() {
     fi
     
     
-    # Check if WireGuard keys exist
-    if [[ ! -f "$WG_MANIFEST" ]]; then
-        print_error "WireGuard keys manifest not found: $WG_MANIFEST"
-        print_info "Generate keys first with: bash bin/generate-wg-keys.sh deploy"
+    # Check if WireGuard keys exist in state
+    if [[ "$(get_wireguard_private_key "mylaptop")" == "null" ]]; then
+        print_error "WireGuard keys not found in deployment state"
+        print_info "Generate keys first with: bash bin/prepare-deployment.sh keys"
         exit 1
     fi
     
@@ -289,26 +289,15 @@ generate_laptop_config_internal() {
         print_success "  $HOST: $PUBLIC_IP"
     done
     
-    # Read laptop private key from manifest
-    print_info "Reading laptop WireGuard key from manifest..."
-    LAPTOP_PRIVATE_KEY=""
-    while IFS=',' read -r hostname wg_ip private_key public_key; do
-        # Skip header line
-        if [[ "$hostname" == "hostname" ]]; then
-            continue
-        fi
-        
-        if [[ "$hostname" == "mylaptop" ]]; then
-            LAPTOP_PRIVATE_KEY="$private_key"
-            print_success "Found laptop private key"
-            break
-        fi
-    done < "$WG_MANIFEST"
-    
-    if [[ -z "$LAPTOP_PRIVATE_KEY" ]]; then
-        print_error "Laptop private key not found in manifest"
+    # Get laptop private key from state
+    print_info "Reading laptop WireGuard key from state..."
+    # Get laptop private key from state
+    LAPTOP_PRIVATE_KEY=$(get_wireguard_private_key "mylaptop")
+    if [[ "$LAPTOP_PRIVATE_KEY" == "null" ]]; then
+        print_error "Laptop private key not found in state"
         exit 1
     fi
+    print_success "Retrieved laptop private key from state"
     
     # Start building configuration file
     print_info "Creating WireGuard configuration file: $WG_CONFIG_FILE"
@@ -330,11 +319,11 @@ EOF
         WG_IP="${WG_IPS[$HOST]}"
         PUBLIC_IP="${VM_PUBLIC_IPS[$HOST]}"
         
-        # Get VM's public key from manifest
-        VM_PUBLIC_KEY=$(grep "^$HOST," "$WG_MANIFEST" | cut -d',' -f4)
+        # Get VM's public key from state
+        VM_PUBLIC_KEY=$(get_wireguard_public_key "$HOST")
         
-        if [[ -z "$VM_PUBLIC_KEY" ]]; then
-            print_error "Could not find public key for $HOST in manifest"
+        if [[ "$VM_PUBLIC_KEY" == "null" ]]; then
+            print_error "Could not find public key for $HOST in state"
             exit 1
         fi
         

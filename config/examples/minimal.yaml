@@ -1,0 +1,30 @@
+# k0rdent Minimal Configuration
+# Single controller+worker node for development and testing
+metadata:
+  version: "1.0"
+  schema: "k0rdent-config"
+  description: "Minimal single-node development setup"
+
+# Use smaller VM sizes for cost savings
+vm_sizing:
+  controller:
+    size: "Standard_B2s"  # 2 vCPU, 4GB RAM - cost-effective for development
+  worker:
+    size: "Standard_B2s"  # Same size for simplicity
+
+# Single node cluster
+cluster:
+  controllers:
+    count: 1
+    zones: [1]  # Single zone
+  workers:
+    count: 1
+    zones: [1]  # Single zone
+
+# Reduced timeouts for faster development cycles
+timeouts:
+  k0s_install_wait: 30
+  k0rdent_install_wait: 15
+  vm_creation_minutes: 10
+
+# All other settings inherit from defaults

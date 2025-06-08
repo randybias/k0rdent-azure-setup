@@ -1,0 +1,30 @@
+# k0rdent Development Configuration
+# Balanced setup for development teams and testing environments
+metadata:
+  version: "1.0"
+  schema: "k0rdent-config"
+  description: "Development environment with moderate resource allocation"
+
+# Moderate VM sizes - balance between cost and capability
+vm_sizing:
+  controller:
+    size: "Standard_D2s_v5"  # 2 vCPU, 8GB RAM
+  worker:
+    size: "Standard_D4s_v5"  # 4 vCPU, 16GB RAM
+
+# Development cluster with some redundancy
+cluster:
+  controllers:
+    count: 1  # Single controller for simplicity
+    zones: [2]
+  workers:
+    count: 2  # Multiple workers for testing distributed workloads
+    zones: [2, 3]  # Spread across zones
+
+# Standard timeouts suitable for development
+timeouts:
+  k0s_install_wait: 90
+  k0rdent_install_wait: 45
+  vm_creation_minutes: 15
+
+# All other settings inherit from defaults

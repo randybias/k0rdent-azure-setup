@@ -29,6 +29,7 @@ config:
   resource_group: "${deployment_id}-resgrp"
   controller_count: $K0S_CONTROLLER_COUNT
   worker_count: $K0S_WORKER_COUNT
+  wireguard_network: "$WG_NETWORK"
   wireguard_port: null
 
 # Azure resources
@@ -286,4 +287,107 @@ cleanup_deployment_state() {
     fi
     
     print_success "Deployment state cleanup completed"
+}
+
+# ---- WireGuard IP Management ----
+
+# Assign WireGuard IPs to hosts and store in state
+assign_wireguard_ips() {
+    local vm_hosts=("$@")
+    local wg_network=$(get_state "config.wireguard_network" || echo "$WG_NETWORK")
+    local base_ip="${wg_network%.*}"  # Extract base (e.g., "172.24.24" from "172.24.24.0/24")
+    
+    # Initialize wireguard_peers section if it doesn't exist
+    yq eval ".wireguard_peers = {}" -i "$DEPLOYMENT_STATE_FILE" 2>/dev/null || true
+    
+    # Assign laptop IP (always .1)
+    yq eval ".wireguard_peers.mylaptop.ip = \"${base_ip}.1\"" -i "$DEPLOYMENT_STATE_FILE"
+    yq eval ".wireguard_peers.mylaptop.role = \"hub\"" -i "$DEPLOYMENT_STATE_FILE"
+    
+    # Assign VM IPs starting from .11
+    local ip_counter=1
+    for host in "${vm_hosts[@]}"; do
+        local wg_ip="${base_ip}.$((10 + ip_counter))"
+        yq eval ".wireguard_peers.${host}.ip = \"${wg_ip}\"" -i "$DEPLOYMENT_STATE_FILE"
+        
+        # Determine role based on hostname
+        if [[ "$host" == *"controller"* ]]; then
+            yq eval ".wireguard_peers.${host}.role = \"controller\"" -i "$DEPLOYMENT_STATE_FILE"
+        else
+            yq eval ".wireguard_peers.${host}.role = \"worker\"" -i "$DEPLOYMENT_STATE_FILE"
+        fi
+        
+        ((ip_counter++))
+    done
+    
+    # Update timestamp
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+    
+    add_event "wireguard_ips_assigned" "WireGuard IP addresses assigned to all hosts"
+}
+
+# Get WireGuard IP for a specific host
+get_wireguard_ip() {
+    local host="$1"
+    
+    if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]]; then
+        return 1
+    fi
+    
+    yq eval ".wireguard_peers.${host}.ip" "$DEPLOYMENT_STATE_FILE" 2>/dev/null || echo "null"
+}
+
+# Update WireGuard peer keys in state
+update_wireguard_peer() {
+    local host="$1"
+    local private_key="$2"
+    local public_key="$3"
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    
+    # Ensure peer entry exists
+    if [[ $(yq eval ".wireguard_peers.${host}" "$DEPLOYMENT_STATE_FILE" 2>/dev/null) == "null" ]]; then
+        print_error "WireGuard peer $host not found in state. Run assign_wireguard_ips first."
+        return 1
+    fi
+    
+    # Update keys
+    yq eval ".wireguard_peers.${host}.private_key = \"${private_key}\"" -i "$DEPLOYMENT_STATE_FILE"
+    yq eval ".wireguard_peers.${host}.public_key = \"${public_key}\"" -i "$DEPLOYMENT_STATE_FILE"
+    yq eval ".wireguard_peers.${host}.keys_generated = true" -i "$DEPLOYMENT_STATE_FILE"
+    yq eval ".wireguard_peers.${host}.keys_generated_at = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+    yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+}
+
+# Get all WireGuard peers as associative array
+# Usage: declare -A WG_IPS; populate_wg_ips_array
+populate_wg_ips_array() {
+    if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]]; then
+        return 1
+    fi
+    
+    # Get all peer names and their IPs
+    local peers
+    peers=$(yq eval '.wireguard_peers | keys | .[]' "$DEPLOYMENT_STATE_FILE" 2>/dev/null)
+    
+    while IFS= read -r peer; do
+        if [[ -n "$peer" && "$peer" != "null" ]]; then
+            local ip=$(yq eval ".wireguard_peers.${peer}.ip" "$DEPLOYMENT_STATE_FILE" 2>/dev/null)
+            if [[ "$ip" != "null" ]]; then
+                WG_IPS["$peer"]="$ip"
+            fi
+        fi
+    done <<< "$peers"
+}
+
+# Get WireGuard peer private key
+get_wireguard_private_key() {
+    local host="$1"
+    yq eval ".wireguard_peers.${host}.private_key" "$DEPLOYMENT_STATE_FILE" 2>/dev/null || echo "null"
+}
+
+# Get WireGuard peer public key  
+get_wireguard_public_key() {
+    local host="$1"
+    yq eval ".wireguard_peers.${host}.public_key" "$DEPLOYMENT_STATE_FILE" 2>/dev/null || echo "null"
 }

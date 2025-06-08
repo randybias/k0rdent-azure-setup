@@ -78,8 +78,8 @@ generate_k0s_config() {
     # Validate prerequisites
     print_info "Validating prerequisites..."
 
-    if ! check_file_exists "$WG_MANIFEST" "WireGuard key manifest"; then
-        print_error "WireGuard keys not found. Run: ./generate-wg-keys.sh"
+    if [[ "$(get_wireguard_private_key "mylaptop")" == "null" ]]; then
+        print_error "WireGuard keys not found in state. Run: bash bin/prepare-deployment.sh keys"
         exit 1
     fi
 
