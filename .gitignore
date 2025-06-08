@@ -12,6 +12,8 @@ logs/
 k0sctl-config
 laptop-wg-config
 old_deployments/
+deployment-state.yaml
+deployment-events.yaml
 
 # IDE and editor files
 *.code-workspace

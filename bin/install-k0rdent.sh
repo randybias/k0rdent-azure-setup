@@ -142,11 +142,22 @@ if [[ "$COMMAND" == "deploy" ]]; then
         print_info "Checking k0rdent pod status..."
         execute_remote_command "$CONTROLLER_IP" "sudo k0s kubectl get pods -n kcm-system" "Check k0rdent pods" 30 "$SSH_KEY_PATH" "$SSH_USERNAME"
         
+        # Check if all pods are ready
+        print_info "Verifying all k0rdent components are ready..."
+        local ready_check=$(execute_remote_command "$CONTROLLER_IP" "sudo k0s kubectl get pods -n kcm-system --no-headers | grep -v '1/1' | wc -l" "Check ready status" 10 "$SSH_KEY_PATH" "$SSH_USERNAME" 2>&1)
+        
+        if [[ "$ready_check" =~ ^[0-9]+$ ]] && [[ "$ready_check" -eq 0 ]]; then
+            print_success "All k0rdent components are ready!"
+            add_event "k0rdent_ready" "All k0rdent components verified running and ready"
+        else
+            print_warning "Some k0rdent components may not be fully ready yet"
+            add_event "k0rdent_ready_partial" "k0rdent installed but some components may still be starting"
+        fi
+        
         print_success "k0rdent installation completed!"
         
-        # Final state update
-        update_state "status" "completed"
-        add_event "deployment_completed" "Full k0rdent deployment completed successfully"
+        # Mark deployment as completed and backup state
+        complete_deployment "k0rdent_deployed"
     else
         print_error "Failed to install k0rdent"
         print_info "Check the installation log for details: $helm_log"
