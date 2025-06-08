@@ -3,8 +3,9 @@
 # State Management Functions for k0rdent Deployment
 # Provides simple YAML-based state tracking to reduce Azure API calls
 
-# Global state file location
+# Global state file locations
 DEPLOYMENT_STATE_FILE="./deployment-state.yaml"
+DEPLOYMENT_EVENTS_FILE="./deployment-events.yaml"
 
 # Initialize new deployment state file
 init_deployment_state() {
@@ -47,12 +48,26 @@ wg_vpn_connected: false
 k0s_config_generated: false
 k0s_cluster_deployed: false
 k0rdent_installed: false
+EOF
+    
+    # Create separate events file
+    cat > "$DEPLOYMENT_EVENTS_FILE" << EOF
+# k0rdent Deployment Events Log
+# Auto-generated on $timestamp
+
+deployment_id: "$deployment_id"
+created_at: "$timestamp"
+last_updated: "$timestamp"
 
 # Events log
-events: []
+events:
+  - timestamp: "$timestamp"
+    action: deployment_initialized
+    message: Deployment state tracking initialized
 EOF
     
     print_info "Initialized deployment state: $DEPLOYMENT_STATE_FILE"
+    print_info "Initialized deployment events: $DEPLOYMENT_EVENTS_FILE"
 }
 
 # Update a simple key-value in state
@@ -66,8 +81,18 @@ update_state() {
         return 1
     fi
     
-    # Update the key and timestamp
-    yq eval ".${key} = \"${value}\"" -i "$DEPLOYMENT_STATE_FILE"
+    # Handle boolean values properly
+    if [[ "$value" == "true" ]] || [[ "$value" == "false" ]]; then
+        # Set as actual boolean, not string
+        yq eval ".${key} = ${value}" -i "$DEPLOYMENT_STATE_FILE"
+    elif [[ "$value" == "{}" ]]; then
+        # Handle empty object
+        yq eval ".${key} = {}" -i "$DEPLOYMENT_STATE_FILE"
+    else
+        # Everything else as string
+        yq eval ".${key} = \"${value}\"" -i "$DEPLOYMENT_STATE_FILE"
+    fi
+    
     yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
 }
 
@@ -145,9 +170,16 @@ add_event() {
     local message="$2"
     local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     
-    # Add event to events array
-    yq eval ".events += [{\"timestamp\": \"${timestamp}\", \"action\": \"${action}\", \"message\": \"${message}\"}]" -i "$DEPLOYMENT_STATE_FILE"
-    yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+    # Add event to events array in separate events file
+    if [[ -f "$DEPLOYMENT_EVENTS_FILE" ]]; then
+        yq eval ".events += [{\"timestamp\": \"${timestamp}\", \"action\": \"${action}\", \"message\": \"${message}\"}]" -i "$DEPLOYMENT_EVENTS_FILE"
+        yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_EVENTS_FILE"
+    fi
+    
+    # Update timestamp in main state file
+    if [[ -f "$DEPLOYMENT_STATE_FILE" ]]; then
+        yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+    fi
 }
 
 # Check if state file exists and is valid
@@ -193,4 +225,65 @@ check_yq_available() {
         echo "Install with: brew install yq (macOS) or see https://github.com/mikefarah/yq#install"
         return 1
     fi
+}
+
+# Backup completed deployment to old_deployments directory
+backup_completed_deployment() {
+    local reason="${1:-completed}"
+    
+    if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]]; then
+        print_warning "No deployment state file to backup"
+        return 0
+    fi
+    
+    local deployment_id=$(get_state "deployment_id")
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local backup_dir="old_deployments"
+    
+    # Ensure backup directory exists
+    mkdir -p "$backup_dir"
+    
+    # Backup state file
+    cp "$DEPLOYMENT_STATE_FILE" "${backup_dir}/${deployment_id}_${timestamp}_${reason}.yaml"
+    print_info "Backed up deployment state: ${backup_dir}/${deployment_id}_${timestamp}_${reason}.yaml"
+    
+    # Backup events file if it exists
+    if [[ -f "$DEPLOYMENT_EVENTS_FILE" ]]; then
+        cp "$DEPLOYMENT_EVENTS_FILE" "${backup_dir}/${deployment_id}_${timestamp}_${reason}_events.yaml"
+        print_info "Backed up deployment events: ${backup_dir}/${deployment_id}_${timestamp}_${reason}_events.yaml"
+    fi
+}
+
+# Mark deployment as completed and backup
+complete_deployment() {
+    local final_phase="${1:-completed}"
+    
+    # Update final state
+    update_state "status" "completed"
+    update_state "phase" "$final_phase"
+    add_event "deployment_completed" "Full k0rdent deployment completed successfully"
+    
+    # Backup the completed deployment
+    backup_completed_deployment "completed"
+}
+
+# Clean up deployment state files (backup first)
+cleanup_deployment_state() {
+    local reason="${1:-cleanup}"
+    
+    # Backup before cleanup
+    backup_completed_deployment "$reason"
+    
+    # Remove state files
+    if [[ -f "$DEPLOYMENT_STATE_FILE" ]]; then
+        rm -f "$DEPLOYMENT_STATE_FILE"
+        print_info "Removed deployment state file"
+    fi
+    
+    if [[ -f "$DEPLOYMENT_EVENTS_FILE" ]]; then
+        rm -f "$DEPLOYMENT_EVENTS_FILE" 
+        print_info "Removed deployment events file"
+    fi
+    
+    print_success "Deployment state cleanup completed"
 }

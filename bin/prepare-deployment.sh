@@ -397,6 +397,9 @@ reset_preparation() {
     # Update state
     update_state "wg_keys_generated" "false"
     add_event "preparation_reset" "WireGuard keys and cloud-init files removed"
+    
+    # Clean up deployment state files (backup and delete)
+    cleanup_deployment_state "reset"
 }
 
 # Store original arguments for handle_standard_commands
