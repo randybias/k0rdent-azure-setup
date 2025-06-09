@@ -58,12 +58,37 @@ This HA setup provides controller redundancy across zones for high availability.
 
 ### Prerequisites
 
-1. **Azure CLI** installed and authenticated:
+All prerequisites are automatically checked at the beginning of the deployment process. You can also verify them manually:
+
+```bash
+./deploy-k0rdent.sh check
+```
+
+Required tools:
+
+1. **yq** - YAML processor (version 4.x):
    ```bash
+   # macOS
+   brew install yq
+   
+   # Ubuntu/Debian
+   sudo snap install yq
+   # or
+   sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+   sudo chmod +x /usr/local/bin/yq
+   ```
+
+2. **Azure CLI** installed and authenticated:
+   ```bash
+   # Install Azure CLI (if needed)
+   # macOS: brew install azure-cli
+   # Linux: curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+   
+   # Login to Azure
    az login
    ```
 
-2. **WireGuard tools** installed:
+3. **WireGuard tools** installed:
    ```bash
    # macOS
    brew install wireguard-tools
@@ -73,6 +98,23 @@ This HA setup provides controller redundancy across zones for high availability.
    
    # CentOS/RHEL
    sudo yum install wireguard-tools
+   ```
+
+4. **k0sctl** - k0s cluster management tool:
+   ```bash
+   # Download latest release
+   # macOS/Linux
+   curl -sSLf https://github.com/k0sproject/k0sctl/releases/latest/download/k0sctl-$(uname -s)-$(uname -m) -o k0sctl
+   chmod +x k0sctl
+   sudo mv k0sctl /usr/local/bin/
+   ```
+
+5. **netcat (nc)** - Network connectivity tool:
+   ```bash
+   # Usually pre-installed, but if missing:
+   # macOS: brew install netcat
+   # Ubuntu/Debian: sudo apt install netcat
+   # CentOS/RHEL: sudo yum install nc
    ```
 
 ### Deployment
