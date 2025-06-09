@@ -42,7 +42,8 @@ show_usage() {
 # Check prerequisites
 validate_prerequisites() {
     if ! check_prerequisites "lockdown-ssh" \
-        "azure_cli:Azure CLI not available or not logged in:Run 'az login'"; then
+        "azure_cli:Azure CLI not available or not logged in:Run 'az login'" \
+        "jq:jq not installed:Install jq (brew install jq or apt install jq)"; then
         exit 1
     fi
     

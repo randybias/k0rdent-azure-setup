@@ -81,6 +81,14 @@ show_config() {
 
 run_deployment() {
     print_header "Starting k0rdent Deployment"
+    
+    # Check prerequisites first
+    print_info "Checking prerequisites..."
+    if ! bash bin/prepare-deployment.sh check; then
+        print_error "Prerequisites check failed. Please install missing tools and try again."
+        exit 1
+    fi
+    echo
 
     # Record start time
     DEPLOYMENT_START_TIME=$(date +%s)
