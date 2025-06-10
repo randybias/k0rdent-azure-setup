@@ -1,0 +1,63 @@
+# k0rdent Azure Deployment Configuration
+# Default template for full-featured deployment
+metadata:
+  version: "1.0"
+  schema: "k0rdent-config"
+  description: "k0rdent Large Scale Production Deployment in SEAsia with Spot instances for testing"
+
+# Azure Infrastructure Settings
+azure:
+  location: "southeastasia"
+  vm_image: "Debian:debian-12:12-arm64:latest"
+  vm_priority: "spot"  # Regular | Spot
+  eviction_policy: "Delete"  # Deallocate | Delete (for Spot VMs)
+
+# VM Sizing Configuration
+vm_sizing:
+  controller:
+    size: "Standard_D4pls_v6"  # Size for k0s controller nodes
+  worker:
+    size: "Standard_D16pls_v6"  # Size for k0s worker nodes
+
+# Cluster Topology
+cluster:
+  controllers:
+    count: 3  # Number of k0s controllers (minimum 1, odd number recommended for HA)
+    zones: [2, 3]  # Availability zones for controllers (will cycle if more controllers than zones)
+  workers:
+    count: 3  # Number of k0s workers (minimum 1)
+    zones: [3, 2]  # Availability zones for workers (will cycle if more workers than zones)
+
+# SSH Configuration
+ssh:
+  username: "k0rdent"
+  key_comment: "k0rdent-azure-key"
+
+# Software Versions
+software:
+  k0s:
+    version: "v1.33.1+k0s.0"
+  k0rdent:
+    version: "1.0.0"
+    registry: "oci://ghcr.io/k0rdent/kcm/charts/kcm"
+    namespace: "kcm-system"
+
+# Network Configuration
+network:
+  vnet_prefix: "10.240.0.0/16"
+  subnet_prefix: "10.240.1.0/24"
+  wireguard_network: "172.24.24.0/24"
+
+# Timeouts and Intervals (in seconds unless noted)
+timeouts:
+  ssh_connect: 30
+  ssh_command: 300
+  k0s_install_wait: 60
+  k0rdent_install_wait: 30
+  wireguard_connect_wait: 5
+  vm_creation_minutes: 15  # VM creation timeout in minutes
+  vm_wait_check_interval: 30
+  cloud_init_timeout: 10
+  cloud_init_check_interval: 30
+  verification_retries: 3
+  verification_retry_delay: 10

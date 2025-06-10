@@ -1,32 +1,38 @@
-# k0rdent Azure Deployment Configuration
-# Default template for full-featured deployment
+# k0rdent Minimal Configuration
+# Single controller+worker node for development and testing
 metadata:
   version: "1.0"
   schema: "k0rdent-config"
-  description: "Default k0rdent configuration for Azure deployment"
+  description: "Minimal single-node development setup"
 
-# Azure Infrastructure Settings
+  # Azure Infrastructure Settings
 azure:
-  location: "southeastasia"
-  vm_image: "Debian:debian-12:12-arm64:latest"
+  location: "westus2"
+  vm_image: "Debian:debian-12:12-gen2:latest"
   vm_priority: "Regular"  # Regular | Spot
   eviction_policy: "Deallocate"  # Deallocate | Delete (for Spot VMs)
 
-# VM Sizing Configuration
+# Network configuration
+network:
+  vnet_prefix: "10.0.0.0/16"
+  subnet_prefix: "10.0.1.0/24"
+  wireguard_network: "192.168.100.0/24"
+
+# Use smaller VM sizes for cost savings
 vm_sizing:
   controller:
-    size: "Standard_D2pls_v6"  # Size for k0s controller nodes
+    size: "Standard_B2s"  # 2 vCPU, 4GB RAM - widely available across regions
   worker:
-    size: "Standard_D8pls_v6"  # Size for k0s worker nodes
+    size: "Standard_B2s"  # Same size for simplicity
 
-# Cluster Topology
+# Single node cluster
 cluster:
   controllers:
-    count: 1  # Number of k0s controllers (minimum 1, odd number recommended for HA)
-    zones: [2, 3, 2]  # Availability zones for controllers (will cycle if more controllers than zones)
+    count: 1
+    zones: [1]  # Single zone
   workers:
-    count: 1  # Number of k0s workers (minimum 1)
-    zones: [3, 2, 3, 2]  # Availability zones for workers (will cycle if more workers than zones)
+    count: 1
+    zones: [1]  # Single zone
 
 # SSH Configuration
 ssh:
@@ -42,20 +48,14 @@ software:
     registry: "oci://ghcr.io/k0rdent/kcm/charts/kcm"
     namespace: "kcm-system"
 
-# Network Configuration
-network:
-  vnet_prefix: "10.240.0.0/16"
-  subnet_prefix: "10.240.1.0/24"
-  wireguard_network: "172.24.24.0/24"
-
-# Timeouts and Intervals (in seconds unless noted)
+# Reduced timeouts for faster development cycles
 timeouts:
   ssh_connect: 30
   ssh_command: 300
-  k0s_install_wait: 60
-  k0rdent_install_wait: 30
+  k0s_install_wait: 30
+  k0rdent_install_wait: 15
   wireguard_connect_wait: 5
-  vm_creation_minutes: 15  # VM creation timeout in minutes
+  vm_creation_minutes: 10
   vm_wait_check_interval: 30
   cloud_init_timeout: 10
   cloud_init_check_interval: 30

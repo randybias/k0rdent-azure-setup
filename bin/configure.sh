@@ -34,11 +34,12 @@ show_usage() {
     echo "  -v, --verbose    Enable verbose output"
     echo
     echo "EXAMPLES:"
-    echo "  $0 init                    # Create config from default template"
-    echo "  $0 init --template minimal # Create config from minimal template"
-    echo "  $0 show                    # Display current configuration"
-    echo "  $0 export                  # Export current config to shell vars"
-    echo "  $0 migrate                 # Convert etc/config-user.sh to YAML"
+    echo "  $0 init                         # Create config from minimal template (default)"
+    echo "  $0 init --template production   # Create config from production template"
+    echo "  $0 init --template development  # Create config from development template"
+    echo "  $0 show                         # Display current configuration"
+    echo "  $0 export                       # Export current config to shell vars"
+    echo "  $0 migrate                      # Convert etc/config-user.sh to YAML"
 }
 
 # Check if yq is available
@@ -112,14 +113,19 @@ yaml_to_shell_vars() {
 
 # Initialize configuration from template
 init_config() {
-    local template="${1:-default}"
+    local template="${1:-minimal}"
     local skip_confirm="${2:-false}"
     
-    if [[ "$template" == "default" ]]; then
-        local source_file="$CONFIG_DEFAULT_YAML"
-    else
-        local source_file="./config/examples/${template}.yaml"
-    fi
+    # Map template names to files
+    local source_file
+    case "$template" in
+        "default")
+            source_file="$CONFIG_DEFAULT_YAML"
+            ;;
+        *)
+            source_file="./config/examples/${template}.yaml"
+            ;;
+    esac
     
     if [[ ! -f "$source_file" ]]; then
         print_error "Template not found: $source_file"
@@ -131,7 +137,7 @@ init_config() {
     if [[ -f "$CONFIG_YAML" ]] && [[ "$skip_confirm" != "true" ]]; then
         print_warning "Configuration file already exists: $CONFIG_YAML"
         read -p "Overwrite? (y/N): " -r
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        if [[ ! $REPLY =~ ^[Yy]([Ee][Ss])?$ ]]; then
             print_info "Configuration initialization cancelled"
             exit 0
         fi
@@ -187,17 +193,22 @@ export_config() {
 # List available templates
 list_templates() {
     echo "Available templates:"
-    echo "  default      - Full-featured 3 controller + 2 worker setup"
     
     if [[ -d "./config/examples" ]]; then
         for template in ./config/examples/*.yaml; do
             if [[ -f "$template" ]]; then
                 local name=$(basename "$template" .yaml)
                 local description=$(yq '.metadata.description' "$template" 2>/dev/null || echo "No description")
-                echo "  $name - $description"
+                if [[ "$name" == "minimal" ]]; then
+                    echo "  $name - $description (default)"
+                else
+                    echo "  $name - $description"
+                fi
             fi
         done
     fi
+    
+    echo "  default      - Full-featured 3 controller + 2 worker setup (k0rdent-default.yaml)"
 }
 
 # Migrate shell configuration to YAML
@@ -210,7 +221,7 @@ migrate_shell_to_yaml() {
     if [[ -f "$CONFIG_YAML" ]]; then
         print_warning "YAML configuration already exists: $CONFIG_YAML"
         read -p "Overwrite with migrated configuration? (y/N): " -r
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        if [[ ! $REPLY =~ ^[Yy]([Ee][Ss])?$ ]]; then
             print_info "Migration cancelled"
             exit 0
         fi
