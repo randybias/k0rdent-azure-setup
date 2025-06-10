@@ -5,12 +5,24 @@ metadata:
   schema: "k0rdent-config"
   description: "Production HA setup with multiple controllers and workers"
 
+# Azure Infrastructure Settings
+azure:
+  location: "westus2"
+  vm_image: "Debian:debian-12:12-gen2:latest"
+  vm_priority: "Regular"
+
+# Network configuration
+network:
+  vnet_prefix: "10.0.0.0/16"
+  subnet_prefix: "10.0.1.0/24"
+  wireguard_network: "192.168.100.0/24"
+
 # Production-grade VM sizes
 vm_sizing:
   controller:
-    size: "Standard_D4s_v5"  # 4 vCPU, 16GB RAM - adequate for control plane
+    size: "Standard_B2s"  # 2 vCPU, 4GB RAM - widely available across regions
   worker:
-    size: "Standard_D8s_v5"  # 8 vCPU, 32GB RAM - good for workloads
+    size: "Standard_B2s"  # 2 vCPU, 4GB RAM - widely available across regions
 
 # High-availability cluster topology
 cluster:
@@ -21,14 +33,30 @@ cluster:
     count: 3
     zones: [1, 2, 3]  # Spread across multiple zones
 
+# SSH Configuration
+ssh:
+  username: "k0rdent"
+  key_comment: "k0rdent-azure-key"
+
+# Software Versions
+software:
+  k0s:
+    version: "v1.33.1+k0s.0"
+  k0rdent:
+    version: "1.0.0"
+    registry: "oci://ghcr.io/k0rdent/kcm/charts/kcm"
+    namespace: "kcm-system"
+
 # Extended timeouts for production stability
 timeouts:
   ssh_connect: 60
   ssh_command: 600
   k0s_install_wait: 120
   k0rdent_install_wait: 60
+  wireguard_connect_wait: 5
   vm_creation_minutes: 20
+  vm_wait_check_interval: 30
+  cloud_init_timeout: 10
+  cloud_init_check_interval: 30
   verification_retries: 5
   verification_retry_delay: 15
-
-# All other settings inherit from defaults

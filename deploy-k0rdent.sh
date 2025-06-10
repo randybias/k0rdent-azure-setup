@@ -6,6 +6,28 @@
 
 set -euo pipefail
 
+# Check if configuration exists before loading
+CONFIG_YAML="./config/k0rdent.yaml"
+CONFIG_DEFAULT_YAML="./config/k0rdent-default.yaml"
+
+if [[ ! -f "$CONFIG_YAML" ]] && [[ ! -f "$CONFIG_DEFAULT_YAML" ]]; then
+    echo "ERROR: No configuration found!"
+    echo
+    echo "Please create a configuration first using one of these commands:"
+    echo
+    echo "  # Use minimal configuration (default):"
+    echo "  ./bin/configure.sh init"
+    echo
+    echo "  # Use a specific template:"
+    echo "  ./bin/configure.sh init --template development"
+    echo "  ./bin/configure.sh init --template production"
+    echo
+    echo "  # List available templates:"
+    echo "  ./bin/configure.sh templates"
+    echo
+    exit 1
+fi
+
 # Load central configuration and common functions
 source ./etc/k0rdent-config.sh
 source ./etc/common-functions.sh

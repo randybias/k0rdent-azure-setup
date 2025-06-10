@@ -307,7 +307,13 @@ reset_resources() {
         fi
         
         print_info_quiet "Updating deployment state"
-        # Azure resources directory cleanup handled by state management
+        
+        # Clean up local SSH keys and azure-resources directory
+        if [[ -d "$MANIFEST_DIR" ]]; then
+            print_info "Removing local SSH keys and azure-resources directory"
+            rm -rf "$MANIFEST_DIR"
+            print_success "Local SSH keys cleaned up"
+        fi
         
         # Update state
         update_state "azure_rg_status" "deleted"
