@@ -52,9 +52,26 @@ This HA setup provides controller redundancy across zones for high availability.
 
 ## Quick Start
 
-1. git clone <repo>
-2. ./deploy-k0rdent.sh help
-3. ./deploy-k0rdent.sh deploy
+1. **Clone the repository**:
+   ```bash
+   git clone <repo>
+   cd k0rdent-azure-setup
+   ```
+
+2. **Create configuration**:
+   ```bash
+   # Use minimal template (single controller + worker)
+   ./bin/configure.sh init
+   
+   # Or choose from available templates
+   ./bin/configure.sh templates
+   ./bin/configure.sh init --template production
+   ```
+
+3. **Deploy the cluster**:
+   ```bash
+   ./deploy-k0rdent.sh deploy
+   ```
 
 ### Prerequisites
 
@@ -189,20 +206,31 @@ Examples:
 
 k0rdent uses a YAML-based configuration system for easy customization:
 
-### YAML Configuration
-
-Configure your deployment using YAML files:
+### Quick Configuration
 
 ```bash
-# Initialize configuration
-./bin/configure.sh init
+# List available templates
+./bin/configure.sh templates
 
-# Interactive configuration (recommended)
-./bin/configure.sh interactive
+# Create configuration from template
+./bin/configure.sh init --template minimal      # Single node (default)
+./bin/configure.sh init --template development  # Dev environment
+./bin/configure.sh init --template production   # HA production setup
+
+# View current configuration
+./bin/configure.sh show
 
 # Edit configuration manually
 vim ./config/k0rdent.yaml
 ```
+
+### Available Templates
+
+- **minimal** - Single controller + worker (default, cost-effective)
+- **development** - 1 controller + 2 workers across zones
+- **production** - 3 controllers + 3 workers (HA setup)
+- **production-arm64-southeastasia** - ARM64 optimized for Southeast Asia
+- **production-arm64-southeastasia-spot** - ARM64 with Spot VMs for cost savings
 
 #### Example YAML Configuration
 ```yaml
