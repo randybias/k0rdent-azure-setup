@@ -6,8 +6,29 @@
 set -euo pipefail
 
 # Load configuration
-source ./etc/k0rdent-config.sh
 source ./etc/common-functions.sh
+
+# Load config directly without state management
+CONFIG_YAML="./config/k0rdent.yaml"
+CONFIG_DEFAULT_YAML="./config/k0rdent-default.yaml"
+
+if [[ -f "$CONFIG_YAML" ]]; then
+    config_file="$CONFIG_YAML"
+elif [[ -f "$CONFIG_DEFAULT_YAML" ]]; then
+    config_file="$CONFIG_DEFAULT_YAML"
+else
+    print_error "No configuration found. Run: ./bin/configure.sh init"
+    exit 1
+fi
+
+# Extract values directly from YAML using yq
+AZURE_LOCATION=$(yq '.azure.location' "$config_file")
+AZURE_CONTROLLER_VM_SIZE=$(yq '.vm_sizing.controller.size' "$config_file")
+AZURE_WORKER_VM_SIZE=$(yq '.vm_sizing.worker.size' "$config_file")
+
+# Extract zones as proper arrays
+mapfile -t CONTROLLER_ZONES < <(yq '.cluster.controllers.zones[]' "$config_file")
+mapfile -t WORKER_ZONES < <(yq '.cluster.workers.zones[]' "$config_file")
 
 # Cache for VM availability to avoid duplicate API calls
 declare -A VM_AVAILABILITY_CACHE
