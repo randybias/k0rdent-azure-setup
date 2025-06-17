@@ -312,6 +312,15 @@ deploy_preparation() {
         update_state "phase" "preparation"
     fi
     
+    # Validate Azure configuration before proceeding
+    print_info "Validating Azure VM configuration..."
+    if ! ./bin/azure-configuration-validation.sh; then
+        print_error "Azure configuration validation failed"
+        print_info "Please fix the configuration issues before proceeding"
+        exit 1
+    fi
+    echo
+    
     # Generate WireGuard keys first
     if ! generate_wireguard_keys; then
         print_error "Failed to generate WireGuard keys"

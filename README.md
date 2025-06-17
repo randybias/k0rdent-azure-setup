@@ -220,6 +220,12 @@ k0rdent uses a YAML-based configuration system for easy customization:
 # View current configuration
 ./bin/configure.sh show
 
+# Validate VM availability for configuration
+./bin/configure.sh validate
+
+# Skip validation during configuration creation
+./bin/configure.sh init --template production --skip-validation
+
 # Edit configuration manually
 vim ./config/k0rdent.yaml
 ```

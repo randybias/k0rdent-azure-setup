@@ -99,6 +99,22 @@ check_netcat() {
     print_success "netcat is installed"
 }
 
+# Check yq installation (required for YAML parsing)
+check_yq() {
+    if ! command -v yq &> /dev/null; then
+        print_error "yq is not installed. Please install it first."
+        echo "Visit: https://github.com/mikefarah/yq"
+        echo "Or install via:"
+        echo "  # macOS:"
+        echo "  brew install yq"
+        echo "  # Linux (download latest release):"
+        echo "  wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq"
+        echo "  chmod +x /usr/local/bin/yq"
+        exit 1
+    fi
+    print_success "yq is installed"
+}
+
 # Check VPN connectivity for cluster operations
 check_vpn_connectivity() {
     print_header "Verifying VPN Connectivity"
