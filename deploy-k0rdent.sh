@@ -286,13 +286,29 @@ run_full_reset() {
         rm -f "$SUFFIX_FILE"
     fi
 
-    # Step 6: Clean up logs directory
+    # Step 6: Clean up deployment state files
+    if [[ -f "./deployment-state.yaml" ]] || [[ -f "./deployment-events.yaml" ]]; then
+        print_header "Step 6: Removing Deployment State Files"
+        if [[ -f "./deployment-state.yaml" ]]; then
+            rm -f "./deployment-state.yaml"
+            print_info "Removed deployment-state.yaml"
+        fi
+        if [[ -f "./deployment-events.yaml" ]]; then
+            rm -f "./deployment-events.yaml"
+            print_info "Removed deployment-events.yaml"
+        fi
+        print_success "Deployment state files removed"
+    else
+        print_info "Step 6: No deployment state files to remove"
+    fi
+
+    # Step 7: Clean up logs directory
     if [[ -d "./logs" ]]; then
-        print_header "Step 6: Removing Logs Directory"
+        print_header "Step 7: Removing Logs Directory"
         rm -rf ./logs
         print_success "Logs directory removed"
     else
-        print_info "Step 6: No logs directory to remove"
+        print_info "Step 7: No logs directory to remove"
     fi
 
     print_header "Reset Complete"
