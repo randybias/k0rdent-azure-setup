@@ -439,11 +439,16 @@ The orchestrator automatically passes flags to all child scripts for consistent 
 - Security rules for SSH and WireGuard
 - Tracks all resources in manifest for cleanup
 
-**create-azure-vms.sh**: Creates VMs in parallel and verifies deployment with:
-- SSH connectivity testing
-- Cloud-init completion monitoring  
-- WireGuard configuration verification
-- Support for `--no-wait` to skip verification
+**create-azure-vms.sh**: Asynchronous VM deployment with intelligent failure recovery:
+- **Async VM Creation**: VMs launched in parallel background processes with PID tracking
+- **Automatic Failure Recovery**: Detects failed VMs and cloud-init errors, automatically recreates
+- **Single Monitoring Loop**: Efficient Azure API usage with single bulk calls every 30 seconds
+- **Cattle-not-Pets Methodology**: Failed VMs are immediately deleted and recreated
+- **Retry Management**: Tracks retry attempts per VM (max 3 retries) with intelligent exit conditions
+- **Cloud-init Validation**: Monitors cloud-init status and triggers VM replacement on errors
+- **SSH Connectivity Testing**: Verifies SSH access before marking VMs as operational
+- **State-based Monitoring**: Tracks VM provisioning states (Creating → Succeeded → Operational)
+- Support for `--no-wait` to skip verification and `reset` for bulk VM cleanup
 
 **manage-vpn.sh**: Comprehensive VPN management with enhanced workflow:
 - **Two-step process**: `setup` (one-time configuration) and `connect` (fast, repeatable)
