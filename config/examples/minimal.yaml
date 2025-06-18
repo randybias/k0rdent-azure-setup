@@ -50,13 +50,10 @@ software:
 # Reduced timeouts for faster development cycles
 timeouts:
   ssh_connect: 30
-  ssh_command: 300
   k0s_install_wait: 30
   k0rdent_install_wait: 15
   wireguard_connect_wait: 5
   vm_creation_minutes: 10
   vm_wait_check_interval: 30
-  cloud_init_timeout: 10
-  cloud_init_check_interval: 30
   verification_retries: 3
   verification_retry_delay: 10

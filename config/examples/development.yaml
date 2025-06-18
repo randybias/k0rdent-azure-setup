@@ -50,13 +50,10 @@ software:
 # Standard timeouts suitable for development
 timeouts:
   ssh_connect: 30
-  ssh_command: 300
   k0s_install_wait: 90
   k0rdent_install_wait: 45
   wireguard_connect_wait: 5
   vm_creation_minutes: 15
   vm_wait_check_interval: 30
-  cloud_init_timeout: 10
-  cloud_init_check_interval: 30
   verification_retries: 3
   verification_retry_delay: 10
