@@ -21,7 +21,7 @@ MAX_VM_RETRIES=3            # Maximum retry attempts per VM
 
 # Script-specific functions
 
-# Check if cloud-init is in error state with retry logic
+# Check if cloud-init has completed by looking for completion file
 check_cloud_init_error() {
     local host="$1"
     local public_ip="$2"
@@ -32,42 +32,28 @@ check_cloud_init_error() {
     local retry_delay=5
     
     for ((attempt=1; attempt<=max_retries; attempt++)); do
-        local cloud_init_status
-        cloud_init_status=$(ssh -i "$ssh_key" \
-                                -o ConnectTimeout=10 \
-                                -o StrictHostKeyChecking=no \
-                                -o UserKnownHostsFile=/dev/null \
-                                -o LogLevel=ERROR \
-                                "$admin_user@$public_ip" \
-                                "sudo cloud-init status" 2>/dev/null || echo "SSH_FAILED")
-        
-        # Check for definitive error state
-        if [[ "$cloud_init_status" == *"status: error"* ]]; then
-            print_warning "Cloud-init error detected on $host after $attempt attempts"
-            return 0  # Cloud-init is in error state
+        # Check for cloud-init completion file
+        if ssh -i "$ssh_key" \
+               -o ConnectTimeout=10 \
+               -o StrictHostKeyChecking=no \
+               -o UserKnownHostsFile=/dev/null \
+               -o LogLevel=ERROR \
+               "$admin_user@$public_ip" \
+               "test -f /var/lib/cloud/instance/boot-finished" 2>/dev/null; then
+            print_info "Cloud-init completed successfully on $host"
+            return 1  # Cloud-init completed successfully (not in error state)
         fi
         
-        # Check for successful completion - break immediately
-        if [[ "$cloud_init_status" == *"status: done"* ]]; then
-            return 1  # Cloud-init completed successfully
-        fi
-        
-        # If still running or SSH failed, wait and retry (unless last attempt)
+        # Cloud-init not finished yet, retry unless last attempt
         if [[ $attempt -lt $max_retries ]]; then
-            if [[ "$cloud_init_status" == "SSH_FAILED" ]]; then
-                print_info "Cloud-init check: SSH failed on $host, retrying ($attempt/$max_retries)..."
-            elif [[ "$cloud_init_status" == *"status: running"* ]]; then
-                print_info "Cloud-init check: Still running on $host, waiting ($attempt/$max_retries)..."
-            else
-                print_info "Cloud-init check: Unknown status on $host, retrying ($attempt/$max_retries)..."
-            fi
+            print_info "Cloud-init check: Still running on $host, waiting ($attempt/$max_retries)..."
             sleep $retry_delay
         fi
     done
     
-    # After all retries, assume success if no explicit error found
-    print_info "Cloud-init check completed for $host after $max_retries attempts (assuming success)"
-    return 1  # Not in error state
+    # After all retries, cloud-init hasn't completed - this is unusual
+    print_warning "Cloud-init did not complete after $max_retries attempts on $host"
+    return 0  # Consider this an error state
 }
 
 # Launch a single VM in the background
