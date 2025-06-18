@@ -21,27 +21,53 @@ MAX_VM_RETRIES=3            # Maximum retry attempts per VM
 
 # Script-specific functions
 
-# Check if cloud-init is in error state
+# Check if cloud-init is in error state with retry logic
 check_cloud_init_error() {
     local host="$1"
     local public_ip="$2"
     local ssh_key="$3"
     local admin_user="$4"
     
-    local cloud_init_status
-    cloud_init_status=$(ssh -i "$ssh_key" \
-                            -o ConnectTimeout=10 \
-                            -o StrictHostKeyChecking=no \
-                            -o UserKnownHostsFile=/dev/null \
-                            -o LogLevel=ERROR \
-                            "$admin_user@$public_ip" \
-                            "sudo cloud-init status" 2>/dev/null || echo "SSH_FAILED")
+    local max_retries=5
+    local retry_delay=5
     
-    if [[ "$cloud_init_status" == *"status: error"* ]]; then
-        return 0  # Cloud-init is in error state
-    fi
+    for ((attempt=1; attempt<=max_retries; attempt++)); do
+        local cloud_init_status
+        cloud_init_status=$(ssh -i "$ssh_key" \
+                                -o ConnectTimeout=10 \
+                                -o StrictHostKeyChecking=no \
+                                -o UserKnownHostsFile=/dev/null \
+                                -o LogLevel=ERROR \
+                                "$admin_user@$public_ip" \
+                                "sudo cloud-init status" 2>/dev/null || echo "SSH_FAILED")
+        
+        # Check for definitive error state
+        if [[ "$cloud_init_status" == *"status: error"* ]]; then
+            print_warning "Cloud-init error detected on $host after $attempt attempts"
+            return 0  # Cloud-init is in error state
+        fi
+        
+        # Check for successful completion - break immediately
+        if [[ "$cloud_init_status" == *"status: done"* ]]; then
+            return 1  # Cloud-init completed successfully
+        fi
+        
+        # If still running or SSH failed, wait and retry (unless last attempt)
+        if [[ $attempt -lt $max_retries ]]; then
+            if [[ "$cloud_init_status" == "SSH_FAILED" ]]; then
+                print_info "Cloud-init check: SSH failed on $host, retrying ($attempt/$max_retries)..."
+            elif [[ "$cloud_init_status" == *"status: running"* ]]; then
+                print_info "Cloud-init check: Still running on $host, waiting ($attempt/$max_retries)..."
+            else
+                print_info "Cloud-init check: Unknown status on $host, retrying ($attempt/$max_retries)..."
+            fi
+            sleep $retry_delay
+        fi
+    done
     
-    return 1  # Cloud-init is not in error state
+    # After all retries, assume success if no explicit error found
+    print_info "Cloud-init check completed for $host after $max_retries attempts (assuming success)"
+    return 1  # Not in error state
 }
 
 # Launch a single VM in the background
@@ -75,13 +101,10 @@ launch_vm_async() {
         vm_create_cmd="$vm_create_cmd --eviction-policy $AZURE_EVICTION_POLICY"
     fi
     
-    # Launch VM creation in background
-    (
-        # Execute VM creation with timeout
-        timeout $((VM_CREATION_TIMEOUT_MINUTES * 60)) bash -c "$vm_create_cmd" >/dev/null 2>&1
-    ) &
+    # Launch VM creation in background with timeout
+    timeout $((VM_CREATION_TIMEOUT_MINUTES * 60)) bash -c "$vm_create_cmd" >/dev/null 2>&1 &
     
-    # Store PID and metadata
+    # Store PID of the timeout command (not a subshell)
     local pid=$!
     VM_PIDS["$host"]=$pid
     VM_START_TIME["$host"]=$(date +%s)
@@ -181,24 +204,33 @@ deploy_vms_async() {
                 continue
             fi
             
+            # Get VM state from data first
+            local vm_state
+            vm_state=$(echo "$vm_data" | yq eval ".[] | select(.name == \"$HOST\") | .provisioningState" - 2>/dev/null || echo "NotFound")
+            
             # Check if VM creation process is still running
             local pid="${VM_PIDS[$HOST]:-}"
             if [[ -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; then
-                # Process died without creating VM
-                print_warning "VM creation process for $HOST died (PID: $pid)"
-                unset VM_PIDS["$HOST"]
-                
-                # Increment retry and potentially relaunch
-                VM_RETRY_COUNT["$HOST"]=$((${VM_RETRY_COUNT["$HOST"]:-0} + 1))
-                if [[ ${VM_RETRY_COUNT["$HOST"]} -lt $MAX_VM_RETRIES ]]; then
-                    print_info "Relaunching VM creation for $HOST (attempt ${VM_RETRY_COUNT["$HOST"]}/${MAX_VM_RETRIES})"
-                    ZONE="${VM_ZONE_MAP[$HOST]}"
-                    VM_SIZE="${VM_SIZE_MAP[$HOST]}"
-                    CLOUD_INIT="$CLOUD_INIT_DIR/${HOST}-cloud-init.yaml"
-                    launch_vm_async "$HOST" "$ZONE" "$VM_SIZE" "$CLOUD_INIT"
+                # Process died - but only consider it failed if VM doesn't exist in Azure
+                if [[ "$vm_state" == "NotFound" ]]; then
+                    print_warning "VM creation process for $HOST died without creating VM (PID: $pid)"
+                    unset VM_PIDS["$HOST"]
+                    
+                    # Increment retry and potentially relaunch
+                    VM_RETRY_COUNT["$HOST"]=$((${VM_RETRY_COUNT["$HOST"]:-0} + 1))
+                    if [[ ${VM_RETRY_COUNT["$HOST"]} -lt $MAX_VM_RETRIES ]]; then
+                        print_info "Relaunching VM creation for $HOST (attempt ${VM_RETRY_COUNT["$HOST"]}/${MAX_VM_RETRIES})"
+                        ZONE="${VM_ZONE_MAP[$HOST]}"
+                        VM_SIZE="${VM_SIZE_MAP[$HOST]}"
+                        CLOUD_INIT="$CLOUD_INIT_DIR/${HOST}-cloud-init.yaml"
+                        launch_vm_async "$HOST" "$ZONE" "$VM_SIZE" "$CLOUD_INIT"
+                    else
+                        print_error "VM $HOST exceeded maximum retries after process death"
+                        continue
+                    fi
                 else
-                    print_error "VM $HOST exceeded maximum retries after process death"
-                    continue
+                    # Process died but VM exists in Azure - this is normal, just clean up PID
+                    unset VM_PIDS["$HOST"]
                 fi
             fi
             
@@ -209,9 +241,7 @@ deploy_vms_async() {
             
             active_vms=$((active_vms + 1))
             
-            # Step 2: Get VM state from data
-            local vm_state
-            vm_state=$(echo "$vm_data" | yq eval ".[] | select(.name == \"$HOST\") | .provisioningState" - 2>/dev/null || echo "NotFound")
+            # Step 2: Get VM public IP from data
             local public_ip
             public_ip=$(echo "$vm_data" | yq eval ".[] | select(.name == \"$HOST\") | .publicIps" - 2>/dev/null || echo "")
             
