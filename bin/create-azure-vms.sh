@@ -16,6 +16,7 @@ source ./etc/state-management.sh
 declare -A VM_PIDS           # Track background VM creation PIDs
 declare -A VM_RETRY_COUNT    # Track retry attempts per VM
 declare -A VM_START_TIME     # Track when each VM creation started
+declare -A VM_VERIFIED       # Track VMs that have been fully verified (SSH + cloud-init passed)
 MAX_VM_RETRIES=3            # Maximum retry attempts per VM
 
 # Script-specific functions
@@ -180,6 +181,32 @@ deploy_vms_async() {
                 continue
             fi
             
+            # Check if VM creation process is still running
+            local pid="${VM_PIDS[$HOST]:-}"
+            if [[ -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; then
+                # Process died without creating VM
+                print_warning "VM creation process for $HOST died (PID: $pid)"
+                unset VM_PIDS["$HOST"]
+                
+                # Increment retry and potentially relaunch
+                VM_RETRY_COUNT["$HOST"]=$((${VM_RETRY_COUNT["$HOST"]:-0} + 1))
+                if [[ ${VM_RETRY_COUNT["$HOST"]} -lt $MAX_VM_RETRIES ]]; then
+                    print_info "Relaunching VM creation for $HOST (attempt ${VM_RETRY_COUNT["$HOST"]}/${MAX_VM_RETRIES})"
+                    ZONE="${VM_ZONE_MAP[$HOST]}"
+                    VM_SIZE="${VM_SIZE_MAP[$HOST]}"
+                    CLOUD_INIT="$CLOUD_INIT_DIR/${HOST}-cloud-init.yaml"
+                    launch_vm_async "$HOST" "$ZONE" "$VM_SIZE" "$CLOUD_INIT"
+                else
+                    print_error "VM $HOST exceeded maximum retries after process death"
+                    continue
+                fi
+            fi
+            
+            # Skip counting verified VMs as active
+            if [[ "${VM_VERIFIED[$HOST]:-}" == "true" ]]; then
+                continue
+            fi
+            
             active_vms=$((active_vms + 1))
             
             # Step 2: Get VM state from data
@@ -188,7 +215,13 @@ deploy_vms_async() {
             local public_ip
             public_ip=$(echo "$vm_data" | yq eval ".[] | select(.name == \"$HOST\") | .publicIps" - 2>/dev/null || echo "")
             
-            print_info "  $HOST: State=$vm_state, IP=$public_ip"
+            # Only log VMs that have meaningful state information
+            if [[ -n "$vm_state" ]] && [[ "$vm_state" != "NotFound" ]]; then
+                print_info "  $HOST: State=$vm_state, IP=$public_ip"
+            elif [[ -n "$public_ip" ]]; then
+                # Log if we have an IP but no state (unusual but worth noting)
+                print_info "  $HOST: State=$vm_state, IP=$public_ip"
+            fi
             
             # Step 3: Handle failed states
             if [[ "$vm_state" == "Failed" ]] || [[ "$vm_state" == "NotFound" ]]; then
@@ -203,7 +236,8 @@ deploy_vms_async() {
                     sleep 2  # Brief pause before recreation
                 fi
                 
-                # Increment retry count and relaunch
+                # Reset verification status and increment retry count
+                VM_VERIFIED["$HOST"]="false"
                 VM_RETRY_COUNT["$HOST"]=$((VM_RETRY_COUNT["$HOST"] + 1))
                 
                 if [[ ${VM_RETRY_COUNT["$HOST"]} -lt $MAX_VM_RETRIES ]]; then
@@ -222,6 +256,11 @@ deploy_vms_async() {
                 # Update state with IP
                 update_vm_state "$HOST" "$public_ip" "" "Succeeded"
                 
+                # Skip verification checks if VM is already fully verified
+                if [[ "${VM_VERIFIED[$HOST]:-}" == "true" ]]; then
+                    continue
+                fi
+                
                 # Step 5: Test SSH connectivity
                 if ! test_ssh_connectivity "$HOST" "$public_ip" "$SSH_PRIVATE_KEY" "$SSH_USERNAME" 10; then
                     print_warning "SSH connectivity failed for $HOST. Recreating VM..."
@@ -230,6 +269,9 @@ deploy_vms_async() {
                     # Kill process, delete, and relaunch
                     kill_vm_process "$HOST"
                     delete_vm "$HOST"
+                    
+                    # Reset verification status for recreated VM
+                    VM_VERIFIED["$HOST"]="false"
                     
                     VM_RETRY_COUNT["$HOST"]=$((VM_RETRY_COUNT["$HOST"] + 1))
                     if [[ ${VM_RETRY_COUNT["$HOST"]} -lt $MAX_VM_RETRIES ]]; then
@@ -251,6 +293,9 @@ deploy_vms_async() {
                     kill_vm_process "$HOST"
                     delete_vm "$HOST"
                     
+                    # Reset verification status for recreated VM
+                    VM_VERIFIED["$HOST"]="false"
+                    
                     VM_RETRY_COUNT["$HOST"]=$((VM_RETRY_COUNT["$HOST"] + 1))
                     if [[ ${VM_RETRY_COUNT["$HOST"]} -lt $MAX_VM_RETRIES ]]; then
                         ZONE="${VM_ZONE_MAP[$HOST]}"
@@ -264,6 +309,9 @@ deploy_vms_async() {
                 
                 # Cloud-init passed, report success
                 print_success "Cloud-init completed successfully on $HOST"
+                
+                # Mark VM as fully verified to skip future checks
+                VM_VERIFIED["$HOST"]="true"
                 
                 # If we got here, VM is fully ready
                 print_success "VM $HOST is fully operational"
