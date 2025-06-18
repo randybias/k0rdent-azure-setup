@@ -448,6 +448,8 @@ The orchestrator automatically passes flags to all child scripts for consistent 
 - **Cloud-init Validation**: Monitors cloud-init status and triggers VM replacement on errors
 - **SSH Connectivity Testing**: Verifies SSH access before marking VMs as operational
 - **State-based Monitoring**: Tracks VM provisioning states (Creating → Succeeded → Operational)
+- **Optimized Verification**: Skip rechecking already verified VMs, cleaner logs for VMs without state
+- **Process Health Monitoring**: Detects dead VM creation processes and automatically retries
 - Support for `--no-wait` to skip verification and `reset` for bulk VM cleanup
 
 **manage-vpn.sh**: Comprehensive VPN management with enhanced workflow:
