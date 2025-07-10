@@ -27,7 +27,11 @@ graph TD
     ConnectVPN --> Installk0s[install-k0s.sh]
     Installk0s --> |Updates State| State6[(deployment-state.yaml)]
     
-    Installk0s --> Installk0rdent[install-k0rdent.sh]
+    Installk0s --> ValidateNet[validate-pod-network.sh]
+    ValidateNet --> |Network OK?| NetDecision{Network Valid?}
+    NetDecision -->|Yes| Installk0rdent[install-k0rdent.sh]
+    NetDecision -->|No| FailNet[Network Validation Failed]
+    
     Installk0rdent --> |Updates State| State7[(deployment-state.yaml)]
     
     Installk0rdent --> Complete([Deployment Complete])
@@ -42,6 +46,8 @@ graph TD
     style State5 fill:#FFE4B5
     style State6 fill:#FFE4B5
     style State7 fill:#FFE4B5
+    style FailNet fill:#FF6B6B
+    style NetDecision fill:#FFEB9C
 ```
 
 ## Configuration Loading System
@@ -92,6 +98,7 @@ graph TD
         VMs[bin/create-azure-vms.sh]
         VPN[bin/manage-vpn.sh]
         K0s[bin/install-k0s.sh]
+        Validate[bin/validate-pod-network.sh]
         K0rdent[bin/install-k0rdent.sh]
         SSH[bin/lockdown-ssh.sh]
     end
@@ -114,6 +121,9 @@ graph TD
     VPN --> State
     K0s --> Common
     K0s --> State
+    K0s --> Validate
+    Validate --> Common
+    Validate --> State
     K0rdent --> Common
     K0rdent --> State
     SSH --> Common

@@ -121,13 +121,13 @@ if [[ "$COMMAND" == "deploy" ]]; then
     print_info "Setting up kubeconfig on controller node..."
     execute_remote_command "$CONTROLLER_IP" "mkdir -p ~/.kube && sudo k0s kubeconfig admin > ~/.kube/config" "Setup kubeconfig" 30 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null
     
-    print_info "Installing k0rdent v1.0.0 using Helm..."
+    print_info "Installing k0rdent v$K0RDENT_VERSION using Helm..."
     
     # Capture helm install output to a log file
     local helm_log="./logs/k0rdent-helm-install-$(date +%Y%m%d_%H%M%S).log"
     ensure_directory "./logs"
     
-    if execute_remote_command "$CONTROLLER_IP" "helm install kcm oci://ghcr.io/k0rdent/kcm/charts/kcm --version 1.0.0 -n kcm-system --create-namespace --debug --timeout 10m" "Install k0rdent" 600 "$SSH_KEY_PATH" "$SSH_USERNAME" > "$helm_log" 2>&1; then
+    if execute_remote_command "$CONTROLLER_IP" "helm install kcm oci://ghcr.io/k0rdent/kcm/charts/kcm --version $K0RDENT_VERSION -n kcm-system --create-namespace --debug --timeout ${K0RDENT_INSTALL_WAIT}s" "Install k0rdent" "$K0RDENT_INSTALL_WAIT" "$SSH_KEY_PATH" "$SSH_USERNAME" > "$helm_log" 2>&1; then
         print_success "k0rdent installed successfully!"
         print_info "Installation log saved to: $helm_log"
         

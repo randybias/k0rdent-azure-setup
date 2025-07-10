@@ -194,7 +194,14 @@ EOF
     config:
       spec:
         network:
+          nodeLocalLoadBalancing:
+            enabled: true
+            type: EnvoyProxy
           provider: calico
+          calico:
+            ipAutodetectionMethod: "can-reach=8.8.8.8"
+            envVars:
+              FELIX_IGNORELOOSERPF: "true"
 EOF
 
     print_success "k0sctl configuration generated: $K0SCTL_FILE"
@@ -327,6 +334,25 @@ deploy_k0s() {
             print_error "Failed to retrieve valid kubeconfig after 3 attempts"
             print_info "You can manually retrieve it later with:"
             print_info "  k0sctl kubeconfig --config $K0SCTL_FILE > $KUBECONFIG_FILE"
+            exit 1
+        fi
+        
+        # Run network validation
+        print_header "Validating Cluster Network"
+        print_info "Running pod-to-pod network connectivity tests..."
+        
+        if ./bin/validate-pod-network.sh validate; then
+            print_success "Network validation passed! Cluster is ready for k0rdent installation."
+            add_event "network_validation_passed" "Pod-to-pod network connectivity validated successfully"
+        else
+            print_error "Network validation failed!"
+            print_info "The cluster network is not functioning correctly."
+            print_info "Please check the cluster logs and network configuration."
+            print_info "You can re-run validation with: ./bin/validate-pod-network.sh validate"
+            
+            # Update state to indicate network issues
+            update_state "network_validation_failed" "true"
+            add_event "network_validation_failed" "Pod-to-pod network connectivity tests failed"
             exit 1
         fi
     else

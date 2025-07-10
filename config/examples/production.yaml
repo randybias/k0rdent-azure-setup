@@ -15,14 +15,14 @@ azure:
 network:
   vnet_prefix: "10.0.0.0/16"
   subnet_prefix: "10.0.1.0/24"
-  wireguard_network: "192.168.100.0/24"
+  wireguard_network: "172.32.32.0/24"
 
 # Production-grade VM sizes
 vm_sizing:
   controller:
-    size: "Standard_B2s"  # 2 vCPU, 4GB RAM - widely available across regions
+    size: "Standard_DS2_v2"  # 2 vCPU, 4GB RAM - widely available across regions
   worker:
-    size: "Standard_B2s"  # 2 vCPU, 4GB RAM - widely available across regions
+    size: "Standard_DS4_v2"  # 2 vCPU, 4GB RAM - widely available across regions
 
 # High-availability cluster topology
 cluster:
@@ -43,7 +43,7 @@ software:
   k0s:
     version: "v1.33.1+k0s.0"
   k0rdent:
-    version: "1.0.0"
+    version: "1.1.0"
     registry: "oci://ghcr.io/k0rdent/kcm/charts/kcm"
     namespace: "kcm-system"
 
@@ -51,7 +51,7 @@ software:
 timeouts:
   ssh_connect: 60
   k0s_install_wait: 120
-  k0rdent_install_wait: 60
+  k0rdent_install_wait: 1500
   wireguard_connect_wait: 5
   vm_creation_minutes: 20
   vm_wait_check_interval: 30

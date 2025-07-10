@@ -378,12 +378,13 @@ k0rdent-azure-setup/
 │   ├── k0rdent-config.sh       # Central configuration loader
 │   ├── state-management.sh     # State tracking functions
 │   └── common-functions.sh     # Shared utility functions (1,500+ lines)
-├── bin/                        # Action scripts (6 consolidated scripts)
+├── bin/                        # Action scripts (7 consolidated scripts)
 │   ├── prepare-deployment.sh   # Deployment preparation (keys & cloud-init)
 │   ├── setup-azure-network.sh  # Azure infrastructure setup
 │   ├── create-azure-vms.sh     # VM creation with parallel deployment
 │   ├── manage-vpn.sh           # Comprehensive VPN management
-│   ├── install-k0s.sh          # k0s cluster installation
+│   ├── install-k0s.sh          # k0s cluster installation with network validation
+│   ├── validate-pod-network.sh # Pod-to-pod network connectivity validation
 │   └── install-k0rdent.sh      # k0rdent installation on cluster
 ├── azure-resources/            # Generated Azure resources  
 │   ├── k0rdent-XXXXXXXX-ssh-key     # Private SSH key
@@ -471,8 +472,17 @@ The orchestrator automatically passes flags to all child scripts for consistent 
 - Support for single controller or HA multi-controller setups
 - SSH connectivity testing
 - Kubeconfig retrieval and validation
+- Automatic pod-to-pod network validation after deployment
 - State tracking for cluster deployment progress
 - `config` command for step-by-step deployment support
+
+**validate-pod-network.sh**: Validates cluster network connectivity:
+- Tests pod-to-pod connectivity across all worker nodes
+- Deploys lightweight test pods on each node
+- Verifies cross-node network communication with ping tests
+- Automatically cleans up test resources on success
+- Blocks deployment if network validation fails
+- Commands: `validate`, `cleanup`
 
 **install-k0rdent.sh**: Installs k0rdent on the k0s cluster with:
 - Helm-based installation using OCI registry
