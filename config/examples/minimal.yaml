@@ -51,7 +51,7 @@ software:
 timeouts:
   ssh_connect: 30
   k0s_install_wait: 30
-  k0rdent_install_wait: 15
+  k0rdent_install_wait: 1500
   wireguard_connect_wait: 5
   vm_creation_minutes: 10
   vm_wait_check_interval: 30
