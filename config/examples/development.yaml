@@ -57,3 +57,9 @@ timeouts:
   vm_wait_check_interval: 30
   verification_retries: 3
   verification_retry_delay: 10
+
+# KOF Configuration - Example showing how to enable KOF
+# Uncomment and modify as needed for development environments
+# kof:
+#   enabled: true  # Enable KOF for this deployment
+#   version: "1.1.0"
