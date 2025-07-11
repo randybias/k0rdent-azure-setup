@@ -48,12 +48,8 @@ check_prerequisites() {
         return 1
     fi
     
-    # Check VPN connectivity
-    if ! check_vpn_connectivity; then
-        print_error "VPN connectivity required for KOF operations"
-        print_info "Connect to VPN: ./bin/manage-vpn.sh connect"
-        return 1
-    fi
+    # For KOF regional deployment, we only need kubectl access to management cluster
+    # VPN connectivity is not required since we're creating a new k0rdent-managed cluster
     
     # Check if KOF is enabled in configuration
     if ! check_kof_enabled; then
@@ -91,109 +87,127 @@ deploy_kof_regional() {
     
     # Get configuration values
     local kof_version=$(get_kof_config "version" "1.1.0")
-    local kof_namespace=$(get_kof_config "regional.namespace" "kof")
-    local cluster_label=$(get_kof_config "regional.cluster_label" "k0rdent.mirantis.com/istio-role=child")
+    local regional_cluster_name=$(get_kof_config "regional.cluster_name" "${K0RDENT_PREFIX}-regional")
+    local regional_domain=$(get_kof_config "regional.domain" "")
+    local admin_email=$(get_kof_config "regional.admin_email" "")
+    local location=$(get_kof_config "regional.location" "eastus")
+    local template=$(get_kof_config "regional.template" "azure-standalone-cp-1-0-8")
+    local credential=$(get_kof_config "regional.credential" "azure-cluster-identity-cred")
+    local cp_instance_size=$(get_kof_config "regional.cp_instance_size" "Standard_A4_v2")
+    local worker_instance_size=$(get_kof_config "regional.worker_instance_size" "Standard_A4_v2")
+    local root_volume_size=$(get_kof_config "regional.root_volume_size" "32")
     
     print_info "KOF Version: $kof_version"
-    print_info "Namespace: $kof_namespace"
-    print_info "Cluster Label: $cluster_label"
+    print_info "Regional Cluster: $regional_cluster_name"
+    print_info "Regional Domain: $regional_domain"
+    print_info "Admin Email: $admin_email"
+    print_info "Location: $location"
+    print_info "Template: $template"
+    
+    # Validate required KOF regional configuration
+    if [[ -z "$regional_domain" ]]; then
+        print_error "Regional domain is required for KOF regional cluster"
+        print_info "Set 'kof.regional.domain' in your k0rdent.yaml"
+        return 1
+    fi
+    
+    if [[ -z "$admin_email" ]]; then
+        print_error "Admin email is required for KOF regional cluster"
+        print_info "Set 'kof.regional.admin_email' in your k0rdent.yaml"
+        return 1
+    fi
     
     # Update deployment state
     update_state "phase" "kof_regional_deployment"
-    add_event "kof_regional_deployment_started" "Starting KOF regional deployment v$kof_version"
+    add_event "kof_regional_deployment_started" "Starting KOF regional cluster deployment v$kof_version"
     
-    # Step 1: Prepare KOF namespace
-    print_header "Step 1: Preparing KOF Namespace"
-    if ! prepare_kof_namespace "$kof_namespace"; then
-        print_error "Failed to prepare KOF namespace"
+    # Step 1: Check if Azure cluster deployment is configured
+    print_header "Step 1: Checking Azure Cluster Deployment Prerequisites"
+    if [[ "$(get_azure_state "azure_credentials_configured")" != "true" ]]; then
+        print_error "Azure credentials not configured for cluster deployment"
+        print_info "Run: bash bin/setup-azure-cluster-deployment.sh setup"
         return 1
     fi
     
-    # Step 2: Apply cluster labels
-    print_header "Step 2: Labeling Cluster for Regional Role"
-    print_info "Applying cluster labels for regional configuration..."
+    # Step 2: Create KOF regional cluster using k0rdent ClusterDeployment
+    print_header "Step 2: Creating KOF Regional Cluster"
+    print_info "Deploying regional cluster '$regional_cluster_name' using k0rdent..."
     
-    # Parse the cluster label to get key and value
-    local label_key="${cluster_label%=*}"
-    local label_value="${cluster_label#*=}"
+    # Prepare cluster annotations for KOF
+    local cluster_annotations="k0rdent.mirantis.com/kof-regional-domain=$regional_domain,k0rdent.mirantis.com/kof-cert-email=$admin_email"
     
-    # Apply the label to the cluster (using a node as proxy for cluster labeling)
-    local cluster_name=$(kubectl config current-context)
-    print_info "Labeling cluster '$cluster_name' with '$label_key=$label_value'"
+    # Prepare cluster labels for KOF
+    local cluster_labels="k0rdent.mirantis.com/kof-storage-secrets=true,k0rdent.mirantis.com/kof-cluster-role=regional"
     
-    # In Istio deployment model, we label nodes to indicate the cluster role
-    if kubectl label nodes --all "$label_key=$label_value" --overwrite; then
-        print_success "Cluster labeled for regional role"
-        add_event "kof_regional_cluster_labeled" "Cluster labeled with $cluster_label"
-    else
-        print_error "Failed to label cluster for regional role"
-        add_event "kof_regional_labeling_failed" "Failed to apply cluster labels"
+    # Use the enhanced create-child.sh script to deploy the regional cluster
+    if ! bash bin/create-child.sh \
+        --cluster-name "$regional_cluster_name" \
+        --cloud azure \
+        --location "$location" \
+        --cp-instance-size "$cp_instance_size" \
+        --worker-instance-size "$worker_instance_size" \
+        --root-volume-size "$root_volume_size" \
+        --namespace kcm-system \
+        --template "$template" \
+        --credential "$credential" \
+        --cp-number 1 \
+        --worker-number 3 \
+        --cluster-identity-name azure-cluster-identity \
+        --cluster-identity-namespace kcm-system \
+        --cluster-annotations "$cluster_annotations" \
+        --cluster-labels "$cluster_labels"; then
+        print_error "Failed to create KOF regional cluster"
+        add_event "kof_regional_cluster_creation_failed" "Failed to create regional cluster $regional_cluster_name"
         return 1
     fi
     
-    # Step 3: Create ClusterProfile for regional configuration
-    print_header "Step 3: Creating Regional ClusterProfile"
-    print_info "Creating ClusterProfile for regional cluster configuration..."
+    # Step 3: Wait for cluster to be ready
+    print_header "Step 3: Waiting for Regional Cluster to be Ready"
+    print_info "Waiting for cluster '$regional_cluster_name' to become ready..."
     
-    # Create a ClusterProfile manifest for regional cluster
-    local clusterprofile_yaml="/tmp/kof-regional-clusterprofile.yaml"
-    cat > "$clusterprofile_yaml" << EOF
-apiVersion: kcm.mirantis.com/v1alpha1
-kind: ClusterProfile
-metadata:
-  name: kof-regional-profile
-  namespace: $kof_namespace
-spec:
-  description: "KOF Regional Cluster Profile"
-  config:
-    # Regional-specific configuration can be added here
-    role: "regional"
-    istio:
-      enabled: true
-      role: "child"  # In Istio model, regional clusters are also "child" role
-  # Regional-specific collectors from configuration
-  collectors: $(get_kof_config "regional.collectors" "{}")
-EOF
+    local max_wait=1800  # 30 minutes
+    local wait_time=0
+    local ready_status=""
     
-    if kubectl apply -f "$clusterprofile_yaml"; then
-        print_success "Regional ClusterProfile created"
-        add_event "kof_regional_clusterprofile_created" "ClusterProfile for regional cluster created"
-        rm -f "$clusterprofile_yaml"
-    else
-        print_error "Failed to create regional ClusterProfile"
-        add_event "kof_regional_clusterprofile_failed" "Failed to create ClusterProfile"
-        rm -f "$clusterprofile_yaml"
+    while [[ $wait_time -lt $max_wait ]]; do
+        ready_status=$(kubectl get clusterdeployment "$regional_cluster_name" -n kcm-system -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
+        
+        if [[ "$ready_status" == "True" ]]; then
+            print_success "Regional cluster '$regional_cluster_name' is ready!"
+            break
+        elif [[ "$ready_status" == "False" ]]; then
+            print_warning "Regional cluster '$regional_cluster_name' is not ready (status: False)"
+        else
+            print_info "Regional cluster '$regional_cluster_name' status: $ready_status"
+        fi
+        
+        sleep 30
+        wait_time=$((wait_time + 30))
+        print_info "Waiting... ($wait_time/${max_wait}s)"
+    done
+    
+    if [[ "$ready_status" != "True" ]]; then
+        print_error "Regional cluster did not become ready within $max_wait seconds"
+        print_info "Check cluster status with: kubectl describe clusterdeployment $regional_cluster_name -n kcm-system"
         return 1
     fi
     
-    # Step 4: Verify regional cluster connectivity
-    print_header "Step 4: Verifying Regional Cluster Configuration"
-    print_info "Verifying regional cluster is properly configured..."
+    # Step 4: Record KOF regional completion event
+    print_header "Step 4: Recording KOF Regional Deployment Completion"
+    add_cluster_event "$regional_cluster_name" "kof_regional_cluster_ready" "KOF regional cluster deployment completed successfully"
+    add_cluster_event "$regional_cluster_name" "kof_regional_configured" "Domain: $regional_domain, Admin: $admin_email"
     
-    # Check that the cluster has the correct labels
-    if kubectl get nodes -l "$label_key=$label_value" --no-headers | grep -q .; then
-        print_success "Regional cluster nodes properly labeled"
-    else
-        print_warning "Regional cluster labels may not be properly applied"
-    fi
-    
-    # Check that the ClusterProfile exists
-    if kubectl get clusterprofile kof-regional-profile -n "$kof_namespace" &>/dev/null; then
-        print_success "Regional ClusterProfile verified"
-    else
-        print_warning "Regional ClusterProfile verification failed"
-    fi
-    
-    # Update state
+    # Update global state
     update_state "kof_regional_installed" "true"
     update_state "kof_regional_version" "$kof_version"
-    update_state "kof_regional_namespace" "$kof_namespace"
-    update_state "kof_regional_cluster_label" "$cluster_label"
-    add_event "kof_regional_deployment_completed" "KOF regional deployment completed successfully"
+    update_state "kof_regional_cluster_name" "$regional_cluster_name"
+    update_state "kof_regional_domain" "$regional_domain"
+    add_event "kof_regional_deployment_completed" "KOF regional cluster '$regional_cluster_name' deployed successfully"
     
     print_success "KOF regional cluster deployment completed!"
-    print_info "Regional cluster is now configured for KOF operations"
-    print_info "You can now proceed to install KOF on child clusters if needed"
+    print_info "Regional cluster '$regional_cluster_name' is ready for KOF operations"
+    print_info "Domain: $regional_domain"
+    print_info "Monitor with: kubectl get clusterdeployment $regional_cluster_name -n kcm-system -w"
 }
 
 uninstall_kof_regional() {
