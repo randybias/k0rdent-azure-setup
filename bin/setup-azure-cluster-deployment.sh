@@ -16,8 +16,8 @@ source ./etc/state-management.sh     # State tracking
 K0SCTL_DIR="./k0sctl-config"
 KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_PREFIX}-kubeconfig"
 
-# Constants from k0rdent documentation
-AZURE_SP_NAME="k0rdent-cluster-deployment-sp"
+# Constants from k0rdent documentation  
+AZURE_SP_NAME="${K0RDENT_PREFIX}-cluster-deployment-sp"
 AZURE_SECRET_NAME="azure-cluster-identity-secret"
 AZURE_IDENTITY_NAME="azure-cluster-identity"
 KCM_CREDENTIAL_NAME="azure-cluster-credential"
@@ -45,11 +45,8 @@ check_prerequisites() {
         return 1
     fi
     
-    # Check VPN connectivity
-    if ! check_vpn_connectivity; then
-        print_error "VPN connectivity required"
-        return 1
-    fi
+    # VPN connectivity not required for post-deployment operations
+    # We only need kubectl access to the management cluster
     
     # Check Azure CLI
     if ! command -v az &> /dev/null; then
@@ -156,15 +153,13 @@ spec:
   clientSecret:
     name: $AZURE_SECRET_NAME
     namespace: $KCM_NAMESPACE
-  allowedNamespaces:
-    list:
-    - $KCM_NAMESPACE
+  allowedNamespaces: {}
 EOF
     
     # Create KCM Credential
     print_info "Creating KCM Credential..."
     cat <<EOF | kubectl apply -f -
-apiVersion: kcm.mirantis.com/v1alpha1
+apiVersion: k0rdent.mirantis.com/v1beta1
 kind: Credential
 metadata:
   name: $KCM_CREDENTIAL_NAME
@@ -176,6 +171,81 @@ spec:
     kind: AzureClusterIdentity
     name: $AZURE_IDENTITY_NAME
     namespace: $KCM_NAMESPACE
+EOF
+    
+    # Create Azure Resource Template ConfigMap
+    print_info "Creating Azure Resource Template ConfigMap..."
+    cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: azure-cluster-identity-resource-template
+  namespace: $KCM_NAMESPACE
+  labels:
+    k0rdent.mirantis.com/component: "kcm"
+  annotations:
+    projectsveltos.io/template: "true"
+data:
+  configmap.yaml: |
+    {{- \$cluster := .InfrastructureProvider -}}
+    {{- \$identity := (getResource "InfrastructureProviderIdentity") -}}
+    {{- \$secret := (getResource "InfrastructureProviderIdentitySecret") -}}
+    {{- \$subnetName := "" -}}
+    {{- \$securityGroupName := "" -}}
+    {{- \$routeTableName := "" -}}
+    {{- range \$cluster.spec.networkSpec.subnets -}}
+      {{- if eq .role "node" -}}
+        {{- \$subnetName = .name -}}
+        {{- \$securityGroupName = .securityGroup.name -}}
+        {{- \$routeTableName = .routeTable.name -}}
+        {{- break -}}
+      {{- end -}}
+    {{- end -}}
+    {{- \$cloudConfig := dict
+      "aadClientId" \$identity.spec.clientID
+      "aadClientSecret" (index \$secret.data "clientSecret" | b64dec)
+      "cloud" \$cluster.spec.azureEnvironment
+      "loadBalancerName" ""
+      "loadBalancerSku" "Standard"
+      "location" \$cluster.spec.location
+      "maximumLoadBalancerRuleCount" 250
+      "resourceGroup" \$cluster.spec.resourceGroup
+      "routeTableName" \$routeTableName
+      "securityGroupName" \$securityGroupName
+      "securityGroupResourceGroup" \$cluster.spec.networkSpec.vnet.resourceGroup
+      "subnetName" \$subnetName
+      "subscriptionId" \$cluster.spec.subscriptionID
+      "tenantId" \$identity.spec.tenantID
+      "useManagedIdentityExtension" false
+      "userAssignedIdentityId" ""
+      "useInstanceMetadata" true
+      "vmType" "standard"
+      "vnetName" \$cluster.spec.networkSpec.vnet.name
+      "vnetResourceGroup" \$cluster.spec.networkSpec.vnet.resourceGroup -}}
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: azure-cloud-config
+      namespace: kube-system
+    data:
+      config: |
+    {{ \$cloudConfig | toYaml | nindent 4 }}
+  storageclass.yaml: |
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: managed-csi
+      annotations:
+        storageclass.kubernetes.io/is-default-class: "true"
+    provisioner: disk.csi.azure.com
+    allowVolumeExpansion: true
+    reclaimPolicy: Delete
+    volumeBindingMode: Immediate
+    parameters:
+      skuName: Premium_LRS
+      kind: Managed
+      cachingmode: ReadOnly
+      networkAccessPolicy: AllowAll
 EOF
     
     # Update Azure state
@@ -216,6 +286,9 @@ cleanup_azure_credentials() {
     
     # Remove Kubernetes secret
     kubectl delete secret "$AZURE_SECRET_NAME" -n "$KCM_NAMESPACE" --ignore-not-found
+    
+    # Remove Azure Resource Template ConfigMap
+    kubectl delete configmap azure-cluster-identity-resource-template -n "$KCM_NAMESPACE" --ignore-not-found
     
     # Remove Service Principal
     local client_id=$(get_azure_state "azure_client_id")
