@@ -28,6 +28,11 @@ WORKER_INSTANCE_SIZE=""
 ROOT_VOLUME_SIZE=""
 DRY_RUN="false"
 CLUSTER_LABELS=""
+CLUSTER_ANNOTATIONS=""
+CLUSTER_IDENTITY_NAME=""
+CLUSTER_IDENTITY_NAMESPACE=""
+CP_NUMBER=""
+WORKER_NUMBER=""
 
 # Script-specific functions
 show_usage() {
@@ -41,22 +46,28 @@ show_usage() {
   --namespace <ns>          Kubernetes namespace (required)
   --template <name>         Cluster template to use (required)
   --credential <name>       Credential name to use (required)
+  --cp-number <num>         Number of control plane nodes (required)
+  --worker-number <num>     Number of worker nodes (required)
+  --cluster-identity-name <name> Name of the cluster identity (required)
+  --cluster-identity-namespace <ns> Namespace of the cluster identity (required)
   --dry-run                 Create deployment in dry-run mode (simulation)
-  --cluster-labels <labels> Cluster labels in key=value,key2=value2 format" \
+  --cluster-labels <labels> Cluster labels in key=value,key2=value2 format
+  --cluster-annotations <annotations> Cluster annotations in key=value,key2=value2 format" \
         "  -h, --help               Show this help message" \
         "  $0 --cluster-name my-cluster --cloud azure --location eastus \\
      --cp-instance-size Standard_A4_v2 --worker-instance-size Standard_A4_v2 \\
      --root-volume-size 32 --namespace kcm-system \\
-     --template azure-standalone-cp-1-0-8 --credential azure-cluster-credential
-  $0 --cluster-name prod-cluster --cloud azure --location westus2 \\
-     --cp-instance-size Standard_D4s_v3 --worker-instance-size Standard_D2s_v3 \\
-     --root-volume-size 50 --namespace kcm-system \\
-     --template azure-standalone-cp-1-0-8 --credential azure-cluster-credential
-  $0 --cluster-name test-cluster --cloud azure --location eastus \\
+     --template azure-standalone-cp-1-0-8 --credential azure-cluster-credential \\
+     --cp-number 1 --worker-number 3 \\
+     --cluster-identity-name azure-cluster-identity --cluster-identity-namespace kcm-system
+  $0 --cluster-name regional-cluster --cloud azure --location westus2 \\
      --cp-instance-size Standard_A4_v2 --worker-instance-size Standard_A4_v2 \\
      --root-volume-size 32 --namespace kcm-system \\
-     --template azure-standalone-cp-1-0-8 --credential azure-cluster-credential \\
-     --dry-run"
+     --template azure-standalone-cp-1-0-8 --credential azure-cluster-identity-cred \\
+     --cp-number 1 --worker-number 3 \\
+     --cluster-identity-name azure-cluster-identity --cluster-identity-namespace kcm-system \\
+     --cluster-annotations k0rdent.mirantis.com/kof-regional-domain=my.domain.com,k0rdent.mirantis.com/kof-cert-email=admin@domain.com \\
+     --cluster-labels k0rdent.mirantis.com/kof-storage-secrets=true,k0rdent.mirantis.com/kof-cluster-role=regional"
 }
 
 # Parse arguments
@@ -105,6 +116,26 @@ parse_arguments() {
                 ;;
             --cluster-labels)
                 CLUSTER_LABELS="$2"
+                shift 2
+                ;;
+            --cluster-annotations)
+                CLUSTER_ANNOTATIONS="$2"
+                shift 2
+                ;;
+            --cp-number)
+                CP_NUMBER="$2"
+                shift 2
+                ;;
+            --worker-number)
+                WORKER_NUMBER="$2"
+                shift 2
+                ;;
+            --cluster-identity-name)
+                CLUSTER_IDENTITY_NAME="$2"
+                shift 2
+                ;;
+            --cluster-identity-namespace)
+                CLUSTER_IDENTITY_NAMESPACE="$2"
                 shift 2
                 ;;
             -h|--help)
@@ -166,6 +197,26 @@ validate_arguments() {
     
     if [[ -z "$CREDENTIAL" ]]; then
         print_error "Credential is required (--credential)"
+        ((errors++))
+    fi
+    
+    if [[ -z "$CP_NUMBER" ]]; then
+        print_error "Control plane number is required (--cp-number)"
+        ((errors++))
+    fi
+    
+    if [[ -z "$WORKER_NUMBER" ]]; then
+        print_error "Worker number is required (--worker-number)"
+        ((errors++))
+    fi
+    
+    if [[ -z "$CLUSTER_IDENTITY_NAME" ]]; then
+        print_error "Cluster identity name is required (--cluster-identity-name)"
+        ((errors++))
+    fi
+    
+    if [[ -z "$CLUSTER_IDENTITY_NAMESPACE" ]]; then
+        print_error "Cluster identity namespace is required (--cluster-identity-namespace)"
         ((errors++))
     fi
     
@@ -276,6 +327,25 @@ format_cluster_labels() {
     done
 }
 
+# Convert cluster annotations to YAML format
+format_cluster_annotations() {
+    if [[ -z "$CLUSTER_ANNOTATIONS" ]]; then
+        echo "{}"
+        return
+    fi
+    
+    # Convert key=value,key2=value2 to YAML
+    echo ""
+    IFS=',' read -ra ANNOTATION_PAIRS <<< "$CLUSTER_ANNOTATIONS"
+    for pair in "${ANNOTATION_PAIRS[@]}"; do
+        if [[ "$pair" == *"="* ]]; then
+            local key="${pair%%=*}"
+            local value="${pair#*=}"
+            echo "      $key: \"$value\""
+        fi
+    done
+}
+
 # Create cluster deployment
 create_cluster_deployment() {
     print_header "Creating Child Cluster Deployment"
@@ -284,9 +354,12 @@ create_cluster_deployment() {
     local cloud_config
     cloud_config=$(get_cloud_config)
     
-    # Format cluster labels
+    # Format cluster labels and annotations
     local formatted_labels
     formatted_labels=$(format_cluster_labels)
+    
+    local formatted_annotations
+    formatted_annotations=$(format_cluster_annotations)
     
     print_info "Cluster Configuration:"
     print_info "  Name: $CLUSTER_NAME"
@@ -298,8 +371,12 @@ create_cluster_deployment() {
     print_info "  Control Plane Size: $CP_INSTANCE_SIZE"
     print_info "  Worker Node Size: $WORKER_INSTANCE_SIZE"
     print_info "  Root Volume Size: ${ROOT_VOLUME_SIZE}GB"
+    print_info "  Control Plane Count: $CP_NUMBER"
+    print_info "  Worker Count: $WORKER_NUMBER"
+    print_info "  Cluster Identity: $CLUSTER_IDENTITY_NAME (namespace: $CLUSTER_IDENTITY_NAMESPACE)"
     print_info "  Dry Run: $DRY_RUN"
     [[ -n "$CLUSTER_LABELS" ]] && print_info "  Labels: $CLUSTER_LABELS"
+    [[ -n "$CLUSTER_ANNOTATIONS" ]] && print_info "  Annotations: $CLUSTER_ANNOTATIONS"
     
     case "$CLOUD" in
         azure)
@@ -318,17 +395,23 @@ kind: ClusterDeployment
 metadata:
   name: $CLUSTER_NAME
   namespace: $NAMESPACE
+  labels: $formatted_labels
+  annotations: $formatted_annotations
 spec:
   template: $TEMPLATE
   credential: $CREDENTIAL
   dryRun: $DRY_RUN
   config:
-    clusterLabels: $formatted_labels
+    clusterIdentity:
+      name: $CLUSTER_IDENTITY_NAME
+      namespace: $CLUSTER_IDENTITY_NAMESPACE
     location: "$LOCATION"
     subscriptionID: "$cloud_config"
+    controlPlaneNumber: $CP_NUMBER
     controlPlane:
       vmSize: $CP_INSTANCE_SIZE
       rootVolumeSize: $ROOT_VOLUME_SIZE
+    workersNumber: $WORKER_NUMBER
     worker:
       vmSize: $WORKER_INSTANCE_SIZE
       rootVolumeSize: $ROOT_VOLUME_SIZE
@@ -336,15 +419,10 @@ EOF
             ;;
     esac
     
-    # Update cluster state
-    init_cluster_state "$CLUSTER_NAME"
-    update_cluster_state "$CLUSTER_NAME" "cluster_status" "deploying"
-    update_cluster_state "$CLUSTER_NAME" "cloud_provider" "$CLOUD"
-    update_cluster_state "$CLUSTER_NAME" "location" "$LOCATION"
-    update_cluster_state "$CLUSTER_NAME" "template" "$TEMPLATE"
-    update_cluster_state "$CLUSTER_NAME" "credential" "$CREDENTIAL"
-    update_cluster_state "$CLUSTER_NAME" "dry_run" "$DRY_RUN"
-    add_cluster_event "$CLUSTER_NAME" "cluster_deployment_created" "ClusterDeployment created for $CLOUD cluster"
+    # Track cluster creation event (k0rdent is source of truth for state)
+    init_cluster_events "$CLUSTER_NAME"
+    add_cluster_event "$CLUSTER_NAME" "cluster_deployment_created" "ClusterDeployment '$CLUSTER_NAME' created for $CLOUD cluster in $LOCATION"
+    add_cluster_event "$CLUSTER_NAME" "cluster_config_recorded" "Template: $TEMPLATE, Credential: $CREDENTIAL, DryRun: $DRY_RUN"
     
     if [[ "$DRY_RUN" == "true" ]]; then
         print_success "ClusterDeployment '$CLUSTER_NAME' created in dry-run mode (simulation)"

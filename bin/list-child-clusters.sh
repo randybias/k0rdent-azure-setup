@@ -139,33 +139,31 @@ get_cluster_deployments() {
     esac
 }
 
-# Show local cluster state files
-show_local_state() {
+# Show local cluster events (state is in k0rdent)
+show_local_events() {
     if [[ ! -d "state" ]]; then
         return 0
     fi
     
-    local state_files=(state/cluster-*-state.yaml)
-    if [[ ! -e "${state_files[0]}" ]]; then
+    local events_files=(state/cluster-*-events.yaml)
+    if [[ ! -e "${events_files[0]}" ]]; then
         return 0
     fi
     
     print_info ""
-    print_info "=== Local Cluster State Files ==="
+    print_info "=== Local Cluster Events ==="
+    print_info "(State is tracked in k0rdent - these are local operation events only)"
     
-    for state_file in "${state_files[@]}"; do
-        if [[ -f "$state_file" ]]; then
-            local cluster_name=$(basename "$state_file" | sed 's/cluster-\(.*\)-state\.yaml/\1/')
-            local status=$(yq eval '.cluster_status' "$state_file" 2>/dev/null || echo "unknown")
-            local cloud=$(yq eval '.cloud_provider' "$state_file" 2>/dev/null || echo "unknown")
-            local location=$(yq eval '.location' "$state_file" 2>/dev/null || echo "unknown")
-            local created=$(yq eval '.created_at' "$state_file" 2>/dev/null || echo "unknown")
+    for events_file in "${events_files[@]}"; do
+        if [[ -f "$events_file" ]]; then
+            local cluster_name=$(basename "$events_file" | sed 's/cluster-\(.*\)-events\.yaml/\1/')
+            local created=$(yq eval '.created_at' "$events_file" 2>/dev/null || echo "unknown")
+            local last_event=$(yq eval '.events[-1].action' "$events_file" 2>/dev/null || echo "none")
+            local event_time=$(yq eval '.events[-1].timestamp' "$events_file" 2>/dev/null || echo "unknown")
             
             echo "  $cluster_name:"
-            echo "    Status: $status"
-            echo "    Cloud: $cloud"
-            echo "    Location: $location"
-            echo "    Created: $created"
+            echo "    Local events since: $created"
+            echo "    Last event: $last_event ($event_time)"
         fi
     done
 }
@@ -192,9 +190,9 @@ list_child_clusters() {
         echo "$deployments_output"
     fi
     
-    # Show local state for table output
+    # Show local events for table output
     if [[ "$OUTPUT_FORMAT" == "table" || "$OUTPUT_FORMAT" == "wide" ]]; then
-        show_local_state
+        show_local_events
     fi
 }
 

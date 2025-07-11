@@ -635,82 +635,63 @@ get_cluster_events_file() {
     echo "$STATE_DIR/cluster-${cluster_name}-events.yaml"
 }
 
-# Initialize cluster state file
-init_cluster_state() {
+# Initialize cluster events file (state tracking removed - k0rdent is source of truth)
+init_cluster_events() {
     local cluster_name="$1"
-    local cluster_state_file=$(get_cluster_state_file "$cluster_name")
     local cluster_events_file=$(get_cluster_events_file "$cluster_name")
     local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     
     # Ensure state directory exists
     mkdir -p "$STATE_DIR"
     
-    cat > "$cluster_state_file" << EOF
-# Cluster State: $cluster_name
-# Auto-generated on $timestamp
-
-# Basic cluster info
-cluster_name: "$cluster_name"
-created_at: "$timestamp"
-last_updated: "$timestamp"
-cluster_status: "initializing"
-EOF
-    
-    # Create cluster events file
+    # Only create events file - no local state tracking
     cat > "$cluster_events_file" << EOF
 # Cluster Events Log: $cluster_name
 # Auto-generated on $timestamp
+# Note: Cluster state is tracked in k0rdent - this file only tracks local events
 
 cluster_name: "$cluster_name"
 created_at: "$timestamp"
 last_updated: "$timestamp"
 
-# Events log
+# Events log (local operations only)
 events:
   - timestamp: "$timestamp"
-    action: cluster_state_initialized
-    message: Cluster state tracking initialized for $cluster_name
+    action: cluster_events_initialized
+    message: Local event tracking initialized for $cluster_name
 EOF
     
-    print_info "Initialized cluster state: $cluster_state_file"
     print_info "Initialized cluster events: $cluster_events_file"
 }
 
-# Update cluster state
+# Deprecated: use init_cluster_events instead
+init_cluster_state() {
+    local cluster_name="$1"
+    print_warning "init_cluster_state is deprecated - using init_cluster_events (k0rdent is source of truth)"
+    init_cluster_events "$cluster_name"
+}
+
+# Deprecated: Local state tracking removed - k0rdent is source of truth
 update_cluster_state() {
     local cluster_name="$1"
     local key="$2"
     local value="$3"
-    local cluster_state_file=$(get_cluster_state_file "$cluster_name")
-    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     
-    # Initialize if doesn't exist
-    if [[ ! -f "$cluster_state_file" ]]; then
-        init_cluster_state "$cluster_name"
-    fi
+    print_warning "update_cluster_state is deprecated - k0rdent is the source of truth for cluster state"
+    print_info "Use add_cluster_event to track local operations instead"
     
-    # Handle boolean values properly
-    if [[ "$value" == "true" ]] || [[ "$value" == "false" ]]; then
-        yq eval ".${key} = ${value}" -i "$cluster_state_file"
-    else
-        yq eval ".${key} = \"${value}\"" -i "$cluster_state_file"
-    fi
-    
-    yq eval ".last_updated = \"${timestamp}\"" -i "$cluster_state_file"
+    # Add an event instead of updating state
+    add_cluster_event "$cluster_name" "state_update_attempted" "Attempted to set $key=$value (deprecated - use k0rdent for state)"
 }
 
-# Get cluster state
+# Deprecated: Query k0rdent directly for cluster state
 get_cluster_state() {
     local cluster_name="$1"
     local key="$2"
-    local cluster_state_file=$(get_cluster_state_file "$cluster_name")
     
-    if [[ ! -f "$cluster_state_file" ]]; then
-        echo "null"
-        return
-    fi
-    
-    yq eval ".${key}" "$cluster_state_file" 2>/dev/null || echo "null"
+    print_warning "get_cluster_state is deprecated - query k0rdent directly for cluster state"
+    print_info "Use: kubectl get clusterdeployment $cluster_name -n kcm-system"
+    echo "null"
 }
 
 # Add cluster event
