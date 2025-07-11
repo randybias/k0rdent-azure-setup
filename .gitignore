@@ -10,8 +10,9 @@ logs/
 .project-suffix
 k0sctl-config/
 old_deployments/
-deployment-state.yaml
-deployment-events.yaml
+
+# State management directory (contains all state files)
+state/
 
 # Legacy files (no longer used)
 .vpn-setup-complete
@@ -42,3 +43,6 @@ Thumbs.db
 
 cloud-init-yaml/
 config/k0rdent.yaml
+
+# Azure credentials (contains sensitive data)
+config/azure-credentials.yaml
