@@ -95,8 +95,15 @@ deploy_kof_mothership() {
     update_state "phase" "kof_mothership_deployment"
     add_event "kof_mothership_deployment_started" "Starting KOF mothership deployment v$kof_version"
     
-    # Step 1: Install Istio if not present
-    print_header "Step 1: Installing Istio for KOF"
+    # Step 1: Prepare KOF namespace first (needed by Istio installation)
+    print_header "Step 1: Preparing KOF Namespace"
+    if ! prepare_kof_namespace "$kof_namespace"; then
+        print_error "Failed to prepare KOF namespace"
+        return 1
+    fi
+    
+    # Step 2: Install Istio if not present
+    print_header "Step 2: Installing Istio for KOF"
     if check_istio_installed; then
         print_info "Istio already installed, skipping..."
     else
@@ -106,13 +113,6 @@ deploy_kof_mothership() {
             return 1
         fi
         add_event "kof_istio_installed" "Istio installed successfully for KOF"
-    fi
-    
-    # Step 2: Prepare KOF namespace
-    print_header "Step 2: Preparing KOF Namespace"
-    if ! prepare_kof_namespace "$kof_namespace"; then
-        print_error "Failed to prepare KOF namespace"
-        return 1
     fi
     
     # Step 3: Install KOF operators
