@@ -12,6 +12,7 @@ source ./etc/k0rdent-config.sh      # Loads CONFIG_YAML automatically
 source ./etc/common-functions.sh     # All common functionality
 source ./etc/state-management.sh     # State tracking
 source ./etc/kof-functions.sh        # ONLY KOF-specific additions
+source ./etc/azure-cluster-functions.sh  # Azure cluster deployment with retry logic
 
 # Output directory and file (reuse from k0rdent)
 K0SCTL_DIR="./k0sctl-config"
@@ -77,6 +78,77 @@ check_prerequisites() {
     return 0
 }
 
+# Core regional cluster creation function (used by retry logic)
+create_regional_cluster_core() {
+    local regional_cluster_name="$1"
+    local wait_timeout="${2:-1800}"
+    
+    # Get configuration values
+    local regional_domain=$(get_kof_config "regional.domain" "")
+    local admin_email=$(get_kof_config "regional.admin_email" "")
+    local location=$(get_kof_config "regional.location" "eastus")
+    local template=$(get_kof_config "regional.template" "azure-standalone-cp-1-0-8")
+    local credential=$(get_kof_config "regional.credential" "azure-cluster-credential")
+    local cp_instance_size=$(get_kof_config "regional.cp_instance_size" "Standard_A4_v2")
+    local worker_instance_size=$(get_kof_config "regional.worker_instance_size" "Standard_A4_v2")
+    local root_volume_size=$(get_kof_config "regional.root_volume_size" "32")
+    
+    # Prepare cluster annotations and labels for KOF
+    local cluster_annotations="k0rdent.mirantis.com/kof-regional-domain=$regional_domain,k0rdent.mirantis.com/kof-cert-email=$admin_email"
+    local cluster_labels="k0rdent.mirantis.com/kof-storage-secrets=true,k0rdent.mirantis.com/kof-cluster-role=regional"
+    
+    print_info "Creating cluster deployment for: $regional_cluster_name"
+    print_info "Location: $location, Template: $template"
+    
+    # Use the enhanced create-child.sh script to deploy the regional cluster
+    if ! bash bin/create-child.sh \
+        --cluster-name "$regional_cluster_name" \
+        --cloud azure \
+        --location "$location" \
+        --cp-instance-size "$cp_instance_size" \
+        --worker-instance-size "$worker_instance_size" \
+        --root-volume-size "$root_volume_size" \
+        --namespace kcm-system \
+        --template "$template" \
+        --credential "$credential" \
+        --cp-number 1 \
+        --worker-number 3 \
+        --cluster-identity-name azure-cluster-identity \
+        --cluster-identity-namespace kcm-system \
+        --cluster-annotations "$cluster_annotations" \
+        --cluster-labels "$cluster_labels"; then
+        print_error "Failed to create ClusterDeployment"
+        return 1
+    fi
+    
+    print_info "Waiting for cluster '$regional_cluster_name' to become ready (timeout: ${wait_timeout}s)..."
+    
+    local wait_time=0
+    local ready_status=""
+    
+    while [[ $wait_time -lt $wait_timeout ]]; do
+        ready_status=$(kubectl get clusterdeployment "$regional_cluster_name" -n kcm-system -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
+        
+        if [[ "$ready_status" == "True" ]]; then
+            print_success "Regional cluster '$regional_cluster_name' is ready!"
+            validate_azure_cluster_ready "$regional_cluster_name" "kcm-system"
+            return 0
+        elif [[ "$ready_status" == "False" ]]; then
+            print_warning "Regional cluster '$regional_cluster_name' is not ready (status: False)"
+        else
+            print_info "Regional cluster '$regional_cluster_name' status: $ready_status"
+        fi
+        
+        sleep 30
+        wait_time=$((wait_time + 30))
+        print_info "Waiting... ($wait_time/${wait_timeout}s)"
+    done
+    
+    print_error "Regional cluster did not become ready within $wait_timeout seconds"
+    print_info "Check cluster status with: kubectl describe clusterdeployment $regional_cluster_name -n kcm-system"
+    return 1
+}
+
 deploy_kof_regional() {
     print_header "Deploying KOF Regional Cluster"
     
@@ -129,71 +201,19 @@ deploy_kof_regional() {
         return 1
     fi
     
-    # Step 2: Create KOF regional cluster using k0rdent ClusterDeployment
-    print_header "Step 2: Creating KOF Regional Cluster"
+    # Step 2: Create KOF regional cluster using k0rdent ClusterDeployment with retry logic
+    print_header "Step 2: Creating KOF Regional Cluster with Retry Logic"
     print_info "Deploying regional cluster '$regional_cluster_name' using k0rdent..."
     
-    # Prepare cluster annotations for KOF
-    local cluster_annotations="k0rdent.mirantis.com/kof-regional-domain=$regional_domain,k0rdent.mirantis.com/kof-cert-email=$admin_email"
-    
-    # Prepare cluster labels for KOF
-    local cluster_labels="k0rdent.mirantis.com/kof-storage-secrets=true,k0rdent.mirantis.com/kof-cluster-role=regional"
-    
-    # Use the enhanced create-child.sh script to deploy the regional cluster
-    if ! bash bin/create-child.sh \
-        --cluster-name "$regional_cluster_name" \
-        --cloud azure \
-        --location "$location" \
-        --cp-instance-size "$cp_instance_size" \
-        --worker-instance-size "$worker_instance_size" \
-        --root-volume-size "$root_volume_size" \
-        --namespace kcm-system \
-        --template "$template" \
-        --credential "$credential" \
-        --cp-number 1 \
-        --worker-number 3 \
-        --cluster-identity-name azure-cluster-identity \
-        --cluster-identity-namespace kcm-system \
-        --cluster-annotations "$cluster_annotations" \
-        --cluster-labels "$cluster_labels"; then
-        print_error "Failed to create KOF regional cluster"
-        add_event "kof_regional_cluster_creation_failed" "Failed to create regional cluster $regional_cluster_name"
+    # Use enhanced deployment with retry logic
+    if ! deploy_cluster_with_retry "$regional_cluster_name" "create_regional_cluster_core" 3 "kcm-system" 1200; then
+        print_error "Failed to create KOF regional cluster after retries"
+        add_event "kof_regional_cluster_creation_failed" "Failed to create regional cluster $regional_cluster_name after retries"
         return 1
     fi
     
-    # Step 3: Wait for cluster to be ready
-    print_header "Step 3: Waiting for Regional Cluster to be Ready"
-    print_info "Waiting for cluster '$regional_cluster_name' to become ready..."
-    
-    local max_wait=1800  # 30 minutes
-    local wait_time=0
-    local ready_status=""
-    
-    while [[ $wait_time -lt $max_wait ]]; do
-        ready_status=$(kubectl get clusterdeployment "$regional_cluster_name" -n kcm-system -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
-        
-        if [[ "$ready_status" == "True" ]]; then
-            print_success "Regional cluster '$regional_cluster_name' is ready!"
-            break
-        elif [[ "$ready_status" == "False" ]]; then
-            print_warning "Regional cluster '$regional_cluster_name' is not ready (status: False)"
-        else
-            print_info "Regional cluster '$regional_cluster_name' status: $ready_status"
-        fi
-        
-        sleep 30
-        wait_time=$((wait_time + 30))
-        print_info "Waiting... ($wait_time/${max_wait}s)"
-    done
-    
-    if [[ "$ready_status" != "True" ]]; then
-        print_error "Regional cluster did not become ready within $max_wait seconds"
-        print_info "Check cluster status with: kubectl describe clusterdeployment $regional_cluster_name -n kcm-system"
-        return 1
-    fi
-    
-    # Step 4: Record KOF regional completion event
-    print_header "Step 4: Recording KOF Regional Deployment Completion"
+    # Step 3: Record KOF regional completion event
+    print_header "Step 3: Recording KOF Regional Deployment Completion"
     add_cluster_event "$regional_cluster_name" "kof_regional_cluster_ready" "KOF regional cluster deployment completed successfully"
     add_cluster_event "$regional_cluster_name" "kof_regional_configured" "Domain: $regional_domain, Admin: $admin_email"
     

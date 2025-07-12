@@ -287,14 +287,14 @@ run_full_reset() {
     fi
 
     # Step 6: Clean up deployment state files
-    if [[ -f "./deployment-state.yaml" ]] || [[ -f "./deployment-events.yaml" ]]; then
+    if [[ -f "$DEPLOYMENT_STATE_FILE" ]] || [[ -f "$DEPLOYMENT_EVENTS_FILE" ]]; then
         print_header "Step 6: Removing Deployment State Files"
-        if [[ -f "./deployment-state.yaml" ]]; then
-            rm -f "./deployment-state.yaml"
+        if [[ -f "$DEPLOYMENT_STATE_FILE" ]]; then
+            rm -f "$DEPLOYMENT_STATE_FILE"
             print_info "Removed deployment-state.yaml"
         fi
-        if [[ -f "./deployment-events.yaml" ]]; then
-            rm -f "./deployment-events.yaml"
+        if [[ -f "$DEPLOYMENT_EVENTS_FILE" ]]; then
+            rm -f "$DEPLOYMENT_EVENTS_FILE"
             print_info "Removed deployment-events.yaml"
         fi
         print_success "Deployment state files removed"
