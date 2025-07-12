@@ -87,10 +87,10 @@ deploy_kof_regional() {
     
     # Get configuration values
     local kof_version=$(get_kof_config "version" "1.1.0")
-    local regional_cluster_name=$(get_kof_config "regional.cluster_name" "${K0RDENT_PREFIX}-regional")
+    local location=$(get_kof_config "regional.location" "eastus")
+    local regional_cluster_name=$(get_kof_config "regional.cluster_name" "kof-regional-${location}-${K0RDENT_PREFIX}")
     local regional_domain=$(get_kof_config "regional.domain" "")
     local admin_email=$(get_kof_config "regional.admin_email" "")
-    local location=$(get_kof_config "regional.location" "eastus")
     local template=$(get_kof_config "regional.template" "azure-standalone-cp-1-0-8")
     local credential=$(get_kof_config "regional.credential" "azure-cluster-identity-cred")
     local cp_instance_size=$(get_kof_config "regional.cp_instance_size" "Standard_A4_v2")
