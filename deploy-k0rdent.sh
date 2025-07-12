@@ -36,11 +36,45 @@ source ./etc/state-management.sh
 # Default values
 SKIP_PROMPTS=false
 NO_WAIT=false
+WITH_AZURE_CHILDREN=false
+WITH_KOF=false
 DEPLOY_FLAGS=""
 
-# Parse standard arguments
-PARSED_ARGS=$(parse_standard_args "$@")
-eval "$PARSED_ARGS"
+# Custom argument parsing to handle our specific flags
+POSITIONAL_ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -y|--yes)
+            SKIP_PROMPTS=true
+            shift
+            ;;
+        --no-wait)
+            NO_WAIT=true
+            shift
+            ;;
+        --with-azure-children)
+            WITH_AZURE_CHILDREN=true
+            shift
+            ;;
+        --with-kof)
+            WITH_KOF=true
+            shift
+            ;;
+        -h|--help)
+            SHOW_HELP=true
+            shift
+            ;;
+        -*)
+            print_error "Unknown option: $1"
+            print_info "Use -h or --help for usage information"
+            exit 1
+            ;;
+        *)
+            POSITIONAL_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
 
 # Build flags to pass to child scripts
 if [[ "$SKIP_PROMPTS" == "true" ]]; then
@@ -94,6 +128,11 @@ show_config() {
     echo "  VM Priority: $AZURE_VM_PRIORITY"
     echo "  Image: $AZURE_VM_IMAGE"
     
+    echo
+    echo "Deployment Options:"
+    echo "  Azure Child Clusters: $(if [[ "$WITH_AZURE_CHILDREN" == "true" ]]; then echo "ENABLED"; else echo "Disabled"; fi)"
+    echo "  KOF Installation: $(if [[ "$WITH_KOF" == "true" ]]; then echo "ENABLED"; else echo "Disabled"; fi)"
+    
     if [[ -f "./k0sctl-config/${K0RDENT_PREFIX}-kubeconfig" ]]; then
         echo
         echo "Kubeconfig:"
@@ -111,6 +150,11 @@ run_deployment() {
         exit 1
     fi
     echo
+
+    # Record deployment flags in state
+    update_state "deployment_flags_azure_children" "$WITH_AZURE_CHILDREN"
+    update_state "deployment_flags_kof" "$WITH_KOF"
+    add_event "deployment_started" "Deployment started with flags: azure-children=$WITH_AZURE_CHILDREN, kof=$WITH_KOF"
 
     # Record start time
     DEPLOYMENT_START_TIME=$(date +%s)
@@ -151,6 +195,30 @@ run_deployment() {
     print_header "Step 7: Installing k0rdent on Cluster"
     bash bin/install-k0rdent.sh deploy $DEPLOY_FLAGS
 
+    # Step 8: Setup Azure child cluster deployment (if requested)
+    if [[ "$WITH_AZURE_CHILDREN" == "true" ]]; then
+        print_header "Step 8: Setting up Azure Child Cluster Deployment"
+        bash bin/setup-azure-cluster-deployment.sh setup $DEPLOY_FLAGS
+    fi
+
+    # Step 9: Install Azure CSI driver (if KOF requested)
+    if [[ "$WITH_KOF" == "true" ]]; then
+        print_header "Step 9: Installing Azure Disk CSI Driver for KOF"
+        bash bin/install-k0s-azure-csi.sh deploy $DEPLOY_FLAGS
+    fi
+
+    # Step 10: Install KOF mothership (if requested)
+    if [[ "$WITH_KOF" == "true" ]]; then
+        print_header "Step 10: Installing KOF Mothership"
+        bash bin/install-kof-mothership.sh deploy $DEPLOY_FLAGS
+    fi
+
+    # Step 11: Deploy KOF regional cluster (if requested)
+    if [[ "$WITH_KOF" == "true" ]]; then
+        print_header "Step 11: Deploying KOF Regional Cluster"
+        bash bin/install-kof-regional.sh deploy $DEPLOY_FLAGS
+    fi
+
     # Calculate and display total deployment time
     DEPLOYMENT_END_TIME=$(date +%s)
     DEPLOYMENT_DURATION=$((DEPLOYMENT_END_TIME - DEPLOYMENT_START_TIME))
@@ -169,6 +237,22 @@ show_next_steps() {
     echo "  - WireGuard VPN is connected"
     echo "  - k0rdent cluster is installed and running"
     echo "  - kubectl configuration is available at: ./k0sctl-config/${K0RDENT_PREFIX}-kubeconfig"
+    
+    if [[ "$WITH_AZURE_CHILDREN" == "true" ]]; then
+        echo ""
+        echo "Azure Child Clusters:"
+        echo "  - Azure credentials configured for child cluster deployment"
+        echo "  - Deploy child clusters: ./bin/create-child.sh --help"
+    fi
+    
+    if [[ "$WITH_KOF" == "true" ]]; then
+        echo ""
+        echo "KOF Components:"
+        echo "  - KOF mothership installed on management cluster"
+        echo "  - KOF regional cluster deployed in $(yq eval '.kof.regional.location' ./config/k0rdent.yaml)"
+        echo "  - View KOF status: kubectl get pods -n kof"
+    fi
+    
     echo ""
     echo "Management Commands:"
     echo "  - Export kubeconfig: export KUBECONFIG=\$PWD/k0sctl-config/${K0RDENT_PREFIX}-kubeconfig"
@@ -183,13 +267,36 @@ show_next_steps() {
 
 run_full_reset() {
     print_header "Full k0rdent Deployment Reset"
+    
+    # Define kubeconfig location
+    local KUBECONFIG_FILE="./k0sctl-config/${K0RDENT_PREFIX}-kubeconfig"
+    
+    # Check if KOF was deployed and handle regional clusters first
+    local kof_deployed=$(get_state "deployment_flags_kof" 2>/dev/null || echo "false")
+    local kof_mothership_installed=$(get_state "kof_mothership_installed" 2>/dev/null || echo "false")
+    local kof_regional_installed=$(get_state "kof_regional_installed" 2>/dev/null || echo "false")
+    
+    if [[ "$kof_deployed" == "true" ]] || [[ "$kof_mothership_installed" == "true" ]] || [[ "$kof_regional_installed" == "true" ]]; then
+        print_warning "KOF deployment detected. Will remove KOF regional clusters first."
+    fi
+    
     print_warning "This will remove ALL k0rdent resources in the following order:"
-    echo "  1. Uninstall k0rdent from cluster"
-    echo "  2. Remove k0s cluster"
-    echo "  3. Disconnect and reset WireGuard VPN"
-    echo "  4. Azure VMs and network resources"
-    echo "  5. Deployment preparation files (keys & cloud-init)"
-    echo "  6. Logs directory"
+    if [[ "$kof_deployed" == "true" ]] || [[ "$kof_mothership_installed" == "true" ]] || [[ "$kof_regional_installed" == "true" ]]; then
+        echo "  1. Remove KOF regional clusters"
+        echo "  2. Uninstall k0rdent from cluster"
+        echo "  3. Remove k0s cluster"
+        echo "  4. Disconnect and reset WireGuard VPN"
+        echo "  5. Azure VMs and network resources"
+        echo "  6. Deployment preparation files (keys & cloud-init)"
+        echo "  7. Logs directory"
+    else
+        echo "  1. Uninstall k0rdent from cluster"
+        echo "  2. Remove k0s cluster"
+        echo "  3. Disconnect and reset WireGuard VPN"
+        echo "  4. Azure VMs and network resources"
+        echo "  5. Deployment preparation files (keys & cloud-init)"
+        echo "  6. Logs directory"
+    fi
     echo ""
 
     if [[ "$SKIP_PROMPTS" == "false" ]]; then
@@ -207,10 +314,38 @@ run_full_reset() {
     if check_vpn_connectivity &>/dev/null; then
         vpn_connected=true
     fi
+    
+    # Step 0: Remove KOF regional clusters if KOF was deployed
+    if [[ "$kof_deployed" == "true" ]] || [[ "$kof_mothership_installed" == "true" ]] || [[ "$kof_regional_installed" == "true" ]]; then
+        if [[ "$vpn_connected" == "true" ]] && [[ -f "$KUBECONFIG_FILE" ]]; then
+            print_header "Step 1: Removing KOF Regional Clusters"
+            export KUBECONFIG="$KUBECONFIG_FILE"
+            
+            # Find all KOF regional clusters
+            local kof_clusters=$(kubectl get clusterdeployments -n kcm-system \
+                -l "k0rdent.mirantis.com/kof-cluster-role=regional" \
+                --no-headers -o name 2>/dev/null || echo "")
+            
+            if [[ -n "$kof_clusters" ]]; then
+                while IFS= read -r cluster; do
+                    local cluster_name=$(basename "$cluster")
+                    print_info "Deleting KOF regional cluster: $cluster_name"
+                    kubectl delete clusterdeployment "$cluster_name" -n kcm-system --wait=false 2>/dev/null || true
+                done <<< "$kof_clusters"
+                
+                print_info "Waiting for KOF regional cluster deletions to start..."
+                sleep 10
+            else
+                print_info "No KOF regional clusters found"
+            fi
+        else
+            print_warning "Cannot remove KOF regional clusters - VPN not connected or kubeconfig missing"
+        fi
+    fi
 
-    # Step 1: Uninstall k0rdent from cluster
+    # Step 2: Uninstall k0rdent from cluster
     if [[ -d "./k0sctl-config" ]]; then
-        print_header "Step 1: Uninstalling k0rdent from Cluster"
+        print_header "Step 2: Uninstalling k0rdent from Cluster"
         if [[ "$vpn_connected" == "false" ]]; then
             print_warning "VPN is not connected. k0rdent uninstall requires VPN connectivity."
             if [[ "$SKIP_PROMPTS" == "false" ]]; then
@@ -228,12 +363,12 @@ run_full_reset() {
             bash bin/install-k0rdent.sh uninstall $DEPLOY_FLAGS || true
         fi
     else
-        print_info "Step 1: No k0rdent to uninstall"
+        print_info "Step 2: No k0rdent to uninstall"
     fi
 
-    # Step 2: Reset k0s cluster
+    # Step 3: Reset k0s cluster
     if [[ -d "./k0sctl-config" ]]; then
-        print_header "Step 2: Removing k0s Cluster"
+        print_header "Step 3: Removing k0s Cluster"
         if [[ "$vpn_connected" == "false" ]]; then
             print_warning "VPN is not connected. k0s uninstall requires VPN connectivity."
             if [[ "$SKIP_PROMPTS" == "false" ]]; then
@@ -253,31 +388,31 @@ run_full_reset() {
         # Always attempt to reset configuration files even without VPN
         bash bin/install-k0s.sh reset $DEPLOY_FLAGS
     else
-        print_info "Step 2: No k0s cluster to remove"
+        print_info "Step 3: No k0s cluster to remove"
     fi
 
-    # Step 3: Disconnect and reset WireGuard VPN
+    # Step 4: Disconnect and reset WireGuard VPN
     if [[ -f "$WG_CONFIG_FILE" ]]; then
-        print_header "Step 3: Disconnecting and Resetting WireGuard VPN"
+        print_header "Step 4: Disconnecting and Resetting WireGuard VPN"
         bash bin/manage-vpn.sh reset $DEPLOY_FLAGS
     else
-        print_info "Step 3: No WireGuard VPN configuration to remove"
+        print_info "Step 4: No WireGuard VPN configuration to remove"
     fi
 
-    # Step 4: Reset Azure resources (VMs and network)
+    # Step 5: Reset Azure resources (VMs and network)
     if state_file_exists || check_resource_group_exists "$RG"; then
-        print_header "Step 4: Removing Azure Resources"
+        print_header "Step 5: Removing Azure Resources"
         bash bin/setup-azure-network.sh reset $DEPLOY_FLAGS
     else
-        print_info "Step 4: No Azure resources to remove"
+        print_info "Step 5: No Azure resources to remove"
     fi
 
-    # Step 5: Reset deployment preparation (keys and cloud-init)
+    # Step 6: Reset deployment preparation (keys and cloud-init)
     if [[ -d "$CLOUD_INIT_DIR" ]] || [[ -d "$WG_DIR" ]]; then
-        print_header "Step 5: Removing Deployment Preparation Files"
+        print_header "Step 6: Removing Deployment Preparation Files"
         bash bin/prepare-deployment.sh reset $DEPLOY_FLAGS
     else
-        print_info "Step 5: No deployment preparation files to remove"
+        print_info "Step 6: No deployment preparation files to remove"
     fi
 
     # Clean up project suffix file (only when using deploy-k0rdent.sh reset)
@@ -286,9 +421,9 @@ run_full_reset() {
         rm -f "$SUFFIX_FILE"
     fi
 
-    # Step 6: Clean up deployment state files
+    # Step 7: Clean up deployment state files
     if [[ -f "$DEPLOYMENT_STATE_FILE" ]] || [[ -f "$DEPLOYMENT_EVENTS_FILE" ]]; then
-        print_header "Step 6: Removing Deployment State Files"
+        print_header "Step 7: Removing Deployment State Files"
         if [[ -f "$DEPLOYMENT_STATE_FILE" ]]; then
             rm -f "$DEPLOYMENT_STATE_FILE"
             print_info "Removed deployment-state.yaml"
@@ -299,16 +434,16 @@ run_full_reset() {
         fi
         print_success "Deployment state files removed"
     else
-        print_info "Step 6: No deployment state files to remove"
+        print_info "Step 7: No deployment state files to remove"
     fi
 
-    # Step 7: Clean up logs directory
+    # Step 8: Clean up logs directory
     if [[ -d "./logs" ]]; then
-        print_header "Step 7: Removing Logs Directory"
+        print_header "Step 8: Removing Logs Directory"
         rm -rf ./logs
         print_success "Logs directory removed"
     else
-        print_info "Step 7: No logs directory to remove"
+        print_info "Step 8: No logs directory to remove"
     fi
 
     print_header "Reset Complete"
@@ -317,6 +452,11 @@ run_full_reset() {
 }
 
 # Main execution
+# Handle help flag
+if [[ "${SHOW_HELP:-false}" == "true" ]]; then
+    POSITIONAL_ARGS=("help")
+fi
+
 case "${POSITIONAL_ARGS[0]:-deploy}" in
     "deploy")
         show_config
@@ -353,9 +493,17 @@ case "${POSITIONAL_ARGS[0]:-deploy}" in
         echo "  help      Show this help"
         echo ""
         echo "Options:"
-        echo "  -y, --yes         Skip confirmation prompts"
-        echo "  --no-wait         Skip waiting for resources (where applicable)"
-        echo "  -h, --help        Show this help message"
+        echo "  -y, --yes               Skip confirmation prompts"
+        echo "  --no-wait               Skip waiting for resources (where applicable)"
+        echo "  --with-azure-children   Enable Azure child cluster deployment capability"
+        echo "  --with-kof              Deploy KOF (mothership + regional cluster)"
+        echo "  -h, --help              Show this help message"
+        echo ""
+        echo "Examples:"
+        echo "  $0 deploy                        # Basic k0rdent deployment"
+        echo "  $0 deploy --with-azure-children  # Deploy with Azure child cluster support"
+        echo "  $0 deploy --with-kof             # Deploy with KOF components"
+        echo "  $0 deploy --with-azure-children --with-kof  # Full deployment"
         ;;
     *)
         print_error "Unknown command: ${POSITIONAL_ARGS[0]}"
