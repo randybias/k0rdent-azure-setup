@@ -148,6 +148,21 @@ For automated deployments without prompts:
 ./deploy-k0rdent.sh deploy -y
 ```
 
+#### Modular Deployment Options
+
+The deployment is modular - by default, only the base k0rdent cluster is installed. Additional components can be enabled with flags:
+
+```bash
+# Deploy with Azure child cluster management capability
+./deploy-k0rdent.sh deploy --with-azure-children
+
+# Deploy with KOF (k0rdent Observability and FinOps)
+./deploy-k0rdent.sh deploy --with-kof
+
+# Deploy with all optional components
+./deploy-k0rdent.sh deploy --with-azure-children --with-kof -y
+```
+
 Or step-by-step:
 
 ```bash
@@ -266,6 +281,64 @@ See `config/examples/` for more configuration templates:
 - `minimal.yaml` - Single controller + worker setup  
 - `production.yaml` - HA setup with 3 controllers
 - `development.yaml` - Optimized for development/testing
+- `production-arm64-southeastasia.yaml` - ARM64 optimized for Southeast Asia
+- `production-arm64-southeastasia-spot.yaml` - ARM64 with Spot VMs for cost savings
+
+### Software Versions
+
+Current default versions in all templates:
+
+```yaml
+software:
+  k0s:
+    version: "v1.33.2+k0s.0"
+  k0rdent:
+    version: "1.1.1"
+    registry: "oci://ghcr.io/k0rdent/kcm/charts/kcm"
+    namespace: "kcm-system"
+```
+
+### KOF (k0rdent Observability and FinOps)
+
+KOF is an optional component that provides observability and FinOps capabilities for k0rdent clusters. It can be enabled in the configuration or deployed with the `--with-kof` flag.
+
+#### KOF Configuration
+
+```yaml
+kof:
+  enabled: false  # Set to true or use --with-kof flag
+  version: "1.1.0"
+  
+  # Istio configuration for KOF
+  istio:
+    version: "1.1.0"
+    namespace: "istio-system"
+  
+  # Mothership configuration
+  mothership:
+    namespace: "kof"
+    storage_class: "default"
+    collectors:
+      global: {}  # Custom global collectors can be added here
+  
+  # Regional cluster configuration
+  regional:
+    cluster_name: ""  # Will default to ${K0RDENT_PREFIX}-regional
+    domain: "regional.example.com"  # Required for KOF regional cluster
+    admin_email: "admin@example.com"  # Required for KOF certificates
+    location: "southeastasia"  # Azure region for regional cluster
+    template: "azure-standalone-cp-1-0-8"  # k0rdent cluster template
+    credential: "azure-cluster-credential"  # Azure credential name
+    cp_instance_size: "Standard_A4_v2"  # Control plane VM size
+    worker_instance_size: "Standard_A4_v2"  # Worker node VM size
+    root_volume_size: "32"  # Root volume size in GB
+```
+
+When KOF is enabled, the deployment will:
+1. Install Azure Disk CSI Driver on the management cluster (required for KOF persistent storage)
+2. Deploy KOF mothership with Istio service mesh
+3. Create a KOF regional cluster in the specified Azure location
+4. Configure observability and FinOps data collection
 
 ### Configuration Examples
 
@@ -593,6 +666,11 @@ To completely remove all k0rdent resources:
 ```bash
 ./deploy-k0rdent.sh reset
 ```
+
+The reset process intelligently handles child clusters:
+- If KOF is deployed, the regional cluster is removed first
+- Azure child clusters are cleaned up before the management cluster
+- All resources are removed in the proper dependency order
 
 This will remove resources in the proper order:
 1. Uninstall k0rdent from cluster

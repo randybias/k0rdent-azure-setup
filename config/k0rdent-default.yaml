@@ -42,9 +42,9 @@ ssh:
 # Software Versions
 software:
   k0s:
-    version: "v1.33.1+k0s.0"
+    version: "v1.33.2+k0s.0"
   k0rdent:
-    version: "1.0.0"
+    version: "1.1.1"
     registry: "oci://ghcr.io/k0rdent/kcm/charts/kcm"
     namespace: "kcm-system"
 
@@ -77,14 +77,14 @@ kof:
     collectors:
       global: {}  # Custom global collectors can be added here
   
-  # Regional configuration
+  # Regional cluster configuration
   regional:
-    namespace: "kof"
-    cluster_label: "k0rdent.mirantis.com/istio-role=child"
-    collectors: {}  # Custom regional collectors can be added here
-  
-  # Child configuration
-  child:
-    namespace: "kof"
-    cluster_label: "k0rdent.mirantis.com/istio-role=child"  # Same as regional (intentional)
-    regional_cluster: ""  # Optional regional cluster connection
+    cluster_name: ""  # Will default to ${K0RDENT_PREFIX}-regional
+    domain: "regional.example.com"  # Required for KOF regional cluster
+    admin_email: "admin@example.com"  # Required for KOF certificates
+    location: "southeastasia"  # Azure region for regional cluster
+    template: "azure-standalone-cp-1-0-8"  # k0rdent cluster template
+    credential: "azure-cluster-credential"  # Azure credential name
+    cp_instance_size: "Standard_A4_v2"  # Control plane VM size
+    worker_instance_size: "Standard_A4_v2"  # Worker node VM size
+    root_volume_size: "32"  # Root volume size in GB
