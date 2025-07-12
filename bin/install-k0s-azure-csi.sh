@@ -99,9 +99,10 @@ create_azure_cloud_provider_config() {
 }
 EOF
     
-    # Create Kubernetes secret
+    # Create Kubernetes secret with both cloud-config and azure.json keys
     kubectl create secret generic azure-cloud-provider \
         --from-file=cloud-config=/tmp/azure-cloud-config.json \
+        --from-file=azure.json=/tmp/azure-cloud-config.json \
         -n kube-system \
         --dry-run=client -o yaml | kubectl apply -f -
     
@@ -269,7 +270,7 @@ spec:
               cpu: 10m
               memory: 20Mi
         - name: azuredisk
-          image: registry.k8s.io/k8s-staging-cloud-provider-azure/azure-csi-driver:v1.30.0
+          image: mcr.microsoft.com/oss/kubernetes-csi/azuredisk-csi:v1.30.0
           args:
             - "--v=5"
             - "--endpoint=\$(CSI_ENDPOINT)"
@@ -413,7 +414,7 @@ spec:
               cpu: 10m
               memory: 20Mi
         - name: azuredisk
-          image: registry.k8s.io/k8s-staging-cloud-provider-azure/azure-csi-driver:v1.30.0
+          image: mcr.microsoft.com/oss/kubernetes-csi/azuredisk-csi:v1.30.0
           args:
             - "--v=5"
             - "--endpoint=\$(CSI_ENDPOINT)"
