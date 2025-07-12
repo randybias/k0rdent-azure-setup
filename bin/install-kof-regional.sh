@@ -161,7 +161,9 @@ deploy_kof_regional() {
     local kof_version=$(get_kof_config "version" "1.1.0")
     local location=$(get_kof_config "regional.location" "eastus")
     # Generate regional cluster name with location
-    local regional_cluster_name=$(get_kof_config "regional.cluster_name" "kof-regional-${K0RDENT_PREFIX}-${location}")
+    # Extract just the suffix part from K0RDENT_PREFIX (remove "k0rdent-" prefix)
+    local prefix_suffix="${K0RDENT_PREFIX#k0rdent-}"
+    local regional_cluster_name=$(get_kof_config "regional.cluster_name" "kof-regional-${prefix_suffix}-${location}")
     local regional_domain=$(get_kof_config "regional.domain" "")
     local admin_email=$(get_kof_config "regional.admin_email" "")
     local template=$(get_kof_config "regional.template" "azure-standalone-cp-1-0-8")

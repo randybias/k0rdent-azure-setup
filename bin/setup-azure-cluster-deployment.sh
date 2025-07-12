@@ -78,11 +78,49 @@ check_prerequisites() {
     return 0
 }
 
+wait_for_capz_ready() {
+    print_info "Waiting for Cluster API Azure provider to be ready..."
+    
+    local max_attempts=60  # 5 minutes (60 * 5 seconds)
+    local attempt=0
+    
+    while [[ $attempt -lt $max_attempts ]]; do
+        # Check if there are any pods with capz or azure in their name that are running
+        local capz_pods=$(kubectl get pods -A --no-headers 2>/dev/null | grep -E "(capz|azure)" | grep "Running" | wc -l | tr -d ' ')
+        
+        if [[ "$capz_pods" -gt 0 ]]; then
+            # Check if the necessary CRDs exist
+            if kubectl get crd azureclusteridentities.infrastructure.cluster.x-k8s.io &>/dev/null; then
+                print_success "Cluster API Azure provider is ready"
+                return 0
+            fi
+        fi
+        
+        attempt=$((attempt + 1))
+        if [[ $((attempt % 12)) -eq 0 ]]; then
+            print_info "Still waiting for CAPZ to be ready... ($((attempt * 5)) seconds elapsed)"
+        fi
+        sleep 5
+    done
+    
+    print_error "Timeout waiting for Cluster API Azure provider to be ready"
+    print_info "Current state:"
+    kubectl get pods -A | grep -E "(capz|azure)" || echo "No CAPZ/Azure pods found"
+    kubectl get crd | grep azure || echo "No Azure CRDs found"
+    return 1
+}
+
 setup_azure_credentials() {
     print_header "Setting up Azure Credentials for k0rdent"
     
     # Check prerequisites
     if ! check_prerequisites; then
+        return 1
+    fi
+    
+    # Wait for CAPZ to be ready
+    if ! wait_for_capz_ready; then
+        print_error "Cannot proceed without Cluster API Azure provider"
         return 1
     fi
     
@@ -128,19 +166,38 @@ EOF
     chmod 600 config/azure-credentials.yaml
     print_success "Azure credentials saved to config/azure-credentials.yaml"
     
-    # Create Kubernetes secret
-    print_info "Creating Kubernetes secret..."
-    kubectl create secret generic "$AZURE_SECRET_NAME" \
-        --from-literal=clientSecret="$client_secret" \
-        -n "$KCM_NAMESPACE"
+    # Create or update Kubernetes secret
+    print_info "Checking for existing Kubernetes secret..."
+    
+    # Check if secret already exists
+    if kubectl get secret "$AZURE_SECRET_NAME" -n "$KCM_NAMESPACE" &>/dev/null; then
+        print_info "Secret already exists, reusing it"
+    else
+        print_info "Creating new Kubernetes secret..."
+        kubectl create secret generic "$AZURE_SECRET_NAME" \
+            --from-literal=clientSecret="$client_secret" \
+            -n "$KCM_NAMESPACE"
+    fi
     
     kubectl label secret "$AZURE_SECRET_NAME" \
         -n "$KCM_NAMESPACE" \
         k0rdent.mirantis.com/component=kcm
     
     # Create AzureClusterIdentity
-    print_info "Creating AzureClusterIdentity..."
-    cat <<EOF | kubectl apply -f -
+    print_info "Checking AzureClusterIdentity..."
+    
+    # Double-check CRDs are available before creating resources
+    if ! kubectl get crd azureclusteridentities.infrastructure.cluster.x-k8s.io &>/dev/null; then
+        print_error "AzureClusterIdentity CRD not found. CAPZ may not be fully installed."
+        return 1
+    fi
+    
+    # Check if AzureClusterIdentity already exists
+    if kubectl get azureclusteridentity "$AZURE_IDENTITY_NAME" -n "$KCM_NAMESPACE" &>/dev/null; then
+        print_info "AzureClusterIdentity already exists, reusing it"
+    else
+        print_info "Creating new AzureClusterIdentity..."
+        cat <<EOF | kubectl apply -f -
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: AzureClusterIdentity
 metadata:
@@ -155,10 +212,16 @@ spec:
     namespace: $KCM_NAMESPACE
   allowedNamespaces: {}
 EOF
+    fi
     
     # Create KCM Credential
-    print_info "Creating KCM Credential..."
-    cat <<EOF | kubectl apply -f -
+    print_info "Checking KCM Credential..."
+    
+    if kubectl get credential "$KCM_CREDENTIAL_NAME" -n "$KCM_NAMESPACE" &>/dev/null; then
+        print_info "KCM Credential already exists, reusing it"
+    else
+        print_info "Creating new KCM Credential..."
+        cat <<EOF | kubectl apply -f -
 apiVersion: k0rdent.mirantis.com/v1beta1
 kind: Credential
 metadata:
@@ -172,6 +235,7 @@ spec:
     name: $AZURE_IDENTITY_NAME
     namespace: $KCM_NAMESPACE
 EOF
+    fi
     
     # Create Azure Resource Template ConfigMap
     print_info "Creating Azure Resource Template ConfigMap..."
