@@ -151,17 +151,17 @@ run_deployment() {
     fi
     echo
 
-    # Record deployment flags in state
-    update_state "deployment_flags_azure_children" "$WITH_AZURE_CHILDREN"
-    update_state "deployment_flags_kof" "$WITH_KOF"
-    add_event "deployment_started" "Deployment started with flags: azure-children=$WITH_AZURE_CHILDREN, kof=$WITH_KOF"
-
     # Record start time
     DEPLOYMENT_START_TIME=$(date +%s)
 
     # Step 1: Prepare deployment (keys and cloud-init)
     print_header "Step 1: Preparing Deployment (Keys & Cloud-Init)"
     bash bin/prepare-deployment.sh deploy $DEPLOY_FLAGS
+
+    # Record deployment flags in state (after state file is created)
+    update_state "deployment_flags_azure_children" "$WITH_AZURE_CHILDREN"
+    update_state "deployment_flags_kof" "$WITH_KOF"
+    add_event "deployment_started" "Deployment started with flags: azure-children=$WITH_AZURE_CHILDREN, kof=$WITH_KOF"
 
     # Step 2: Setup Azure network
     print_header "Step 2: Setting up Azure Network"
