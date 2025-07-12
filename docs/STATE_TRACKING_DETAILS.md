@@ -176,14 +176,85 @@ cluster:
   k0rdent_ready: true
 ```
 
-### 15. Deployment Complete
-**When**: End of `install-k0rdent.sh`
+### 15. Deployment Complete (Base k0rdent)
+**When**: End of `install-k0rdent.sh` (if no optional components)
 **Function**: `update_phase` and `backup_deployment`
 ```yaml
 phases:
   install_k0rdent: true  # Updated
 deployment:
   completed_at: "2024-01-20T11:30:00Z"
+```
+
+### 16. Azure Child Cluster Setup (Optional)
+**When**: During `setup-azure-cluster-deployment.sh` (--with-azure-children)
+**Function**: `update_state`
+```yaml
+azure_children:
+  credentials_configured: true
+  cluster_api_ready: true
+  azure_provider_ready: true
+```
+
+### 17. Azure CSI Installation (Optional)
+**When**: During `install-k0s-azure-csi.sh` (--with-kof)
+**Function**: `update_state`
+```yaml
+azure_csi_installed: true
+storage_class: "azure-disk-csi"
+```
+
+### 18. KOF Mothership Deployment (Optional)
+**When**: During `install-kof-mothership.sh` (--with-kof)
+**Function**: `update_state`
+
+**After Istio installation**:
+```yaml
+kof_istio_installed: true
+```
+
+**After KOF operators**:
+```yaml
+kof_operators_installed: true
+```
+
+**After mothership deployment**:
+```yaml
+kof_mothership_installed: true
+kof_mothership_version: "1.1.0"
+kof_mothership_namespace: "kof"
+```
+
+### 19. KOF Regional Cluster (Optional)
+**When**: During `install-kof-regional.sh` (--with-kof)
+**Function**: `update_state` and `update_cluster_state`
+
+**Cluster creation tracking**:
+```yaml
+kof_regional_deployed: true
+kof_regional_cluster_name: "kof-regional-SUFFIX-southeastasia"
+kof_regional_domain: "regional.example.com"
+```
+
+**Separate cluster state file**: `state/cluster-<cluster-name>-events.yaml`
+```yaml
+cluster_name: "kof-regional-SUFFIX-southeastasia"
+events:
+  - timestamp: "2024-01-20T11:45:00Z"
+    action: cluster_deployment_created
+    message: "ClusterDeployment created for azure cluster"
+```
+
+### 20. Final Deployment Complete
+**When**: After all optional components
+**Function**: `update_phase` and `backup_deployment`
+```yaml
+phases:
+  install_k0rdent: true
+  setup_azure_children: true     # If --with-azure-children
+  install_kof: true               # If --with-kof
+deployment:
+  completed_at: "2024-01-20T12:00:00Z"
 ```
 
 ## State Management Functions
