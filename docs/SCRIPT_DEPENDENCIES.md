@@ -11,12 +11,18 @@
 | **bin/manage-vpn.sh** | - etc/common-functions.sh<br>- etc/state-management.sh | deploy-k0rdent.sh | WireGuard VPN management |
 | **bin/install-k0s.sh** | - etc/common-functions.sh<br>- etc/state-management.sh | deploy-k0rdent.sh | Deploy k0s cluster |
 | **bin/install-k0rdent.sh** | - etc/common-functions.sh<br>- etc/state-management.sh | deploy-k0rdent.sh | Deploy k0rdent |
+| **bin/setup-azure-cluster-deployment.sh** | - etc/common-functions.sh<br>- etc/state-management.sh<br>- etc/azure-cluster-functions.sh | deploy-k0rdent.sh (--with-azure-children) | Setup Azure child cluster capability |
+| **bin/install-k0s-azure-csi.sh** | - etc/common-functions.sh<br>- etc/state-management.sh | deploy-k0rdent.sh (--with-kof) | Install Azure Disk CSI Driver |
+| **bin/install-kof-mothership.sh** | - etc/common-functions.sh<br>- etc/state-management.sh<br>- etc/kof-functions.sh | deploy-k0rdent.sh (--with-kof) | Deploy KOF mothership |
+| **bin/install-kof-regional.sh** | - etc/common-functions.sh<br>- etc/state-management.sh<br>- etc/kof-functions.sh<br>- etc/azure-cluster-functions.sh | deploy-k0rdent.sh (--with-kof) | Deploy KOF regional cluster |
 | **bin/lockdown-ssh.sh** | - etc/common-functions.sh | User (optional) | Security hardening |
 | **bin/configure.sh** | None | etc/k0rdent-config.sh | YAML config parser |
 | **etc/k0rdent-config.sh** | - bin/configure.sh<br>- etc/config-internal.sh | All scripts | Configuration loader |
 | **etc/config-internal.sh** | None | etc/k0rdent-config.sh | Dynamic value computation |
 | **etc/common-functions.sh** | None | All scripts | Shared utilities |
 | **etc/state-management.sh** | - etc/common-functions.sh | Most bin/ scripts | State tracking |
+| **etc/azure-cluster-functions.sh** | - etc/common-functions.sh | Azure cluster scripts | Azure child cluster utilities |
+| **etc/kof-functions.sh** | - etc/common-functions.sh | KOF scripts | KOF-specific utilities |
 
 ## Data Flow Between Scripts
 
@@ -62,6 +68,24 @@ Deployment Steps (sequential):
         - Installs Helm
         - Deploys k0rdent
         - Updates final state
+    ↓
+Optional Components (if enabled):
+    → bin/setup-azure-cluster-deployment.sh (--with-azure-children)
+        - Configures Azure credentials
+        - Sets up k0rdent for Azure child clusters
+    ↓
+    → bin/install-k0s-azure-csi.sh (--with-kof)
+        - Installs Azure Disk CSI Driver
+        - Required for KOF persistent storage
+    ↓
+    → bin/install-kof-mothership.sh (--with-kof)
+        - Deploys Istio service mesh
+        - Installs KOF operators
+        - Deploys KOF mothership
+    ↓
+    → bin/install-kof-regional.sh (--with-kof)
+        - Creates KOF regional cluster
+        - Configures observability/FinOps collection
     ↓
 State Backup → old_deployments/
 ```
