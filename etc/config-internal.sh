@@ -94,15 +94,24 @@ if ! command -v get_wireguard_ip &> /dev/null; then
 fi
 
 # If state file exists, populate WG_IPS from state
-if [[ -f "./deployment-state.yaml" ]]; then
+if [[ -f "$DEPLOYMENT_STATE_FILE" ]]; then
     populate_wg_ips_array
 else
-    # Fallback: compute IPs temporarily for scripts that need them before state is initialized
+    # Validate WireGuard network is properly configured
+    if [[ -z "$WG_NETWORK" ]]; then
+        echo "ERROR: WireGuard network (WG_NETWORK) not configured. Check your YAML configuration."
+        exit 1
+    fi
+    
+    # Extract network base from WG_NETWORK (e.g., "192.168.100.0/24" -> "192.168.100")
+    wg_base=$(echo "$WG_NETWORK" | cut -d'/' -f1 | cut -d'.' -f1-3)
+    
+    # Fallback: compute IPs temporarily using configured WG_NETWORK
     # This will be replaced by assign_wireguard_ips() call during deployment preparation
-    WG_IPS["mylaptop"]="172.24.24.1"
+    WG_IPS["mylaptop"]="${wg_base}.1"
     ip_counter=1
     for host in "${VM_HOSTS[@]}"; do
-        WG_IPS["$host"]="172.24.24.$((10 + ip_counter))"
+        WG_IPS["$host"]="${wg_base}.$((10 + ip_counter))"
         ((ip_counter++))
     done
 fi

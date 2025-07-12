@@ -238,14 +238,11 @@ data:
       annotations:
         storageclass.kubernetes.io/is-default-class: "true"
     provisioner: disk.csi.azure.com
-    allowVolumeExpansion: true
-    reclaimPolicy: Delete
-    volumeBindingMode: Immediate
     parameters:
-      skuName: Premium_LRS
-      kind: Managed
-      cachingmode: ReadOnly
-      networkAccessPolicy: AllowAll
+      skuName: StandardSSD_LRS
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
 EOF
     
     # Update Azure state
