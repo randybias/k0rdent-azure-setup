@@ -15,6 +15,7 @@ This file tracks future enhancements and improvements that are not currently pri
 | **HIGH** | Minor Enhancements | Add Deployment Timing Metrics | 🆕 NEW |
 | **HIGH** | Minor Enhancements | Create delete-all-child-clusters.sh with filtering (namespace, cloud, region) | 🆕 NEW |
 | **HIGH** | Minor Enhancements | Add credential verification step to AWS and Azure setup scripts | 🆕 NEW |
+| **HIGH** | Future Ideas | Azure Disk CSI Driver Integration | 🔄 IN PLANNING |
 | **MEDIUM** | Bug Fixes | Bug 3: Incorrect validation requiring at least 1 worker node | 🆕 NEW |
 | **MEDIUM** | Bug Fixes | Bug 7: Inconsistent controller naming convention | 🆕 NEW |
 | **MEDIUM** | Bug Fixes | Bug 12: Reset with --force doesn't clean up local state files | 🆕 NEW |
@@ -55,6 +56,17 @@ This file tracks future enhancements and improvements that are not currently pri
 | **LOW** | KOF Features | KOF Backup and Restore Capabilities | 🆕 NEW |
 | **FUTURE** | Future Ideas | Multi-Cluster Environment Management | 🆕 NEW |
 | **FUTURE** | Future Ideas | State Management Migration to Key-Value Store | 🆕 NEW |
+=======
+| **MEDIUM** | Documentation | Create k0rdent Architecture Overview | 🆕 NEW |
+| **FUTURE** | Future Ideas | Multi-Cluster Environment Management | 🆕 NEW |
+| **FUTURE** | Future Ideas | State Management Migration to Key-Value Store | 🆕 NEW |
+| **COMPLETED** | Bug Fixes | Bug 4: Missing reset capability in create-azure-vms.sh | ✅ FIXED |
+| **COMPLETED** | Bug Fixes | Bug 6: SSH keys not being cleaned up on reset | ✅ FIXED |
+| **COMPLETED** | Bug Fixes | Bug 8: VM creation failures not handled with recovery | ✅ FIXED |
+| **COMPLETED** | Bug Fixes | Bug 10: VM verification loop inefficiently rechecks | ✅ FIXED |
+| **COMPLETED** | Minor Enhancements | Configuration Validation System | ✅ COMPLETED |
+| **COMPLETED** | Minor Enhancements | ARM-based Configuration Examples | ✅ COMPLETED |
+>>>>>>> 3317731 (Add KOF regional cluster support and kubeconfig retrieval)
 
 ## High Priority Items
 
@@ -467,6 +479,25 @@ verify_aws_credentials() {
 ### Future Ideas
 
 [Moved completed items to the completed section]
+=======
+### Future Ideas
+
+#### Azure Disk CSI Driver Integration
+**Priority**: High
+**Status**: 🔄 **IN PLANNING**
+
+**Description**: Integrate Azure Disk CSI Driver as the default storage provisioner for k0rdent deployments on Azure. This will enable persistent storage for applications like KOF that require PVCs.
+
+**Problem**: k0s clusters deployed on Azure have no storage provisioner, causing KOF components (Grafana, VictoriaMetrics) to fail due to unbound PVCs.
+
+**Implementation Plan**: Detailed plan available in `notebooks/AZURE-DISK-CSI-PLAN.md`
+
+**Key Components**:
+- Azure Disk CSI Driver installation after k0s deployment
+- Default storage class configuration (StandardSSD_LRS)
+- Integration with existing deployment scripts
+- State tracking for CSI installation
+>>>>>>> 3317731 (Add KOF regional cluster support and kubeconfig retrieval)
 
 ## Medium Priority Items
 
@@ -1025,6 +1056,20 @@ kubectl config current-context
 - Investigate k0rdent components and interactions
 - Create summary document for future reference
 
+=======
+#### Create k0rdent Architecture Overview
+**Priority**: Medium
+**Status**: 🆕 **NEW**
+
+**Description**: Create a comprehensive architecture overview of k0rdent platform to serve as a reference for troubleshooting and understanding the system.
+
+**Approach**: 
+- Read docs at docs.k0rdent.io
+- Gather user input and knowledge
+- Investigate k0rdent components and interactions
+- Create summary document for future reference
+
+>>>>>>> 3317731 (Add KOF regional cluster support and kubeconfig retrieval)
 #### Migrate from WireGuard to Nebula Mesh VPN
 **Priority**: Medium
 **Status**: 🆕 **NEW**
@@ -1200,6 +1245,8 @@ kubectl config current-context
 
 **Impact**: Low priority as it doesn't affect functionality, but good housekeeping practice for long-term usage.
 
+=======
+>>>>>>> 3317731 (Add KOF regional cluster support and kubeconfig retrieval)
 ### Minor Enhancements
 
 #### Scoped Azure credentials management
@@ -1867,6 +1914,112 @@ state_management:
 
 ## Completed Items
 
-Completed items have been moved to `notebooks/completed/BACKLOG-COMPLETED.md`
+Completed items have been moved to `notebooks/completed/BACKLOG-COMPLETED.md`**Fix Applied**: Added `reset` command to create-azure-vms.sh with:
+- Single API call using `az vm list --output yaml` parsed with yq
+- Parallel VM deletion with `--no-wait` option
+- Optional wait for deletion completion (skippable with `--no-wait`)
+- State tracking for deleted VMs
+
+#### Bug 6: SSH keys not being cleaned up on reset
+**Status**: ✅ **FIXED** - Resolved in recent commits
+**Priority**: ~~Medium~~ **COMPLETED**
+
+**Description**: ~~SSH keys are not being cleaned up from the local filesystem when running reset operations.~~
+**Fix Applied**: SSH key cleanup implemented in setup-azure-network.sh reset function
+
+#### Bug 8: VM creation failures not handled with automatic recovery
+**Status**: ✅ **FIXED** - Resolved 2025-06-18
+**Priority**: ~~High~~ **COMPLETED**
+
+**Description**: ~~VM creation failures (both provisioning failures and cloud-init errors) are not automatically recovered, causing deployment to stall or continue with missing VMs.~~
+
+**Fix Applied**: Implemented "cattle not pets" methodology in create-azure-vms.sh:
+
+**VM Provisioning Failure Recovery**:
+- Detects VMs with `state == "Failed"` during the wait loop
+- Automatically deletes failed VMs with `az vm delete --no-wait`
+- Immediately recreates VM with same configuration
+- Tracks retry attempts (max 2 retries per VM)
+- Continues with deployment once VM is healthy
+
+**Cloud-init Failure Recovery**:
+- Added `check_cloud_init_error()` function to detect `status: error`
+- Triggers VM replacement when cloud-init errors are detected
+- Resets SSH verification status for recreated VMs
+- Tracks separate retry count for cloud-init failures (max 1 retry)
+
+**Implementation details**:
+- Enhanced VM wait loop with failure detection
+- Parallel deletion and recreation (no waiting for deletion)
+- State tracking for all retry attempts
+- Event logging for recreation attempts
+- Maintains deployment flow with automatic recovery
+
+**Benefits achieved**:
+- Fully automated recovery from transient Azure issues
+- No manual intervention required for common failures
+- Faster deployment with automatic issue resolution
+- Proper "cattle not pets" operations philosophy
+
+#### Bug 10: VM verification loop inefficiently rechecks already verified VMs
+**Status**: ✅ **FIXED** - Resolved 2025-06-18
+**Priority**: ~~Low~~ **COMPLETED**
+
+**Description**: ~~The VM monitoring loop in create-azure-vms.sh continues to recheck VMs that have already been verified as operational while waiting for other VMs to reach Succeeded state.~~
+
+**Fix Applied**: Added VM verification tracking system to create-azure-vms.sh:
+- **VM_VERIFIED array**: Tracks VMs that have passed both SSH connectivity and cloud-init validation
+- **Skip verification checks**: VMs marked as verified are skipped in subsequent monitoring loops
+- **Reset on recreation**: Verification status is reset when VMs are deleted and recreated due to failures
+- **Maintains retry logic**: Failed VMs continue to be monitored and recreated as needed
+
+**Implementation Details**:
+- Added `declare -A VM_VERIFIED` tracking array
+- Added verification check: `if [[ "${VM_VERIFIED[$HOST]:-}" == "true" ]]; then continue; fi`
+- Set verification flag: `VM_VERIFIED["$HOST"]="true"` after successful SSH + cloud-init validation
+- Reset verification flag: `VM_VERIFIED["$HOST"]="false"` when VMs are recreated
+
+**Benefits Achieved**:
+- Eliminated redundant SSH connection attempts to verified VMs
+- Reduced unnecessary cloud-init status checks on operational systems
+- Faster monitoring loop iterations focused on VMs needing attention
+- Cleaner deployment logs with less repetitive output
+- Reduced network overhead during multi-VM deployments
+
+**Performance Impact**: Significant improvement for large deployments with multiple VMs
+
+### Minor Enhancements
+
+#### Configuration Validation System
+**Status**: ✅ **COMPLETED** - Implemented in previous sessions
+**Priority**: ~~High~~ **COMPLETED**
+
+**Description**: ~~Pre-deployment configuration validation system~~
+
+**Implementation Completed**:
+- ✅ **Azure VM SKU availability validation**: Validates VM sizes are available in specified regions and zones
+- ✅ **Azure zone support validation**: Verifies availability zones are supported in target region
+- ✅ **Network configuration validation**: CIDR overlap detection and subnet validation
+- ✅ **Zone configuration validation**: Ensures zones exist in target region
+- ✅ **Interactive validation feedback**: Provides helpful error messages with suggested fixes
+- ✅ **Integration with deployment flow**: Runs validation before Azure resources are created
+- ✅ **Skip validation option**: `--skip-validation` flag for offline/faster operations
+
+**Benefits Achieved**: Prevents deployment failures from invalid configurations, provides early feedback on resource availability
+
+#### ARM-based Configuration Examples  
+**Status**: ✅ **COMPLETED** - Examples created
+**Priority**: ~~Low~~ **COMPLETED**
+
+**Description**: ~~Create ARM-optimized versions of existing configuration examples~~
+
+**Implementation Completed**:
+- ✅ `config/examples/production-arm64-southeastasia.yaml` - ARM64 production setup with Standard_D4pls_v6/D16pls_v6 VM sizes
+- ✅ `config/examples/production-arm64-southeastasia-spot.yaml` - ARM64 production with Spot instances
+- ✅ ARM64 Debian image support: `debian-12:12-arm64:latest`
+- ✅ ARM-optimized VM sizing configurations
+
+**Benefits Achieved**: Better performance/cost ratio for ARM workloads, native ARM64 support
+>>>>>>> 3317731 (Add KOF regional cluster support and kubeconfig retrieval)
 
 _Add other backlog items here as they come up during development..._
