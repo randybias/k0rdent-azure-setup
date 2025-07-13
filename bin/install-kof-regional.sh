@@ -94,7 +94,7 @@ create_regional_cluster_core() {
     local root_volume_size=$(get_kof_config "regional.root_volume_size" "32")
     
     # Prepare cluster labels for KOF with Istio
-    local cluster_labels="k0rdent.mirantis.com/istio-role=child"
+    local cluster_labels="k0rdent.mirantis.com/istio-role=child,k0rdent.mirantis.com/kof-cluster-role=regional"
     
     print_info "Creating cluster deployment for: $regional_cluster_name"
     print_info "Location: $location, Template: $template"
