@@ -2,9 +2,58 @@
 
 This file tracks future enhancements and improvements that are not currently prioritized but may be valuable additions.
 
-## Bug Fixes
+## Summary Table
 
-### Bug 0: Deployment resumption doesn't handle partial state correctly
+| Priority | Category | Item | Status |
+|----------|----------|------|--------|
+| **HIGH** | Bug Fixes | Bug 0: Deployment resumption doesn't handle partial state correctly | 🆕 NEW |
+| **HIGH** | Bug Fixes | Bug 1: Missing k0rdent Management CRD validation | 🆕 NEW |
+| **HIGH** | Bug Fixes | Bug 2: State not updated during uninstall/reset operations | 🆕 NEW |
+| **HIGH** | Bug Fixes | Bug 9: Reset operations fail when components are broken | 🆕 NEW |
+| **HIGH** | Minor Enhancements | Distribute kubeconfig to all k0rdent user home directories | 🆕 NEW |
+| **HIGH** | Minor Enhancements | Idempotent Deployment Process with Clear Logging | 🆕 NEW |
+| **HIGH** | Future Ideas | Azure Disk CSI Driver Integration | 🔄 IN PLANNING |
+| **MEDIUM** | Bug Fixes | Bug 3: Incorrect validation requiring at least 1 worker node | 🆕 NEW |
+| **MEDIUM** | Bug Fixes | Bug 7: Inconsistent controller naming convention | 🆕 NEW |
+| **MEDIUM** | Bug Fixes | Bug 12: Reset with --force doesn't clean up local state files | 🆕 NEW |
+| **MEDIUM** | Bug Fixes | Bug 13: State not being archived to old_deployments | 🆕 NEW |
+| **MEDIUM** | Bug Fixes | Bug 14: Fast reset option for development workflows | 🆕 NEW |
+| **MEDIUM** | Minor Enhancements | Rationalize PREFIX/SUFFIX to CLUSTERID | 🆕 NEW |
+| **MEDIUM** | Minor Enhancements | Rethink child cluster state management architecture | 🆕 NEW |
+| **MEDIUM** | Minor Enhancements | Azure API Optimization with Local Caching | 🆕 NEW |
+| **MEDIUM** | Minor Enhancements | Azure CLI Output Format Standardization | 🆕 NEW |
+| **MEDIUM** | Minor Enhancements | Create sourceable KUBECONFIG file | 🆕 NEW |
+| **MEDIUM** | Minor Enhancements | Documentation Improvements | 🆕 NEW |
+| **MEDIUM** | Minor Enhancements | Versioning System | 🆕 NEW |
+| **MEDIUM** | Minor Enhancements | Cloud Provider Abstraction | 🆕 NEW |
+| **MEDIUM** | Minor Enhancements | Migrate from WireGuard to Nebula Mesh VPN | 🆕 NEW |
+| **LOW** | Bug Fixes | Bug 5: VPN connectivity check hangs during reset | ⚠️ NEEDS TESTING |
+| **LOW** | Bug Fixes | Bug 11: Cloud-init success doesn't guarantee WireGuard setup | 🆕 NEW |
+| **LOW** | Minor Enhancements | Scoped Azure credentials management | 🆕 NEW |
+| **LOW** | Minor Enhancements | Bicep-Based Multi-VM Deployment | 🆕 NEW |
+| **LOW** | Minor Enhancements | Configuration Management Enhancements | 🆕 NEW |
+| **LOW** | Minor Enhancements | CI/CD Pipeline Integration | 🆕 NEW |
+| **LOW** | Minor Enhancements | Dependency Consolidation (jq to yq) | 🆕 NEW |
+| **LOW** | Minor Enhancements | Improve print_usage Function | 🆕 NEW |
+| **LOW** | Minor Enhancements | Reorganize Kubeconfig Storage Location | 🆕 NEW |
+| **LOW** | Minor Enhancements | Evaluate Nushell for Bash Script Rewrites | 🆕 NEW |
+| **LOW** | Minor Enhancements | direnv Integration | Optional |
+| **LOW** | Minor Enhancements | Azure VM Launch Manager with NATS | 🆕 NEW |
+| **MEDIUM** | Documentation | Create k0rdent Architecture Overview | 🆕 NEW |
+| **FUTURE** | Future Ideas | Multi-Cluster Environment Management | 🆕 NEW |
+| **FUTURE** | Future Ideas | State Management Migration to Key-Value Store | 🆕 NEW |
+| **COMPLETED** | Bug Fixes | Bug 4: Missing reset capability in create-azure-vms.sh | ✅ FIXED |
+| **COMPLETED** | Bug Fixes | Bug 6: SSH keys not being cleaned up on reset | ✅ FIXED |
+| **COMPLETED** | Bug Fixes | Bug 8: VM creation failures not handled with recovery | ✅ FIXED |
+| **COMPLETED** | Bug Fixes | Bug 10: VM verification loop inefficiently rechecks | ✅ FIXED |
+| **COMPLETED** | Minor Enhancements | Configuration Validation System | ✅ COMPLETED |
+| **COMPLETED** | Minor Enhancements | ARM-based Configuration Examples | ✅ COMPLETED |
+
+## High Priority Items
+
+### Bug Fixes
+
+#### Bug 0: Deployment resumption doesn't handle partial state correctly
 **Status**: 🆕 **NEW**
 **Priority**: High
 
@@ -55,7 +104,7 @@ This file tracks future enhancements and improvements that are not currently pri
 
 **Priority Justification**: This significantly impacts user experience and deployment reliability, especially for long-running deployments that can be interrupted by network issues, timeouts, or user interruption.
 
-### Bug 1: Missing k0rdent Management CRD validation
+#### Bug 1: Missing k0rdent Management CRD validation
 **Status**: 🆕 **NEW**
 **Priority**: High
 
@@ -92,7 +141,7 @@ kcm    True    kcm-1-1-1   9m
 
 **Location**: `bin/install-k0rdent.sh` lines 145-159 (ready check section)
 
-### Bug 2: State not updated during uninstall/reset operations
+#### Bug 2: State not updated during uninstall/reset operations
 **Status**: 🆕 **NEW**
 **Priority**: High
 
@@ -137,7 +186,145 @@ kcm    True    kcm-1-1-1   9m
 - Potential for script logic errors based on stale state
 - Inconsistent behavior during repeated deploy/undeploy cycles
 
-### Bug 3: Incorrect validation requiring at least 1 worker node
+#### Bug 9: Reset operations fail when components are broken, preventing cleanup
+**Status**: 🆕 **NEW** - Reported 2025-06-10
+**Priority**: High
+
+**Description**: Reset operations fail when VPN is disconnected, WireGuard interfaces are corrupted, or other components are in broken states, preventing complete cleanup and requiring manual intervention.
+
+**Observed failures**:
+- VPN connectivity checks block k0rdent/k0s uninstall during reset
+- WireGuard interface cleanup fails when interface is in inconsistent state
+- Partial deployments can't be cleaned up due to dependency checks
+- Reset operations stop on first error instead of continuing with cleanup
+
+**Root cause**: Reset operations have the same dependency requirements as deployment operations, but should be more aggressive about cleanup when things are broken.
+
+**Proposed fix**: Add `--force` or `--ignore-errors` flag for reset operations
+- **Skip connectivity checks**: Don't require VPN for reset operations
+- **Continue on errors**: Log errors but continue cleanup process
+- **Brute force cleanup**: Use Azure CLI directly to find and delete resources by tags/names
+- **Best effort approach**: Clean up what can be cleaned, ignore what can't
+- **Nuclear option**: Complete reset regardless of component states
+
+**Implementation needed**:
+- Add `--force` flag to deploy-k0rdent.sh reset command
+- Modify all reset functions to continue on errors when force flag is used
+- Add resource discovery via Azure CLI for orphaned resources
+- Implement best-effort WireGuard cleanup that handles broken interfaces
+- Skip VPN connectivity requirements during forced reset operations
+
+**Benefits**:
+- Enables cleanup after failed deployments
+- Reduces manual intervention requirements
+- Supports "cattle" methodology by making resource disposal reliable
+- Prevents resource leakage from partial deployments
+
+**Impact**: Blocks cleanup operations, leads to resource leakage and manual cleanup requirements
+
+### Minor Enhancements
+
+#### Distribute kubeconfig to all k0rdent user home directories
+**Priority**: High
+**Status**: 🆕 **NEW**
+
+**Description**: After k0s is fully installed, the kubeconfig file should be automatically copied to every k0rdent user's home directory on all VMs for easy kubectl access.
+
+**Current Behavior**: 
+- Kubeconfig is only available locally in `./k0sctl-config/` directory
+- Users must manually copy or specify --kubeconfig flag
+
+**Expected Behavior**:
+- After k0s installation completes, copy kubeconfig to `~k0rdent/.kube/config` on all VMs
+- Set proper permissions (600) for security
+- Create `.kube` directory if it doesn't exist
+
+**Implementation Requirements**:
+- Add to `bin/install-k0s.sh` deploy function after successful k0s deployment
+- Use existing SSH connectivity to distribute file
+- Ensure k0rdent user owns the file
+- Update user's `.bashrc` to set KUBECONFIG if needed
+
+**Benefits**:
+- Users can run `kubectl` commands immediately after SSH to any VM
+- No need to specify --kubeconfig flag
+- Consistent kubectl access across all nodes
+
+#### Idempotent Deployment Process with Clear Logging
+**Priority**: High
+**Status**: 🆕 **NEW**
+
+**Description**: The entire deployment process needs to be idempotent with clear logging about when files are regenerated versus reused, ensuring transparent and predictable behavior during partial deployments.
+
+**Current Issues**:
+- Re-running partial deployments regenerates files that already exist
+- Unclear logging about whether files are being reused or regenerated
+- Lack of transparency about what actions are being taken vs skipped
+- State management doesn't clearly track what has been generated
+- Users unsure if re-running is safe or will overwrite configurations
+
+**Required Improvements**:
+1. **File Generation Tracking**:
+   - Check if files exist before regenerating
+   - Log clearly when reusing existing files vs creating new ones
+   - Track file generation timestamps in state
+   - Provide options to force regeneration when needed
+
+2. **Clear Logging Standards**:
+   - "==> Using existing file: [filename]" for reused files
+   - "==> Generating new file: [filename]" for new creation
+   - "==> Regenerating file: [filename] (forced)" for forced updates
+   - "==> Skipping: [action] (already completed)" for idempotent operations
+
+3. **State-Aware Operations**:
+   - Track which files have been generated in deployment state
+   - Skip regeneration unless explicitly requested or files missing
+   - Provide --force-regenerate flag for specific operations
+   - Validate existing files before reuse
+
+4. **Idempotent Script Updates**:
+   - All generation scripts check for existing files
+   - Clear decision logic for regeneration vs reuse
+   - Consistent behavior across all deployment scripts
+   - State tracking for all generated artifacts
+
+**Implementation Areas**:
+- `bin/prepare-deployment.sh` - File generation logic
+- `bin/create-azure-vms.sh` - Cloud-init generation
+- `bin/install-k0s.sh` - Configuration file generation
+- `etc/state-management.sh` - Track generated files
+- All scripts that create files or configurations
+
+**Benefits**:
+- Safe to re-run deployments at any stage
+- Clear understanding of what's happening
+- Prevents accidental configuration overwrites
+- Easier debugging of partial deployments
+- Better user confidence in the system
+
+### Future Ideas
+
+#### Azure Disk CSI Driver Integration
+**Priority**: High
+**Status**: 🔄 **IN PLANNING**
+
+**Description**: Integrate Azure Disk CSI Driver as the default storage provisioner for k0rdent deployments on Azure. This will enable persistent storage for applications like KOF that require PVCs.
+
+**Problem**: k0s clusters deployed on Azure have no storage provisioner, causing KOF components (Grafana, VictoriaMetrics) to fail due to unbound PVCs.
+
+**Implementation Plan**: Detailed plan available in `notebooks/AZURE-DISK-CSI-PLAN.md`
+
+**Key Components**:
+- Azure Disk CSI Driver installation after k0s deployment
+- Default storage class configuration (StandardSSD_LRS)
+- Integration with existing deployment scripts
+- State tracking for CSI installation
+
+## Medium Priority Items
+
+### Bug Fixes
+
+#### Bug 3: Incorrect validation requiring at least 1 worker node
 **Status**: 🆕 **NEW**
 **Priority**: Medium
 
@@ -175,34 +362,7 @@ ERROR: K0S_WORKER_COUNT must be at least 1
 - Forces unnecessary resource usage for development
 - Prevents valid k0s deployment patterns
 
-### Bug 4: Missing reset capability in create-azure-vms.sh (Regression)
-**Status**: ✅ **FIXED** - Resolved 2025-06-18
-**Priority**: ~~Medium~~ **COMPLETED**
-
-**Description**: ~~The script `bin/create-azure-vms.sh` does not have a reset argument and capability, unlike other scripts in the project that support `reset` functionality for cleanup.~~
-
-**Fix Applied**: Added `reset` command to create-azure-vms.sh with:
-- Single API call using `az vm list --output yaml` parsed with yq
-- Parallel VM deletion with `--no-wait` option
-- Optional wait for deletion completion (skippable with `--no-wait`)
-- State tracking for deleted VMs
-
-### Bug 5: VPN connectivity check hangs during reset operations
-**Status**: ⚠️ **NEEDS TESTING** - Ping timeouts have been implemented, may be resolved
-**Priority**: Low
-
-**Description**: When running reset operations (uninstalling k0rdent or removing k0s cluster), the VPN connectivity check hangs and requires multiple Ctrl+C to interrupt.
-
-**Recent Updates**: Codebase now includes ping timeouts (`ping -c 3 -W 5000`) in multiple scripts. This bug may have been resolved during recent improvements but needs testing to confirm.
-
-### Bug 6: SSH keys not being cleaned up on reset
-**Status**: ✅ **FIXED** - Resolved in recent commits
-**Priority**: ~~Medium~~ **COMPLETED**
-
-**Description**: ~~SSH keys are not being cleaned up from the local filesystem when running reset operations.~~
-**Fix Applied**: SSH key cleanup implemented in setup-azure-network.sh reset function
-
-### Bug 7: Inconsistent controller naming convention
+#### Bug 7: Inconsistent controller naming convention
 **Status**: 🆕 **NEW**
 **Priority**: Medium
 
@@ -221,144 +381,7 @@ ERROR: K0S_WORKER_COUNT must be at least 1
 
 **Impact**: Affects VM creation, k0s configuration generation, and any scripts that reference controller names.
 
-### Bug 8: VM creation failures not handled with automatic recovery
-**Status**: ✅ **FIXED** - Resolved 2025-06-18
-**Priority**: ~~High~~ **COMPLETED**
-
-**Description**: ~~VM creation failures (both provisioning failures and cloud-init errors) are not automatically recovered, causing deployment to stall or continue with missing VMs.~~
-
-**Fix Applied**: Implemented "cattle not pets" methodology in create-azure-vms.sh:
-
-**VM Provisioning Failure Recovery**:
-- Detects VMs with `state == "Failed"` during the wait loop
-- Automatically deletes failed VMs with `az vm delete --no-wait`
-- Immediately recreates VM with same configuration
-- Tracks retry attempts (max 2 retries per VM)
-- Continues with deployment once VM is healthy
-
-**Cloud-init Failure Recovery**:
-- Added `check_cloud_init_error()` function to detect `status: error`
-- Triggers VM replacement when cloud-init errors are detected
-- Resets SSH verification status for recreated VMs
-- Tracks separate retry count for cloud-init failures (max 1 retry)
-
-**Implementation details**:
-- Enhanced VM wait loop with failure detection
-- Parallel deletion and recreation (no waiting for deletion)
-- State tracking for all retry attempts
-- Event logging for recreation attempts
-- Maintains deployment flow with automatic recovery
-
-**Benefits achieved**:
-- Fully automated recovery from transient Azure issues
-- No manual intervention required for common failures
-- Faster deployment with automatic issue resolution
-- Proper "cattle not pets" operations philosophy
-
-### Bug 9: Reset operations fail when components are broken, preventing cleanup
-**Status**: 🆕 **NEW** - Reported 2025-06-10
-**Priority**: High
-
-**Description**: Reset operations fail when VPN is disconnected, WireGuard interfaces are corrupted, or other components are in broken states, preventing complete cleanup and requiring manual intervention.
-
-**Observed failures**:
-- VPN connectivity checks block k0rdent/k0s uninstall during reset
-- WireGuard interface cleanup fails when interface is in inconsistent state
-- Partial deployments can't be cleaned up due to dependency checks
-- Reset operations stop on first error instead of continuing with cleanup
-
-**Root cause**: Reset operations have the same dependency requirements as deployment operations, but should be more aggressive about cleanup when things are broken.
-
-**Proposed fix**: Add `--force` or `--ignore-errors` flag for reset operations
-- **Skip connectivity checks**: Don't require VPN for reset operations
-- **Continue on errors**: Log errors but continue cleanup process
-- **Brute force cleanup**: Use Azure CLI directly to find and delete resources by tags/names
-- **Best effort approach**: Clean up what can be cleaned, ignore what can't
-- **Nuclear option**: Complete reset regardless of component states
-
-**Implementation needed**:
-- Add `--force` flag to deploy-k0rdent.sh reset command
-- Modify all reset functions to continue on errors when force flag is used
-- Add resource discovery via Azure CLI for orphaned resources
-- Implement best-effort WireGuard cleanup that handles broken interfaces
-- Skip VPN connectivity requirements during forced reset operations
-
-**Benefits**:
-- Enables cleanup after failed deployments
-- Reduces manual intervention requirements
-- Supports "cattle" methodology by making resource disposal reliable
-- Prevents resource leakage from partial deployments
-
-**Impact**: Blocks cleanup operations, leads to resource leakage and manual cleanup requirements
-
-### Bug 10: VM verification loop inefficiently rechecks already verified VMs
-**Status**: ✅ **FIXED** - Resolved 2025-06-18
-**Priority**: ~~Low~~ **COMPLETED**
-
-**Description**: ~~The VM monitoring loop in create-azure-vms.sh continues to recheck VMs that have already been verified as operational while waiting for other VMs to reach Succeeded state.~~
-
-**Fix Applied**: Added VM verification tracking system to create-azure-vms.sh:
-- **VM_VERIFIED array**: Tracks VMs that have passed both SSH connectivity and cloud-init validation
-- **Skip verification checks**: VMs marked as verified are skipped in subsequent monitoring loops
-- **Reset on recreation**: Verification status is reset when VMs are deleted and recreated due to failures
-- **Maintains retry logic**: Failed VMs continue to be monitored and recreated as needed
-
-**Implementation Details**:
-- Added `declare -A VM_VERIFIED` tracking array
-- Added verification check: `if [[ "${VM_VERIFIED[$HOST]:-}" == "true" ]]; then continue; fi`
-- Set verification flag: `VM_VERIFIED["$HOST"]="true"` after successful SSH + cloud-init validation
-- Reset verification flag: `VM_VERIFIED["$HOST"]="false"` when VMs are recreated
-
-**Benefits Achieved**:
-- Eliminated redundant SSH connection attempts to verified VMs
-- Reduced unnecessary cloud-init status checks on operational systems
-- Faster monitoring loop iterations focused on VMs needing attention
-- Cleaner deployment logs with less repetitive output
-- Reduced network overhead during multi-VM deployments
-
-**Performance Impact**: Significant improvement for large deployments with multiple VMs
-
-### Bug 11: Cloud-init success doesn't guarantee WireGuard setup completion
-**Status**: 🆕 **NEW**
-**Priority**: Low
-
-**Description**: VMs can pass cloud-init status verification but still fail WireGuard configuration verification, indicating cloud-init completion doesn't guarantee all services are properly configured.
-
-**Observed Behavior**:
-- VM passes SSH connectivity test
-- Cloud-init reports successful completion (`sudo cloud-init status` returns success)
-- VM marked as "fully operational" by create-azure-vms.sh
-- Later WireGuard verification fails with "WireGuard interface wg0 not found or not configured"
-
-**Root Cause Analysis Needed**:
-- **Timing Issue**: Cloud-init may report success before WireGuard service fully initializes
-- **Service Dependencies**: WireGuard systemd service may not be properly enabled or started
-- **Cloud-init Script Issues**: WireGuard configuration in cloud-init may have silent failures
-- **Network Interface Timing**: VM networking may not be fully ready when WireGuard starts
-
-**Current Impact**:
-- VMs appear operational but lack proper WireGuard connectivity
-- Deployment continues to k0s installation which may fail without proper networking
-- Manual intervention required to fix WireGuard on affected VMs
-- Inconsistent deployment success rates
-
-**Investigation Areas**:
-- Review cloud-init YAML templates for WireGuard configuration
-- Check systemd service dependencies and startup order
-- Add more granular cloud-init status checking (per-module status)
-- Consider adding WireGuard-specific validation to VM verification loop
-
-**Potential Solutions**:
-- **Enhanced Cloud-init Validation**: Check specific cloud-init modules beyond overall status
-- **WireGuard-specific Checks**: Add WireGuard interface verification to create-azure-vms.sh
-- **Retry Logic**: Implement WireGuard setup retry mechanism in cloud-init
-- **Service Dependencies**: Ensure proper systemd service ordering and dependencies
-
-**Workaround**: Manual WireGuard setup on affected VMs, but defeats automation purpose
-
-**Impact**: Reduces deployment reliability, requires manual intervention, potential k0s installation failures
-
-### Bug 12: Reset with --force doesn't clean up local state files
+#### Bug 12: Reset with --force doesn't clean up local state files
 **Status**: 🆕 **NEW**
 **Priority**: Medium
 
@@ -386,7 +409,54 @@ ERROR: K0S_WORKER_COUNT must be at least 1
 - Ensure reset leaves system in clean state for new deployments
 - Test that subsequent deployments work correctly after force reset
 
-### Bug 13: Fast reset option for development workflows
+#### Bug 13: State not being archived to old_deployments
+**Status**: 🆕 **NEW**
+**Priority**: Medium
+
+**Description**: State files under `state/` directory are not being archived into `old_deployments/` when starting new deployments, causing loss of historical deployment data.
+
+**Current Behavior**:
+- State files (deployment-state.yaml, deployment-events.yaml) remain in state/ directory
+- No automatic archival to old_deployments/ during new deployments
+- Previous deployment history is overwritten
+- Manual backup required to preserve state
+
+**Expected Behavior**:
+- When starting a new deployment, existing state files should be moved to old_deployments/
+- Archive should include timestamp and deployment ID for identification
+- State directory should be clean for new deployment
+- Historical deployments preserved for reference
+
+**Implementation Requirements**:
+- Check for existing state files during deployment initialization
+- Create timestamped subdirectory under old_deployments/
+- Move all state files to archive before creating new ones
+- Include deployment ID in archive directory name
+- Ensure atomic move operation to prevent data loss
+
+**Archive Structure Example**:
+```
+old_deployments/
+├── k0rdent-abc123_2025-07-13_08-30-00/
+│   ├── deployment-state.yaml
+│   └── deployment-events.yaml
+└── k0rdent-xyz789_2025-07-12_14-45-30/
+    ├── deployment-state.yaml
+    └── deployment-events.yaml
+```
+
+**Files to Archive**:
+- state/deployment-state.yaml
+- state/deployment-events.yaml
+- Any other state files created during deployment
+
+**Impact**:
+- Loss of deployment history
+- Cannot review previous deployment configurations
+- Difficulty debugging issues from past deployments
+- No audit trail of deployment activities
+
+#### Bug 14: Fast reset option for development workflows
 **Status**: 🆕 **NEW**
 **Priority**: Medium
 
@@ -437,9 +507,9 @@ ERROR: K0S_WORKER_COUNT must be at least 1
 - Update documentation with fast reset option
 - Test compatibility with existing state management
 
-## Minor Enhancements
+### Minor Enhancements
 
-### Rationalize and normalize PREFIX and SUFFIX to become CLUSTERID everywhere
+#### Rationalize and normalize PREFIX and SUFFIX to become CLUSTERID everywhere
 **Priority**: Medium
 **Status**: 🆕 **NEW**
 
@@ -470,38 +540,7 @@ ERROR: K0S_WORKER_COUNT must be at least 1
 - Simpler code without prefix/suffix manipulation
 - Better consistency across the codebase
 
-### Distribute kubeconfig to all k0rdent user home directories
-**Priority**: High
-**Status**: 🆕 **NEW**
-
-**Description**: After k0s is fully installed, the kubeconfig file should be automatically copied to every k0rdent user's home directory on all VMs for easy kubectl access.
-
-**Current Behavior**: 
-- Kubeconfig is only available locally in `./k0sctl-config/` directory
-- Users must manually copy or specify --kubeconfig flag
-
-**Expected Behavior**:
-- After k0s installation completes, copy kubeconfig to `~k0rdent/.kube/config` on all VMs
-- Set proper permissions (600) for security
-- Create `.kube` directory if it doesn't exist
-
-**Implementation Requirements**:
-- Add to `bin/install-k0s.sh` deploy function after successful k0s deployment
-- Use existing SSH connectivity to distribute file
-- Ensure k0rdent user owns the file
-- Update user's `.bashrc` to set KUBECONFIG if needed
-
-**Benefits**:
-- Users can run `kubectl` commands immediately after SSH to any VM
-- No need to specify --kubeconfig flag
-- Consistent kubectl access across all nodes
-
-- Change the references to mylaptop to instead be "deployer-system" or something more useful; brainstorm naming Ideas
-- Change controller and worker prefix from "k0s-" to "k0rdent-" or just "k-" to shorten VM names
-- Need to reconcile the given image architecture type with the specified instance types
-- Add configuration change detection to warn when key settings (location, VM sizes) differ from existing deployment (may overlap with multi-cluster environment management)
-
-### Rethink child cluster state management architecture
+#### Rethink child cluster state management architecture
 **Priority**: Medium
 **Status**: 🆕 **NEW**
 
@@ -556,36 +595,7 @@ events:
 
 **Backward Compatibility**: Transition can be gradual with existing state files continuing to work during migration.
 
-### Scoped Azure credentials management
-**Priority**: Low
-**Status**: 🆕 **NEW**
-
-**Description**: Currently Azure credentials (AzureClusterIdentity) are configured with `allowedNamespaces: {}` which allows all namespaces to use the credentials. This provides maximum flexibility but reduces security isolation.
-
-**Current Implementation**:
-- AzureClusterIdentity allows access from any namespace
-- Single credential for all Azure deployments
-- No scoping or isolation between different uses
-
-**Future Enhancement Options**:
-1. **Namespace-specific credentials**: Create separate AzureClusterIdentity resources for different namespaces/purposes
-2. **Role-based scoping**: Different service principals with different Azure permissions (contributor vs reader)
-3. **Project-based isolation**: Separate credentials per project or deployment type
-4. **Tenant/subscription scoping**: Support for multi-tenant scenarios
-
-**Benefits of Scoped Credentials**:
-- Better security isolation between projects
-- Principle of least privilege
-- Audit trail by credential usage
-- Support for complex organizational structures
-
-**Implementation Considerations**:
-- Backward compatibility with existing open configuration
-- Balance between security and operational complexity
-- Integration with k0rdent's multi-tenancy features
-- Documentation and migration path for existing deployments
-
-### Azure API Optimization with Local Caching
+#### Azure API Optimization with Local Caching
 **Priority**: Medium
 **Status**: 🆕 **NEW**
 
@@ -635,7 +645,7 @@ regions:
         validated: "2025-06-18T10:30:00Z"
 ```
 
-### Azure CLI Output Format Standardization
+#### Azure CLI Output Format Standardization
 **Priority**: Medium
 **Status**: 🆕 **NEW**
 
@@ -668,114 +678,7 @@ regions:
 - Better maintainability
 - Future-proof for complex data structures
 
-### Bicep-Based Multi-VM Deployment
-**Priority**: Low
-**Status**: 🆕 **NEW**
-
-**Description**: Investigate using Azure Bicep templates to deploy multiple VMs simultaneously with individual cloud-init configurations in a single API call.
-
-**Current Approach**: Sequential VM creation with individual `az vm create` calls
-- Each VM created separately with its own API call
-- Background processes track individual VM creation PIDs
-- Multiple API calls increase deployment time and complexity
-
-**Proposed Investigation**: Bicep template for parallel VM deployment
-- **Single deployment call**: Use `az deployment group create` with Bicep template
-- **Parallel VM creation**: Azure Resource Manager handles parallel provisioning
-- **Individual cloud-init**: Each VM gets unique cloud-init configuration
-- **Atomic deployment**: All-or-nothing deployment with rollback capability
-- **Resource dependencies**: Proper dependency management within template
-
-**Research Areas**:
-- Bicep template structure for multiple VMs with different configurations
-- Cloud-init parameter passing to individual VMs in template
-- Deployment monitoring and status checking
-- Error handling and rollback scenarios
-- Integration with existing state management
-- Performance comparison with current approach
-
-**Potential Benefits**:
-- Faster deployment through true parallelization
-- Atomic deployments with built-in rollback
-- Reduced API calls and complexity
-- Better resource dependency management
-- Native Azure tooling integration
-
-**Technical Challenges**:
-- Template complexity for different VM configurations
-- Cloud-init file management and parameter passing
-- State tracking integration with existing scripts
-- Error handling and recovery logic adaptation
-- Learning curve for Bicep template development
-
-**Success Criteria**:
-- Deployment time reduction compared to current approach
-- Maintains all current functionality (zones, sizes, cloud-init)
-- Integrates with existing state management
-- Provides equivalent or better error handling
-
-### Configuration Validation System
-**Status**: ✅ **COMPLETED** - Implemented in previous sessions
-**Priority**: ~~High~~ **COMPLETED**
-
-**Description**: ~~Pre-deployment configuration validation system~~
-
-**Implementation Completed**:
-- ✅ **Azure VM SKU availability validation**: Validates VM sizes are available in specified regions and zones
-- ✅ **Azure zone support validation**: Verifies availability zones are supported in target region
-- ✅ **Network configuration validation**: CIDR overlap detection and subnet validation
-- ✅ **Zone configuration validation**: Ensures zones exist in target region
-- ✅ **Interactive validation feedback**: Provides helpful error messages with suggested fixes
-- ✅ **Integration with deployment flow**: Runs validation before Azure resources are created
-- ✅ **Skip validation option**: `--skip-validation` flag for offline/faster operations
-
-**Benefits Achieved**: Prevents deployment failures from invalid configurations, provides early feedback on resource availability
-
-### ARM-based Configuration Examples  
-**Status**: ✅ **COMPLETED** - Examples created
-**Priority**: ~~Low~~ **COMPLETED**
-
-**Description**: ~~Create ARM-optimized versions of existing configuration examples~~
-
-**Implementation Completed**:
-- ✅ `config/examples/production-arm64-southeastasia.yaml` - ARM64 production setup with Standard_D4pls_v6/D16pls_v6 VM sizes
-- ✅ `config/examples/production-arm64-southeastasia-spot.yaml` - ARM64 production with Spot instances
-- ✅ ARM64 Debian image support: `debian-12:12-arm64:latest`
-- ✅ ARM-optimized VM sizing configurations
-
-**Benefits Achieved**: Better performance/cost ratio for ARM workloads, native ARM64 support
-
-### Configuration Management Enhancements
-**Priority**: Low
-
-- **Environment Variable Override System**: Allow env vars to override YAML config
-- **Configurable Config File Location**: Support custom config file paths
-- **Configuration Profiles**: Multiple named configurations per project
-- **Configuration Diff and Merge**: Tools to compare and merge configurations
-- **YAML Schema for IDE Support**: Autocomplete and validation in editors
-
-### Integration and Workflow Enhancements
-**Priority**: Low
-
-- **CI/CD Pipeline Integration**: Support for automated deployments
-- **Configuration Testing Framework**: Dry-run and validation testing
-
-### Documentation Improvements
-**Priority**: Medium
-
-- **Update docs to be more clear and concise**: Streamline documentation for better readability
-- **Update docs to make it clear how to use the configuration examples**: Add clearer guidance on using example configurations
-- **Move all of the details out of README.md to some other doc**: Refactor README to be more focused
-- **Make README.md the basic how to install and quickstart without everything else**: Transform README into a simple getting started guide
-- **All of the details in README.md to an ARCHITECTURE.md doc maybe**: Create separate architecture documentation
-- **Create a diagram showing program flow somehow**: Visual representation of the system workflow
-
-### Dependency Consolidation
-**Priority**: Low
-
-- **Swap out usage of jq everywhere for yq**: Replace jq with yq to reduce dependencies since yq can handle both YAML and JSON
-
-### Create sourceable KUBECONFIG file
+#### Create sourceable KUBECONFIG file
 **Priority**: Medium
 **Status**: 🆕 **NEW**
 
@@ -825,44 +728,22 @@ kubectl config current-context
 - Include instructions in deployment success messages
 - Add to documentation and README
 
-### Evaluate Nushell for Bash Script Rewrites
-**Priority**: Low
-**Status**: 🆕 **NEW**
+#### Documentation Improvements
+**Priority**: Medium
 
-**Description**: Evaluate the impact and benefits of rewriting some bash scripts in Nushell for improved maintainability and error handling.
+- **Update docs to be more clear and concise**: Streamline documentation for better readability
+- **Update docs to make it clear how to use the configuration examples**: Add clearer guidance on using example configurations
+- **Move all of the details out of README.md to some other doc**: Refactor README to be more focused
+- **Make README.md the basic how to install and quickstart without everything else**: Transform README into a simple getting started guide
+- **All of the details in README.md to an ARCHITECTURE.md doc maybe**: Create separate architecture documentation
+- **Create a diagram showing program flow somehow**: Visual representation of the system workflow
 
-**Areas to Investigate**:
-- **Type Safety**: Nushell's structured data approach could reduce parsing errors
-- **Error Handling**: Built-in error propagation vs bash's manual error checking
-- **Cross-Platform Support**: Better Windows compatibility if needed in future
-- **Performance**: Potential performance improvements for data processing tasks
-- **Maintainability**: More readable code with structured data pipelines
-
-**Candidate Scripts for Rewrite**:
-- Configuration parsing and validation scripts
-- Scripts with heavy JSON/YAML manipulation
-- Data transformation and reporting utilities
-- Scripts with complex error handling requirements
-
-**Evaluation Criteria**:
-- Learning curve for team members
-- Nushell availability in deployment environments
-- Integration with existing bash scripts
-- Performance benchmarks vs current implementations
-- Debugging and troubleshooting capabilities
-
-**Considerations**:
-- Would require adding Nushell as a dependency
-- Team familiarity with Nushell syntax
-- Potential for hybrid approach (keep critical path in bash)
-- Cost/benefit analysis for each script conversion
-
-### Versioning System
+#### Versioning System
 **Priority**: Medium
 
 - **Add versioning**: Implement versioning system for the project to track releases and ensure compatibility
 
-### Cloud Provider Abstraction
+#### Cloud Provider Abstraction
 **Priority**: Medium
 
 - **Separate Azure business logic for multi-cloud support**: Refactor to separate all Azure-specific logic into a provider layer, enabling swap-out capability for AWS or GCP controllers
@@ -871,36 +752,19 @@ kubectl config current-context
   - Design plugin architecture for cloud providers
   - Enable configuration-driven provider selection
 
-### direnv Integration for Environment Management
-**Priority**: Low
-**Status**: Optional - Needs exploration and planning
+#### Create k0rdent Architecture Overview
+**Priority**: Medium
+**Status**: 🆕 **NEW**
 
-**Description**: Add support for direnv to enable automatic environment variable loading based on project directory context, supporting the "cattle not pets" methodology for cluster management.
+**Description**: Create a comprehensive architecture overview of k0rdent platform to serve as a reference for troubleshooting and understanding the system.
 
-**Potential Benefits**:
-- Automatic KUBECONFIG switching when entering project directories
-- Environment-specific variable isolation (dev/staging/prod clusters)
-- Seamless integration with multi-cluster workflow
-- Auto-loading of deployment state file paths per environment
-- Natural support for multiple k0rdent deployments
+**Approach**: 
+- Read docs at docs.k0rdent.io
+- Gather user input and knowledge
+- Investigate k0rdent components and interactions
+- Create summary document for future reference
 
-**Planning Required**:
-- **Environment Variable Strategy**: Determine which variables should be direnv-managed vs script-managed
-- **Configuration File Integration**: How direnv variables interact with YAML configuration system
-- **State File Isolation**: Directory structure for multiple environment state files
-- **KUBECONFIG Management**: Automatic switching vs manual control preferences
-- **Deployment Script Compatibility**: Ensure existing scripts work with direnv-loaded variables
-- **Documentation**: Clear setup instructions and workflow examples
-
-**Technical Considerations**:
-- Integration with existing `etc/k0rdent-config.sh` configuration loading
-- Potential conflicts between .envrc variables and YAML configuration
-- Directory structure recommendations for multi-environment setups
-- Backwards compatibility with current single-environment workflow
-
-**Dependencies**: May overlap with Multi-Cluster Environment Management future enhancement
-
-### Migrate from WireGuard to Nebula Mesh VPN
+#### Migrate from WireGuard to Nebula Mesh VPN
 **Priority**: Medium
 **Status**: 🆕 **NEW**
 
@@ -967,7 +831,327 @@ kubectl config current-context
 - Multi-node connectivity testing
 - Firewall rule validation
 
-### Azure VM Launch Manager with NATS Communication
+## Low Priority Items
+
+### Bug Fixes
+
+#### Bug 5: VPN connectivity check hangs during reset operations
+**Status**: ⚠️ **NEEDS TESTING** - Ping timeouts have been implemented, may be resolved
+**Priority**: Low
+
+**Description**: When running reset operations (uninstalling k0rdent or removing k0s cluster), the VPN connectivity check hangs and requires multiple Ctrl+C to interrupt.
+
+**Recent Updates**: Codebase now includes ping timeouts (`ping -c 3 -W 5000`) in multiple scripts. This bug may have been resolved during recent improvements but needs testing to confirm.
+
+#### Bug 11: Cloud-init success doesn't guarantee WireGuard setup completion
+**Status**: 🆕 **NEW**
+**Priority**: Low
+
+**Description**: VMs can pass cloud-init status verification but still fail WireGuard configuration verification, indicating cloud-init completion doesn't guarantee all services are properly configured.
+
+**Observed Behavior**:
+- VM passes SSH connectivity test
+- Cloud-init reports successful completion (`sudo cloud-init status` returns success)
+- VM marked as "fully operational" by create-azure-vms.sh
+- Later WireGuard verification fails with "WireGuard interface wg0 not found or not configured"
+
+**Root Cause Analysis Needed**:
+- **Timing Issue**: Cloud-init may report success before WireGuard service fully initializes
+- **Service Dependencies**: WireGuard systemd service may not be properly enabled or started
+- **Cloud-init Script Issues**: WireGuard configuration in cloud-init may have silent failures
+- **Network Interface Timing**: VM networking may not be fully ready when WireGuard starts
+
+**Current Impact**:
+- VMs appear operational but lack proper WireGuard connectivity
+- Deployment continues to k0s installation which may fail without proper networking
+- Manual intervention required to fix WireGuard on affected VMs
+- Inconsistent deployment success rates
+
+**Investigation Areas**:
+- Review cloud-init YAML templates for WireGuard configuration
+- Check systemd service dependencies and startup order
+- Add more granular cloud-init status checking (per-module status)
+- Consider adding WireGuard-specific validation to VM verification loop
+
+**Potential Solutions**:
+- **Enhanced Cloud-init Validation**: Check specific cloud-init modules beyond overall status
+- **WireGuard-specific Checks**: Add WireGuard interface verification to create-azure-vms.sh
+- **Retry Logic**: Implement WireGuard setup retry mechanism in cloud-init
+- **Service Dependencies**: Ensure proper systemd service ordering and dependencies
+
+**Workaround**: Manual WireGuard setup on affected VMs, but defeats automation purpose
+
+**Impact**: Reduces deployment reliability, requires manual intervention, potential k0s installation failures
+
+### Minor Enhancements
+
+#### Scoped Azure credentials management
+**Priority**: Low
+**Status**: 🆕 **NEW**
+
+**Description**: Currently Azure credentials (AzureClusterIdentity) are configured with `allowedNamespaces: {}` which allows all namespaces to use the credentials. This provides maximum flexibility but reduces security isolation.
+
+**Current Implementation**:
+- AzureClusterIdentity allows access from any namespace
+- Single credential for all Azure deployments
+- No scoping or isolation between different uses
+
+**Future Enhancement Options**:
+1. **Namespace-specific credentials**: Create separate AzureClusterIdentity resources for different namespaces/purposes
+2. **Role-based scoping**: Different service principals with different Azure permissions (contributor vs reader)
+3. **Project-based isolation**: Separate credentials per project or deployment type
+4. **Tenant/subscription scoping**: Support for multi-tenant scenarios
+
+**Benefits of Scoped Credentials**:
+- Better security isolation between projects
+- Principle of least privilege
+- Audit trail by credential usage
+- Support for complex organizational structures
+
+**Implementation Considerations**:
+- Backward compatibility with existing open configuration
+- Balance between security and operational complexity
+- Integration with k0rdent's multi-tenancy features
+- Documentation and migration path for existing deployments
+
+#### Bicep-Based Multi-VM Deployment
+**Priority**: Low
+**Status**: 🆕 **NEW**
+
+**Description**: Investigate using Azure Bicep templates to deploy multiple VMs simultaneously with individual cloud-init configurations in a single API call.
+
+**Current Approach**: Sequential VM creation with individual `az vm create` calls
+- Each VM created separately with its own API call
+- Background processes track individual VM creation PIDs
+- Multiple API calls increase deployment time and complexity
+
+**Proposed Investigation**: Bicep template for parallel VM deployment
+- **Single deployment call**: Use `az deployment group create` with Bicep template
+- **Parallel VM creation**: Azure Resource Manager handles parallel provisioning
+- **Individual cloud-init**: Each VM gets unique cloud-init configuration
+- **Atomic deployment**: All-or-nothing deployment with rollback capability
+- **Resource dependencies**: Proper dependency management within template
+
+**Research Areas**:
+- Bicep template structure for multiple VMs with different configurations
+- Cloud-init parameter passing to individual VMs in template
+- Deployment monitoring and status checking
+- Error handling and rollback scenarios
+- Integration with existing state management
+- Performance comparison with current approach
+
+**Potential Benefits**:
+- Faster deployment through true parallelization
+- Atomic deployments with built-in rollback
+- Reduced API calls and complexity
+- Better resource dependency management
+- Native Azure tooling integration
+
+**Technical Challenges**:
+- Template complexity for different VM configurations
+- Cloud-init file management and parameter passing
+- State tracking integration with existing scripts
+- Error handling and recovery logic adaptation
+- Learning curve for Bicep template development
+
+**Success Criteria**:
+- Deployment time reduction compared to current approach
+- Maintains all current functionality (zones, sizes, cloud-init)
+- Integrates with existing state management
+- Provides equivalent or better error handling
+
+#### Configuration Management Enhancements
+**Priority**: Low
+
+- **Environment Variable Override System**: Allow env vars to override YAML config
+- **Configurable Config File Location**: Support custom config file paths
+- **Configuration Profiles**: Multiple named configurations per project
+- **Configuration Diff and Merge**: Tools to compare and merge configurations
+- **YAML Schema for IDE Support**: Autocomplete and validation in editors
+
+#### Integration and Workflow Enhancements
+**Priority**: Low
+
+- **CI/CD Pipeline Integration**: Support for automated deployments
+- **Configuration Testing Framework**: Dry-run and validation testing
+
+#### Dependency Consolidation
+**Priority**: Low
+
+- **Swap out usage of jq everywhere for yq**: Replace jq with yq to reduce dependencies since yq can handle both YAML and JSON
+
+#### Improve print_usage Function
+**Priority**: Low
+**Status**: 🆕 **NEW**
+
+**Description**: The print_usage function in common-functions.sh needs refactoring for better readability and maintainability.
+
+**Current Issues**:
+- Function is "fugly" and hard to read
+- Complex string concatenation makes it difficult to maintain
+- Inconsistent formatting across different scripts
+- Hard to add new options or modify existing ones
+
+**Improvement Ideas**:
+- Use heredoc syntax for cleaner multi-line output
+- Implement consistent formatting patterns
+- Add color coding for different sections (commands, options, examples)
+- Create reusable templates for common usage patterns
+- Consider using arrays for building option lists
+- Add automatic width detection for better terminal display
+
+**Example Refactor Approach**:
+```bash
+print_usage() {
+    cat << EOF
+$(print_bold "Usage:") $1 [COMMAND] [OPTIONS]
+
+$(print_bold "Commands:")
+$(print_command_list "$2")
+
+$(print_bold "Options:")
+$(print_option_list "$3")
+
+$(print_bold "Examples:")
+$(print_example_list "$4")
+EOF
+}
+```
+
+**Benefits**:
+- Easier to read and maintain
+- Consistent help output across all scripts
+- Better user experience with formatted output
+- Simpler to add new commands/options
+- Reusable formatting functions
+
+**Implementation Tasks**:
+- Analyze current print_usage implementations
+- Design consistent formatting approach
+- Create helper functions for formatting
+- Update all scripts to use new approach
+- Test across different terminal widths
+
+#### Reorganize Kubeconfig Storage Location
+**Priority**: Low
+**Status**: 🆕 **NEW**
+
+**Description**: Move kubeconfig files from `k0sctl-config/` directory to a dedicated `kubeconfig/` directory for better organization and clarity.
+
+**Current Structure**:
+```
+k0sctl-config/
+├── k0rdent-xxx-kubeconfig          # Management cluster
+├── kof-regional-xxx-kubeconfig     # Regional clusters  
+├── k0rdent-xxx-k0sctl.yaml         # k0sctl config file
+└── other-cluster-kubeconfig         # Child clusters
+```
+
+**Proposed Structure**:
+```
+k0sctl-config/
+└── k0rdent-xxx-k0sctl.yaml         # Only k0sctl config files
+
+kubeconfig/
+├── k0rdent-xxx-kubeconfig          # Management cluster
+├── kof-regional-xxx-kubeconfig     # Regional clusters
+└── other-cluster-kubeconfig         # Child clusters
+```
+
+**Benefits**:
+- Clear separation of concerns (k0sctl configs vs kubeconfigs)
+- Easier to manage and find kubeconfig files
+- Better organization as number of clusters grows
+- Cleaner directory structure
+- More intuitive for users
+
+**Implementation Requirements**:
+- Create new `kubeconfig/` directory
+- Update all scripts to use new location:
+  - `install-k0s.sh` - Management cluster kubeconfig
+  - `install-kof-regional.sh` - Regional cluster kubeconfig
+  - `create-child.sh` - Child cluster kubeconfigs
+  - Any other scripts that retrieve kubeconfigs
+- Update `.gitignore` to include `kubeconfig/`
+- Update documentation references
+- Consider backward compatibility (symlinks during transition)
+
+**Migration Strategy**:
+1. Update scripts to check both locations (backward compatibility)
+2. Create new directory structure
+3. Move existing kubeconfigs on next retrieval
+4. Update documentation
+5. Remove backward compatibility after transition period
+
+**Files to Update**:
+- All scripts that reference `K0SCTL_DIR/*-kubeconfig`
+- `KUBECONFIG-RETRIEVAL.md` documentation
+- `CLAUDE.md` technical notes
+- README examples
+- State management if it tracks kubeconfig locations
+
+#### Evaluate Nushell for Bash Script Rewrites
+**Priority**: Low
+**Status**: 🆕 **NEW**
+
+**Description**: Evaluate the impact and benefits of rewriting some bash scripts in Nushell for improved maintainability and error handling.
+
+**Areas to Investigate**:
+- **Type Safety**: Nushell's structured data approach could reduce parsing errors
+- **Error Handling**: Built-in error propagation vs bash's manual error checking
+- **Cross-Platform Support**: Better Windows compatibility if needed in future
+- **Performance**: Potential performance improvements for data processing tasks
+- **Maintainability**: More readable code with structured data pipelines
+
+**Candidate Scripts for Rewrite**:
+- Configuration parsing and validation scripts
+- Scripts with heavy JSON/YAML manipulation
+- Data transformation and reporting utilities
+- Scripts with complex error handling requirements
+
+**Evaluation Criteria**:
+- Learning curve for team members
+- Nushell availability in deployment environments
+- Integration with existing bash scripts
+- Performance benchmarks vs current implementations
+- Debugging and troubleshooting capabilities
+
+**Considerations**:
+- Would require adding Nushell as a dependency
+- Team familiarity with Nushell syntax
+- Potential for hybrid approach (keep critical path in bash)
+- Cost/benefit analysis for each script conversion
+
+#### direnv Integration for Environment Management
+**Priority**: Low
+**Status**: Optional - Needs exploration and planning
+
+**Description**: Add support for direnv to enable automatic environment variable loading based on project directory context, supporting the "cattle not pets" methodology for cluster management.
+
+**Potential Benefits**:
+- Automatic KUBECONFIG switching when entering project directories
+- Environment-specific variable isolation (dev/staging/prod clusters)
+- Seamless integration with multi-cluster workflow
+- Auto-loading of deployment state file paths per environment
+- Natural support for multiple k0rdent deployments
+
+**Planning Required**:
+- **Environment Variable Strategy**: Determine which variables should be direnv-managed vs script-managed
+- **Configuration File Integration**: How direnv variables interact with YAML configuration system
+- **State File Isolation**: Directory structure for multiple environment state files
+- **KUBECONFIG Management**: Automatic switching vs manual control preferences
+- **Deployment Script Compatibility**: Ensure existing scripts work with direnv-loaded variables
+- **Documentation**: Clear setup instructions and workflow examples
+
+**Technical Considerations**:
+- Integration with existing `etc/k0rdent-config.sh` configuration loading
+- Potential conflicts between .envrc variables and YAML configuration
+- Directory structure recommendations for multi-environment setups
+- Backwards compatibility with current single-environment workflow
+
+**Dependencies**: May overlap with Multi-Cluster Environment Management future enhancement
+
+#### Azure VM Launch Manager with NATS Communication
 **Priority**: Low
 **Status**: 🆕 **NEW**
 
@@ -1069,22 +1253,6 @@ kubectl config current-context
 - Support team workflows with isolated environments
 - Simplify cluster lifecycle management
 
-### Azure Disk CSI Driver Integration
-**Priority**: High
-**Status**: 🔄 **IN PLANNING**
-
-**Description**: Integrate Azure Disk CSI Driver as the default storage provisioner for k0rdent deployments on Azure. This will enable persistent storage for applications like KOF that require PVCs.
-
-**Problem**: k0s clusters deployed on Azure have no storage provisioner, causing KOF components (Grafana, VictoriaMetrics) to fail due to unbound PVCs.
-
-**Implementation Plan**: Detailed plan available in `notebooks/AZURE-DISK-CSI-PLAN.md`
-
-**Key Components**:
-- Azure Disk CSI Driver installation after k0s deployment
-- Default storage class configuration (StandardSSD_LRS)
-- Integration with existing deployment scripts
-- State tracking for CSI installation
-
 ### State Management Migration to Key-Value Store
 **Priority**: Future Enhancement
 **Status**: 🆕 **NEW**
@@ -1163,5 +1331,122 @@ state_management:
 - Monitoring for KV store health
 
 **Priority Justification**: Future enhancement that becomes important as the system scales to multiple clusters, teams, or automated deployments. Not critical for current single-cluster workflows but valuable for operational maturity.
+
+## Completed Items
+
+### Bug Fixes
+
+#### Bug 4: Missing reset capability in create-azure-vms.sh (Regression)
+**Status**: ✅ **FIXED** - Resolved 2025-06-18
+**Priority**: ~~Medium~~ **COMPLETED**
+
+**Description**: ~~The script `bin/create-azure-vms.sh` does not have a reset argument and capability, unlike other scripts in the project that support `reset` functionality for cleanup.~~
+
+**Fix Applied**: Added `reset` command to create-azure-vms.sh with:
+- Single API call using `az vm list --output yaml` parsed with yq
+- Parallel VM deletion with `--no-wait` option
+- Optional wait for deletion completion (skippable with `--no-wait`)
+- State tracking for deleted VMs
+
+#### Bug 6: SSH keys not being cleaned up on reset
+**Status**: ✅ **FIXED** - Resolved in recent commits
+**Priority**: ~~Medium~~ **COMPLETED**
+
+**Description**: ~~SSH keys are not being cleaned up from the local filesystem when running reset operations.~~
+**Fix Applied**: SSH key cleanup implemented in setup-azure-network.sh reset function
+
+#### Bug 8: VM creation failures not handled with automatic recovery
+**Status**: ✅ **FIXED** - Resolved 2025-06-18
+**Priority**: ~~High~~ **COMPLETED**
+
+**Description**: ~~VM creation failures (both provisioning failures and cloud-init errors) are not automatically recovered, causing deployment to stall or continue with missing VMs.~~
+
+**Fix Applied**: Implemented "cattle not pets" methodology in create-azure-vms.sh:
+
+**VM Provisioning Failure Recovery**:
+- Detects VMs with `state == "Failed"` during the wait loop
+- Automatically deletes failed VMs with `az vm delete --no-wait`
+- Immediately recreates VM with same configuration
+- Tracks retry attempts (max 2 retries per VM)
+- Continues with deployment once VM is healthy
+
+**Cloud-init Failure Recovery**:
+- Added `check_cloud_init_error()` function to detect `status: error`
+- Triggers VM replacement when cloud-init errors are detected
+- Resets SSH verification status for recreated VMs
+- Tracks separate retry count for cloud-init failures (max 1 retry)
+
+**Implementation details**:
+- Enhanced VM wait loop with failure detection
+- Parallel deletion and recreation (no waiting for deletion)
+- State tracking for all retry attempts
+- Event logging for recreation attempts
+- Maintains deployment flow with automatic recovery
+
+**Benefits achieved**:
+- Fully automated recovery from transient Azure issues
+- No manual intervention required for common failures
+- Faster deployment with automatic issue resolution
+- Proper "cattle not pets" operations philosophy
+
+#### Bug 10: VM verification loop inefficiently rechecks already verified VMs
+**Status**: ✅ **FIXED** - Resolved 2025-06-18
+**Priority**: ~~Low~~ **COMPLETED**
+
+**Description**: ~~The VM monitoring loop in create-azure-vms.sh continues to recheck VMs that have already been verified as operational while waiting for other VMs to reach Succeeded state.~~
+
+**Fix Applied**: Added VM verification tracking system to create-azure-vms.sh:
+- **VM_VERIFIED array**: Tracks VMs that have passed both SSH connectivity and cloud-init validation
+- **Skip verification checks**: VMs marked as verified are skipped in subsequent monitoring loops
+- **Reset on recreation**: Verification status is reset when VMs are deleted and recreated due to failures
+- **Maintains retry logic**: Failed VMs continue to be monitored and recreated as needed
+
+**Implementation Details**:
+- Added `declare -A VM_VERIFIED` tracking array
+- Added verification check: `if [[ "${VM_VERIFIED[$HOST]:-}" == "true" ]]; then continue; fi`
+- Set verification flag: `VM_VERIFIED["$HOST"]="true"` after successful SSH + cloud-init validation
+- Reset verification flag: `VM_VERIFIED["$HOST"]="false"` when VMs are recreated
+
+**Benefits Achieved**:
+- Eliminated redundant SSH connection attempts to verified VMs
+- Reduced unnecessary cloud-init status checks on operational systems
+- Faster monitoring loop iterations focused on VMs needing attention
+- Cleaner deployment logs with less repetitive output
+- Reduced network overhead during multi-VM deployments
+
+**Performance Impact**: Significant improvement for large deployments with multiple VMs
+
+### Minor Enhancements
+
+#### Configuration Validation System
+**Status**: ✅ **COMPLETED** - Implemented in previous sessions
+**Priority**: ~~High~~ **COMPLETED**
+
+**Description**: ~~Pre-deployment configuration validation system~~
+
+**Implementation Completed**:
+- ✅ **Azure VM SKU availability validation**: Validates VM sizes are available in specified regions and zones
+- ✅ **Azure zone support validation**: Verifies availability zones are supported in target region
+- ✅ **Network configuration validation**: CIDR overlap detection and subnet validation
+- ✅ **Zone configuration validation**: Ensures zones exist in target region
+- ✅ **Interactive validation feedback**: Provides helpful error messages with suggested fixes
+- ✅ **Integration with deployment flow**: Runs validation before Azure resources are created
+- ✅ **Skip validation option**: `--skip-validation` flag for offline/faster operations
+
+**Benefits Achieved**: Prevents deployment failures from invalid configurations, provides early feedback on resource availability
+
+#### ARM-based Configuration Examples  
+**Status**: ✅ **COMPLETED** - Examples created
+**Priority**: ~~Low~~ **COMPLETED**
+
+**Description**: ~~Create ARM-optimized versions of existing configuration examples~~
+
+**Implementation Completed**:
+- ✅ `config/examples/production-arm64-southeastasia.yaml` - ARM64 production setup with Standard_D4pls_v6/D16pls_v6 VM sizes
+- ✅ `config/examples/production-arm64-southeastasia-spot.yaml` - ARM64 production with Spot instances
+- ✅ ARM64 Debian image support: `debian-12:12-arm64:latest`
+- ✅ ARM-optimized VM sizing configurations
+
+**Benefits Achieved**: Better performance/cost ratio for ARM workloads, native ARM64 support
 
 _Add other backlog items here as they come up during development..._

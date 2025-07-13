@@ -225,9 +225,34 @@ deploy_kof_regional() {
     update_state "kof_regional_domain" "$regional_domain"
     add_event "kof_regional_deployment_completed" "KOF regional cluster '$regional_cluster_name' deployed successfully"
     
+    # Step 4: Retrieve kubeconfig for the regional cluster
+    print_header "Step 4: Retrieving Regional Cluster Kubeconfig"
+    print_info "Retrieving kubeconfig for regional cluster '$regional_cluster_name'..."
+    
+    local kubeconfig_file="$K0SCTL_DIR/kof-regional-${regional_cluster_name}-kubeconfig"
+    
+    # Retrieve kubeconfig from k0rdent secret
+    if kubectl get secret "${regional_cluster_name}-kubeconfig" -n kcm-system -o jsonpath='{.data.value}' | base64 -d > "$kubeconfig_file" 2>/dev/null; then
+        chmod 600 "$kubeconfig_file"
+        print_success "Regional cluster kubeconfig saved to: $kubeconfig_file"
+        
+        # Test the kubeconfig
+        if KUBECONFIG="$kubeconfig_file" kubectl get nodes &>/dev/null; then
+            print_success "Regional cluster kubeconfig verified successfully"
+        else
+            print_warning "Regional cluster kubeconfig saved but connectivity test failed"
+            print_info "The cluster may still be initializing. Try again in a few minutes."
+        fi
+    else
+        print_warning "Failed to retrieve regional cluster kubeconfig"
+        print_info "You can manually retrieve it later with:"
+        print_info "kubectl get secret ${regional_cluster_name}-kubeconfig -n kcm-system -o jsonpath='{.data.value}' | base64 -d > $kubeconfig_file"
+    fi
+    
     print_success "KOF regional cluster deployment completed!"
     print_info "Regional cluster '$regional_cluster_name' is ready for KOF operations"
     print_info "Domain: $regional_domain"
+    print_info "Kubeconfig: $kubeconfig_file"
     print_info "Monitor with: kubectl get clusterdeployment $regional_cluster_name -n kcm-system -w"
 }
 

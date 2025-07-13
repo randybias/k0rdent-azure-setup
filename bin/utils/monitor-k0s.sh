@@ -28,14 +28,14 @@ find_kubeconfig() {
     # Look for kubeconfig file with the suffix (suffix-kubeconfig format)
     local kubeconfig_file="$k0sctl_dir/k0rdent-$suffix-kubeconfig"
     
-    if [[ -f "$kubeconfig_file" ]]; then
-        export KUBECONFIG="$kubeconfig_file"
-        echo "Found kubeconfig: $kubeconfig_file"
-        return 0
-    else
+    while [[ ! -f "$kubeconfig_file" ]]; do
         echo "Waiting for kubeconfig file: $kubeconfig_file"
-        return 1
-    fi
+        sleep 2
+    done
+    
+    export KUBECONFIG="$kubeconfig_file"
+    echo "Found kubeconfig: $kubeconfig_file"
+    return 0
 }
 
 # Function to run viddy with kubectl
