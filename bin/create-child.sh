@@ -37,38 +37,39 @@ WORKER_NUMBER=""
 # Script-specific functions
 show_usage() {
     print_usage "$0" \
-        "  --cluster-name <name>     Name of the child cluster to create (required)
-  --cloud <provider>        Cloud provider: azure (required)
-  --location <region>       Cloud region/location (required)
-  --cp-instance-size <size> Control plane instance size (required)
-  --worker-instance-size <size> Worker node instance size (required)
-  --root-volume-size <gb>   Root volume size in GB (required)
-  --namespace <ns>          Kubernetes namespace (required)
-  --template <name>         Cluster template to use (required)
-  --credential <name>       Credential name to use (required)
-  --cp-number <num>         Number of control plane nodes (required)
-  --worker-number <num>     Number of worker nodes (required)
-  --cluster-identity-name <name> Name of the cluster identity (required)
-  --cluster-identity-namespace <ns> Namespace of the cluster identity (required)
-  --dry-run                 Create deployment in dry-run mode (simulation)
-  --cluster-labels <labels> Cluster labels in key=value,key2=value2 format
-  --cluster-annotations <annotations> Cluster annotations in key=value,key2=value2 format" \
-        "  -h, --help               Show this help message" \
+        "  --cluster-name <name>           Name of the child cluster to create (required)
+         --cloud <provider>              Cloud provider: azure (required)
+         --location <region>             Cloud region/location (required)
+         --cp-instance-size <size>       Control plane instance size (required)
+         --worker-instance-size <size>   Worker node instance size (required)
+         --root-volume-size <gb>         Root volume size in GB (required)
+         --namespace <ns>                Kubernetes namespace (required)
+         --template <name>               Cluster template to use (required)
+         --credential <name>             Credential name to use (required)
+         --cp-number <num>               Number of control plane nodes (required)
+         --worker-number <num>           Number of worker nodes (required)
+         --cluster-identity-name <name>  Name of the cluster identity (required)
+         --cluster-identity-namespace <ns> Namespace of the cluster identity (required)
+         --dry-run                       Create deployment in dry-run mode (simulation)
+         --cluster-labels <labels>       Cluster labels in key=value,key2=value2 format
+         --cluster-annotations <annotations> Cluster annotations in key=value,key2=value2 format" \
+        "  -h, --help                     Show this help message" \
         "  $0 --cluster-name my-cluster --cloud azure --location eastus \\
-     --cp-instance-size Standard_A4_v2 --worker-instance-size Standard_A4_v2 \\
-     --root-volume-size 32 --namespace kcm-system \\
-     --template azure-standalone-cp-1-0-8 --credential azure-cluster-credential \\
-     --cp-number 1 --worker-number 3 \\
-     --cluster-identity-name azure-cluster-identity --cluster-identity-namespace kcm-system
-  $0 --cluster-name regional-cluster --cloud azure --location westus2 \\
-     --cp-instance-size Standard_A4_v2 --worker-instance-size Standard_A4_v2 \\
-     --root-volume-size 32 --namespace kcm-system \\
-     --template azure-standalone-cp-1-0-8 --credential azure-cluster-identity-cred \\
-     --cp-number 1 --worker-number 3 \\
-     --cluster-identity-name azure-cluster-identity --cluster-identity-namespace kcm-system \\
-     --cluster-annotations k0rdent.mirantis.com/kof-regional-domain=my.domain.com,k0rdent.mirantis.com/kof-cert-email=admin@domain.com \\
-     --cluster-labels k0rdent.mirantis.com/kof-storage-secrets=true,k0rdent.mirantis.com/kof-cluster-role=regional"
-}
+             --cp-instance-size Standard_A4_v2 --worker-instance-size Standard_A4_v2 \\
+             --root-volume-size 32 --namespace kcm-system \\
+             --template azure-standalone-cp-1-0-8 --credential azure-cluster-credential \\
+             --cp-number 1 --worker-number 3 \\
+             --cluster-identity-name azure-cluster-identity --cluster-identity-namespace kcm-system \\
+             \\
+           $0 --cluster-name regional-cluster --cloud azure --location westus2 \\
+             --cp-instance-size Standard_A4_v2 --worker-instance-size Standard_A4_v2 \\
+             --root-volume-size 32 --namespace kcm-system \\
+             --template azure-standalone-cp-1-0-8 --credential azure-cluster-identity-cred \\
+             --cp-number 1 --worker-number 3 \\
+             --cluster-identity-name azure-cluster-identity --cluster-identity-namespace kcm-system \\
+             --cluster-annotations k0rdent.mirantis.com/kof-regional-domain=my.domain.com,k0rdent.mirantis.com/kof-cert-email=admin@domain.com \\
+             --cluster-labels k0rdent.mirantis.com/kof-storage-secrets=true,k0rdent.mirantis.com/kof-cluster-role=child"
+    }
 
 # Parse arguments
 parse_arguments() {

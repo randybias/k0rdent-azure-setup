@@ -2,6 +2,15 @@
 
 This file documents the established patterns, conventions, and best practices for the k0rdent Azure setup project. Use this as a reference when making changes or extending functionality.
 
+## Important Technical Notes
+
+### Kubeconfig Retrieval from k0rdent
+When k0rdent creates managed clusters, it stores their kubeconfigs as Secrets in the `kcm-system` namespace. To retrieve:
+```bash
+kubectl get secret <cluster-name>-kubeconfig -n kcm-system -o jsonpath='{.data.value}' | base64 -d > ./k0sctl-config/<cluster-name>-kubeconfig
+```
+See `notebooks/KUBECONFIG-RETRIEVAL.md` for detailed documentation.
+
 # DEVELOPER DIRECTIVES
 
 - Do NOT run tests without confirmation
@@ -82,3 +91,10 @@ source ./etc/common-functions.sh     # All common functionality
 source ./etc/state-management.sh     # State tracking
 source ./etc/kof-functions.sh        # Only KOF-specific additions
 ```
+
+## Troubleshooting Guidelines
+
+### Troubleshooting Documentation
+- When you successfully troubleshoot a problem, record it under a subdirectory called notebooks/troubleshooting_guide for future reference
+- Create a new markdown file for every problem resolved
+- Always check the troubleshooting directory to see if there is something relevant when starting a new troubleshooting process
