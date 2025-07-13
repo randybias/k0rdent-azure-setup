@@ -53,8 +53,8 @@ scratch/
 
 # WireGuard setuid wrapper binary (not to be committed)
 bin/utils/wg-wrapper
+
 # Kubeconfig files
 *-kubeconfig
 child-kubeconfig
 regional-kubeconfig
-EOF < /dev/null
