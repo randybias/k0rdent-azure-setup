@@ -93,9 +93,8 @@ create_regional_cluster_core() {
     local worker_instance_size=$(get_kof_config "regional.worker_instance_size" "Standard_A4_v2")
     local root_volume_size=$(get_kof_config "regional.root_volume_size" "32")
     
-    # Prepare cluster annotations and labels for KOF
-    local cluster_annotations="k0rdent.mirantis.com/kof-regional-domain=$regional_domain,k0rdent.mirantis.com/kof-cert-email=$admin_email"
-    local cluster_labels="k0rdent.mirantis.com/kof-storage-secrets=true,k0rdent.mirantis.com/kof-cluster-role=regional"
+    # Prepare cluster labels for KOF with Istio
+    local cluster_labels="k0rdent.mirantis.com/istio-role=child"
     
     print_info "Creating cluster deployment for: $regional_cluster_name"
     print_info "Location: $location, Template: $template"
@@ -115,7 +114,6 @@ create_regional_cluster_core() {
         --worker-number 3 \
         --cluster-identity-name azure-cluster-identity \
         --cluster-identity-namespace kcm-system \
-        --cluster-annotations "$cluster_annotations" \
         --cluster-labels "$cluster_labels"; then
         print_error "Failed to create ClusterDeployment"
         return 1
