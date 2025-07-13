@@ -3,14 +3,24 @@
 # State Management Functions for k0rdent Deployment
 # Provides simple YAML-based state tracking to reduce Azure API calls
 
+# State directory
+STATE_DIR="./state"
+
 # Global state file locations
-DEPLOYMENT_STATE_FILE="./deployment-state.yaml"
-DEPLOYMENT_EVENTS_FILE="./deployment-events.yaml"
+DEPLOYMENT_STATE_FILE="$STATE_DIR/deployment-state.yaml"
+DEPLOYMENT_EVENTS_FILE="$STATE_DIR/deployment-events.yaml"
+KOF_STATE_FILE="$STATE_DIR/kof-state.yaml"
+KOF_EVENTS_FILE="$STATE_DIR/kof-events.yaml"
+AZURE_STATE_FILE="$STATE_DIR/azure-state.yaml"
+AZURE_EVENTS_FILE="$STATE_DIR/azure-events.yaml"
 
 # Initialize new deployment state file
 init_deployment_state() {
     local deployment_id="$1"
     local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    
+    # Ensure state directory exists
+    mkdir -p "$STATE_DIR"
     
     cat > "$DEPLOYMENT_STATE_FILE" << EOF
 # k0rdent Deployment State
@@ -286,6 +296,12 @@ cleanup_deployment_state() {
         print_info "Removed deployment events file"
     fi
     
+    # Remove state directory if empty
+    if [[ -d "$STATE_DIR" ]] && [[ -z "$(ls -A "$STATE_DIR" 2>/dev/null)" ]]; then
+        rmdir "$STATE_DIR"
+        print_info "Removed empty state directory"
+    fi
+    
     print_success "Deployment state cleanup completed"
 }
 
@@ -390,4 +406,314 @@ get_wireguard_private_key() {
 get_wireguard_public_key() {
     local host="$1"
     yq eval ".wireguard_peers.${host}.public_key" "$DEPLOYMENT_STATE_FILE" 2>/dev/null || echo "null"
+}
+
+# ---- KOF State Management ----
+
+# Initialize KOF state file
+init_kof_state() {
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    
+    # Ensure state directory exists
+    mkdir -p "$STATE_DIR"
+    
+    cat > "$KOF_STATE_FILE" << EOF
+# KOF (K0rdent Operations Framework) State
+# Auto-generated on $timestamp
+
+# Basic KOF info
+created_at: "$timestamp"
+last_updated: "$timestamp"
+kof_enabled: false
+
+# KOF components
+kof_mothership_installed: false
+kof_regional_installed: false
+kof_child_installed: false
+EOF
+    
+    # Create KOF events file
+    cat > "$KOF_EVENTS_FILE" << EOF
+# KOF Events Log
+# Auto-generated on $timestamp
+
+created_at: "$timestamp"
+last_updated: "$timestamp"
+
+# Events log
+events:
+  - timestamp: "$timestamp"
+    action: kof_state_initialized
+    message: KOF state tracking initialized
+EOF
+    
+    print_info "Initialized KOF state: $KOF_STATE_FILE"
+    print_info "Initialized KOF events: $KOF_EVENTS_FILE"
+}
+
+# Update KOF state
+update_kof_state() {
+    local key="$1"
+    local value="$2"
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    
+    # Initialize if doesn't exist
+    if [[ ! -f "$KOF_STATE_FILE" ]]; then
+        init_kof_state
+    fi
+    
+    # Handle boolean values properly
+    if [[ "$value" == "true" ]] || [[ "$value" == "false" ]]; then
+        yq eval ".${key} = ${value}" -i "$KOF_STATE_FILE"
+    else
+        yq eval ".${key} = \"${value}\"" -i "$KOF_STATE_FILE"
+    fi
+    
+    yq eval ".last_updated = \"${timestamp}\"" -i "$KOF_STATE_FILE"
+}
+
+# Get KOF state
+get_kof_state() {
+    local key="$1"
+    
+    if [[ ! -f "$KOF_STATE_FILE" ]]; then
+        echo "null"
+        return
+    fi
+    
+    yq eval ".${key}" "$KOF_STATE_FILE" 2>/dev/null || echo "null"
+}
+
+# Add KOF event
+add_kof_event() {
+    local action="$1"
+    local message="$2"
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    
+    # Initialize if doesn't exist
+    if [[ ! -f "$KOF_EVENTS_FILE" ]]; then
+        init_kof_state
+    fi
+    
+    # Add event to events array
+    yq eval ".events += [{\"timestamp\": \"${timestamp}\", \"action\": \"${action}\", \"message\": \"${message}\"}]" -i "$KOF_EVENTS_FILE"
+    yq eval ".last_updated = \"${timestamp}\"" -i "$KOF_EVENTS_FILE"
+    
+    # Update timestamp in main KOF state file
+    if [[ -f "$KOF_STATE_FILE" ]]; then
+        yq eval ".last_updated = \"${timestamp}\"" -i "$KOF_STATE_FILE"
+    fi
+}
+
+# Remove KOF state key
+remove_kof_state_key() {
+    local key="$1"
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    
+    if [[ -f "$KOF_STATE_FILE" ]]; then
+        yq eval "del(.${key})" -i "$KOF_STATE_FILE"
+        yq eval ".last_updated = \"${timestamp}\"" -i "$KOF_STATE_FILE"
+    fi
+}
+
+# ---- Azure State Management ----
+
+# Initialize Azure state file
+init_azure_state() {
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    
+    # Ensure state directory exists
+    mkdir -p "$STATE_DIR"
+    
+    cat > "$AZURE_STATE_FILE" << EOF
+# Azure Infrastructure State
+# Auto-generated on $timestamp
+
+# Basic Azure info
+created_at: "$timestamp"
+last_updated: "$timestamp"
+
+# Azure credentials
+azure_credentials_configured: false
+EOF
+    
+    # Create Azure events file
+    cat > "$AZURE_EVENTS_FILE" << EOF
+# Azure Events Log
+# Auto-generated on $timestamp
+
+created_at: "$timestamp"
+last_updated: "$timestamp"
+
+# Events log
+events:
+  - timestamp: "$timestamp"
+    action: azure_state_initialized
+    message: Azure state tracking initialized
+EOF
+    
+    print_info "Initialized Azure state: $AZURE_STATE_FILE"
+    print_info "Initialized Azure events: $AZURE_EVENTS_FILE"
+}
+
+# Update Azure state
+update_azure_state() {
+    local key="$1"
+    local value="$2"
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    
+    # Initialize if doesn't exist
+    if [[ ! -f "$AZURE_STATE_FILE" ]]; then
+        init_azure_state
+    fi
+    
+    # Handle boolean values properly
+    if [[ "$value" == "true" ]] || [[ "$value" == "false" ]]; then
+        yq eval ".${key} = ${value}" -i "$AZURE_STATE_FILE"
+    else
+        yq eval ".${key} = \"${value}\"" -i "$AZURE_STATE_FILE"
+    fi
+    
+    yq eval ".last_updated = \"${timestamp}\"" -i "$AZURE_STATE_FILE"
+}
+
+# Get Azure state
+get_azure_state() {
+    local key="$1"
+    
+    if [[ ! -f "$AZURE_STATE_FILE" ]]; then
+        echo "null"
+        return
+    fi
+    
+    yq eval ".${key}" "$AZURE_STATE_FILE" 2>/dev/null || echo "null"
+}
+
+# Add Azure event
+add_azure_event() {
+    local action="$1"
+    local message="$2"
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    
+    # Initialize if doesn't exist
+    if [[ ! -f "$AZURE_EVENTS_FILE" ]]; then
+        init_azure_state
+    fi
+    
+    # Add event to events array
+    yq eval ".events += [{\"timestamp\": \"${timestamp}\", \"action\": \"${action}\", \"message\": \"${message}\"}]" -i "$AZURE_EVENTS_FILE"
+    yq eval ".last_updated = \"${timestamp}\"" -i "$AZURE_EVENTS_FILE"
+    
+    # Update timestamp in main Azure state file
+    if [[ -f "$AZURE_STATE_FILE" ]]; then
+        yq eval ".last_updated = \"${timestamp}\"" -i "$AZURE_STATE_FILE"
+    fi
+}
+
+# Remove Azure state key
+remove_azure_state_key() {
+    local key="$1"
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    
+    if [[ -f "$AZURE_STATE_FILE" ]]; then
+        yq eval "del(.${key})" -i "$AZURE_STATE_FILE"
+        yq eval ".last_updated = \"${timestamp}\"" -i "$AZURE_STATE_FILE"
+    fi
+}
+
+# ---- Individual Cluster State Management ----
+
+# Get cluster state file path
+get_cluster_state_file() {
+    local cluster_name="$1"
+    echo "$STATE_DIR/cluster-${cluster_name}-state.yaml"
+}
+
+# Get cluster events file path
+get_cluster_events_file() {
+    local cluster_name="$1"
+    echo "$STATE_DIR/cluster-${cluster_name}-events.yaml"
+}
+
+# Initialize cluster events file (state tracking removed - k0rdent is source of truth)
+init_cluster_events() {
+    local cluster_name="$1"
+    local cluster_events_file=$(get_cluster_events_file "$cluster_name")
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    
+    # Ensure state directory exists
+    mkdir -p "$STATE_DIR"
+    
+    # Only create events file - no local state tracking
+    cat > "$cluster_events_file" << EOF
+# Cluster Events Log: $cluster_name
+# Auto-generated on $timestamp
+# Note: Cluster state is tracked in k0rdent - this file only tracks local events
+
+cluster_name: "$cluster_name"
+created_at: "$timestamp"
+last_updated: "$timestamp"
+
+# Events log (local operations only)
+events:
+  - timestamp: "$timestamp"
+    action: cluster_events_initialized
+    message: Local event tracking initialized for $cluster_name
+EOF
+    
+    print_info "Initialized cluster events: $cluster_events_file"
+}
+
+# Deprecated: use init_cluster_events instead
+init_cluster_state() {
+    local cluster_name="$1"
+    print_warning "init_cluster_state is deprecated - using init_cluster_events (k0rdent is source of truth)"
+    init_cluster_events "$cluster_name"
+}
+
+# Deprecated: Local state tracking removed - k0rdent is source of truth
+update_cluster_state() {
+    local cluster_name="$1"
+    local key="$2"
+    local value="$3"
+    
+    print_warning "update_cluster_state is deprecated - k0rdent is the source of truth for cluster state"
+    print_info "Use add_cluster_event to track local operations instead"
+    
+    # Add an event instead of updating state
+    add_cluster_event "$cluster_name" "state_update_attempted" "Attempted to set $key=$value (deprecated - use k0rdent for state)"
+}
+
+# Deprecated: Query k0rdent directly for cluster state
+get_cluster_state() {
+    local cluster_name="$1"
+    local key="$2"
+    
+    print_warning "get_cluster_state is deprecated - query k0rdent directly for cluster state"
+    print_info "Use: kubectl get clusterdeployment $cluster_name -n kcm-system"
+    echo "null"
+}
+
+# Add cluster event
+add_cluster_event() {
+    local cluster_name="$1"
+    local action="$2"
+    local message="$3"
+    local cluster_events_file=$(get_cluster_events_file "$cluster_name")
+    local cluster_state_file=$(get_cluster_state_file "$cluster_name")
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    
+    # Initialize if doesn't exist
+    if [[ ! -f "$cluster_events_file" ]]; then
+        init_cluster_state "$cluster_name"
+    fi
+    
+    # Add event to events array
+    yq eval ".events += [{\"timestamp\": \"${timestamp}\", \"action\": \"${action}\", \"message\": \"${message}\"}]" -i "$cluster_events_file"
+    yq eval ".last_updated = \"${timestamp}\"" -i "$cluster_events_file"
+    
+    # Update timestamp in main cluster state file
+    if [[ -f "$cluster_state_file" ]]; then
+        yq eval ".last_updated = \"${timestamp}\"" -i "$cluster_state_file"
+    fi
 }
