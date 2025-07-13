@@ -34,7 +34,24 @@ graph TD
     
     Installk0rdent --> |Updates State| State7[(deployment-state.yaml)]
     
-    Installk0rdent --> Complete([Deployment Complete])
+    Installk0rdent --> OptionalCheck{Optional Components?}
+    OptionalCheck -->|--with-azure-children| AzureSetup[setup-azure-cluster-deployment.sh]
+    OptionalCheck -->|--with-kof| KOFCheck{Azure Children Enabled?}
+    OptionalCheck -->|None| Complete([Deployment Complete])
+    
+    AzureSetup --> |Updates State| State8[(deployment-state.yaml)]
+    AzureSetup --> KOFCheck2{KOF Enabled?}
+    
+    KOFCheck -->|Yes| InstallCSI[install-k0s-azure-csi.sh]
+    KOFCheck -->|No| InstallCSI
+    KOFCheck2 -->|Yes| InstallCSI
+    KOFCheck2 -->|No| Complete
+    
+    InstallCSI --> InstallKOFMothership[install-kof-mothership.sh]
+    InstallKOFMothership --> InstallKOFRegional[install-kof-regional.sh]
+    InstallKOFRegional --> |Updates State| State9[(deployment-state.yaml)]
+    InstallKOFRegional --> Complete
+    
     Complete --> Backup[Backup to old_deployments/]
     
     style Start fill:#90EE90
@@ -46,8 +63,13 @@ graph TD
     style State5 fill:#FFE4B5
     style State6 fill:#FFE4B5
     style State7 fill:#FFE4B5
+    style State8 fill:#FFE4B5
+    style State9 fill:#FFE4B5
     style FailNet fill:#FF6B6B
     style NetDecision fill:#FFEB9C
+    style OptionalCheck fill:#FFEB9C
+    style KOFCheck fill:#FFEB9C
+    style KOFCheck2 fill:#FFEB9C
 ```
 
 ## Configuration Loading System
@@ -103,6 +125,13 @@ graph TD
         SSH[bin/lockdown-ssh.sh]
     end
     
+    subgraph "Optional Components"
+        AzureSetup[bin/setup-azure-cluster-deployment.sh]
+        CSI[bin/install-k0s-azure-csi.sh]
+        KOFMother[bin/install-kof-mothership.sh]
+        KOFRegional[bin/install-kof-regional.sh]
+    end
+    
     Main --> Config1
     Main --> Prep
     Main --> Network
@@ -127,6 +156,20 @@ graph TD
     K0rdent --> Common
     K0rdent --> State
     SSH --> Common
+    
+    Main --> AzureSetup
+    Main --> CSI
+    Main --> KOFMother
+    Main --> KOFRegional
+    
+    AzureSetup --> Common
+    AzureSetup --> State
+    CSI --> Common
+    CSI --> State
+    KOFMother --> Common
+    KOFMother --> State
+    KOFRegional --> Common
+    KOFRegional --> State
     
     style Main fill:#FF6B6B
     style Common fill:#4ECDC4
@@ -235,12 +278,16 @@ cluster:
 graph TD
     Start([User runs deploy-k0rdent.sh reset]) --> Check{Check State}
     
+    Check --> |KOF regional exists| DeleteKOFRegional[Delete KOF Regional Cluster]
+    Check --> |Azure children exist| DeleteAzureChildren[Delete Azure Child Clusters]
     Check --> |k0rdent installed| Uninstallk0rdent[Uninstall k0rdent]
     Check --> |k0s deployed| Uninstallk0s[Uninstall k0s]
     Check --> |VPN connected| DisconnectVPN[Disconnect VPN]
     Check --> |VMs exist| DeleteVMs[Delete VMs]
     Check --> |Network exists| DeleteNetwork[Delete Network]
     
+    DeleteKOFRegional --> DeleteAzureChildren
+    DeleteAzureChildren --> Uninstallk0rdent
     Uninstallk0rdent --> Uninstallk0s
     Uninstallk0s --> DisconnectVPN
     DisconnectVPN --> DeleteVMs
@@ -250,6 +297,8 @@ graph TD
     
     style Start fill:#FFB6C1
     style Complete fill:#90EE90
+    style DeleteKOFRegional fill:#FFD700
+    style DeleteAzureChildren fill:#FFD700
 ```
 
 ## Error Handling and Recovery
