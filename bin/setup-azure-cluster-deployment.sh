@@ -287,13 +287,16 @@ data:
       "vnetName" \$cluster.spec.networkSpec.vnet.name
       "vnetResourceGroup" \$cluster.spec.networkSpec.vnet.resourceGroup -}}
     apiVersion: v1
-    kind: ConfigMap
+    kind: Secret
     metadata:
-      name: azure-cloud-config
+      name: azure-cloud-provider
       namespace: kube-system
-    data:
-      config: |
-    {{ \$cloudConfig | toYaml | nindent 4 }}
+    type: Opaque
+    stringData:
+      cloud-config: |
+{{ \$cloudConfig | toYaml | nindent 8 }}
+      azure.json: |
+{{ \$cloudConfig | toYaml | nindent 8 }}
   storageclass.yaml: |
     apiVersion: storage.k8s.io/v1
     kind: StorageClass
