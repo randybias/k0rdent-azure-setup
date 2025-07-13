@@ -339,6 +339,25 @@ When KOF is enabled, the deployment will:
 2. Deploy KOF mothership with Istio service mesh
 3. Create a KOF regional cluster in the specified Azure location
 4. Configure observability and FinOps data collection
+5. Automatically retrieve and save the regional cluster kubeconfig to `k0sctl-config/`
+
+#### Accessing KOF Regional Cluster
+
+After KOF deployment, the regional cluster kubeconfig is automatically saved:
+```bash
+export KUBECONFIG=$PWD/k0sctl-config/kof-regional-<deployment-id>-<location>-kubeconfig
+kubectl get nodes
+```
+
+#### Child Cluster Kubeconfig Retrieval
+
+For any k0rdent-managed cluster (child clusters), retrieve the kubeconfig:
+```bash
+# From management cluster
+kubectl get secret <cluster-name>-kubeconfig -n kcm-system -o jsonpath='{.data.value}' | base64 -d > ./k0sctl-config/<cluster-name>-kubeconfig
+```
+
+See `notebooks/KUBECONFIG-RETRIEVAL.md` for detailed documentation.
 
 ### Configuration Examples
 
@@ -699,6 +718,11 @@ For individual component cleanup, you can also run:
 **Note**: The project suffix file is only removed when using `./deploy-k0rdent.sh reset` to ensure a completely fresh deployment. Individual script resets preserve the project identifier.
 
 ## Troubleshooting
+
+### Troubleshooting Guides
+
+Detailed troubleshooting guides are available in `notebooks/troubleshooting_guide/`:
+- **KOF Child Cluster Issues**: See `kof-child-cluster-not-deploying.md`
 
 ### Common Issues
 
