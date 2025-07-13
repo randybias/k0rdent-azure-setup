@@ -294,9 +294,9 @@ data:
     type: Opaque
     stringData:
       cloud-config: |
-{{ \$cloudConfig | toYaml | nindent 8 }}
+        {{ \$cloudConfig | toYaml | nindent 8 }}
       azure.json: |
-{{ \$cloudConfig | toYaml | nindent 8 }}
+        {{ \$cloudConfig | toYaml | nindent 8 }}
   storageclass.yaml: |
     apiVersion: storage.k8s.io/v1
     kind: StorageClass
