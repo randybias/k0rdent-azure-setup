@@ -78,12 +78,51 @@ This HA setup provides controller redundancy across zones for high availability.
 All prerequisites are automatically checked at the beginning of the deployment process. You can also verify them manually:
 
 ```bash
+# Check prerequisites using the main script
 ./deploy-k0rdent.sh check
+
+# Or run the prerequisites check directly
+./bin/check-prerequisites.sh
 ```
 
 Required tools:
 
-1. **yq** - YAML processor (version 4.x):
+1. **Bash version 5.0+** - Modern bash features required
+   ```bash
+   # macOS
+   brew install bash
+   
+   # Ubuntu/Debian  
+   sudo apt update && sudo apt install bash
+   ```
+
+2. **SSH client** - For remote VM management:
+   ```bash
+   # Usually pre-installed on most systems
+   # Ubuntu/Debian: sudo apt install openssh-client
+   # CentOS/RHEL: sudo yum install openssh-clients
+   ```
+
+3. **curl** - For downloading tools and scripts:
+   ```bash
+   # macOS
+   brew install curl
+   
+   # Ubuntu/Debian
+   sudo apt install curl
+   
+   # CentOS/RHEL
+   sudo yum install curl
+   ```
+
+4. **base64** - For encoding/decoding (usually pre-installed):
+   ```bash
+   # Part of coreutils, typically pre-installed
+   # Ubuntu/Debian: sudo apt install coreutils
+   # CentOS/RHEL: sudo yum install coreutils
+   ```
+
+5. **yq** - YAML processor (version 4.x):
    ```bash
    # macOS
    brew install yq
@@ -95,7 +134,19 @@ Required tools:
    sudo chmod +x /usr/local/bin/yq
    ```
 
-2. **Azure CLI** installed and authenticated:
+6. **jq** - JSON processor:
+   ```bash
+   # macOS
+   brew install jq
+   
+   # Ubuntu/Debian
+   sudo apt install jq
+   
+   # CentOS/RHEL
+   sudo yum install jq
+   ```
+
+7. **Azure CLI** installed and authenticated:
    ```bash
    # Install Azure CLI (if needed)
    # macOS: brew install azure-cli
@@ -105,7 +156,7 @@ Required tools:
    az login
    ```
 
-3. **WireGuard tools** installed:
+8. **WireGuard tools** installed:
    ```bash
    # macOS
    brew install wireguard-tools
@@ -117,7 +168,7 @@ Required tools:
    sudo yum install wireguard-tools
    ```
 
-4. **k0sctl** - k0s cluster management tool:
+9. **k0sctl** - k0s cluster management tool:
    ```bash
    # Download latest release
    # macOS/Linux
@@ -126,7 +177,7 @@ Required tools:
    sudo mv k0sctl /usr/local/bin/
    ```
 
-5. **netcat (nc)** - Network connectivity tool:
+10. **netcat (nc)** - Network connectivity tool:
    ```bash
    # Usually pre-installed, but if missing:
    # macOS: brew install netcat
@@ -134,7 +185,58 @@ Required tools:
    # CentOS/RHEL: sudo yum install nc
    ```
 
+11. **kubectl** - Kubernetes command-line tool:
+   ```bash
+   # macOS
+   brew install kubectl
+   
+   # Linux - see official docs
+   # https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/
+   ```
+
+12. **helm** - Kubernetes package manager:
+   ```bash
+   # macOS
+   brew install helm
+   
+   # Linux
+   curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+   ```
+
+13. **git** - Version control system:
+   ```bash
+   # macOS
+   brew install git
+   
+   # Ubuntu/Debian
+   sudo apt install git
+   
+   # CentOS/RHEL
+   sudo yum install git
+   ```
+
+14. **Common utilities** (timeout, mktemp, stat, ping, network tools):
+   ```bash
+   # macOS
+   brew install coreutils  # Provides timeout, mktemp, and GNU versions of utilities
+   
+   # Ubuntu/Debian
+   sudo apt install coreutils iproute2 iputils-ping
+   
+   # CentOS/RHEL
+   sudo yum install coreutils iproute iputils
+   ```
+
+**Note**: The scripts also assume a standard POSIX-compliant shell environment with common utilities like grep, sed, awk, cut, tr, sort, etc. These are typically pre-installed on all Unix-like systems.
+
 ### Deployment
+
+You have two options for deployment:
+
+1. **Automated End-to-End Deployment** - Use `deploy-k0rdent.sh` for a complete automated deployment
+2. **Manual Step-by-Step Deployment** - Run each stage manually for more control
+
+#### Option 1: Automated Deployment (Recommended)
 
 Run the complete deployment process:
 
@@ -147,6 +249,8 @@ For automated deployments without prompts:
 ```bash
 ./deploy-k0rdent.sh deploy -y
 ```
+
+The deployment script automatically checks all prerequisites before starting.
 
 #### Modular Deployment Options
 
@@ -163,7 +267,16 @@ The deployment is modular - by default, only the base k0rdent cluster is install
 ./deploy-k0rdent.sh deploy --with-azure-children --with-kof -y
 ```
 
-Or step-by-step:
+#### Option 2: Manual Step-by-Step Deployment
+
+If you prefer to run each stage of the deployment manually, first check prerequisites:
+
+```bash
+# Check all prerequisites before starting
+./bin/check-prerequisites.sh
+```
+
+Then run each step:
 
 ```bash
 # Step 1: Prepare deployment (WireGuard keys and cloud-init)
@@ -302,6 +415,8 @@ software:
 
 KOF is an optional component that provides observability and FinOps capabilities for k0rdent clusters. It can be enabled in the configuration or deployed with the `--with-kof` flag.
 
+📚 **For comprehensive KOF documentation, see [docs/KOF-README.md](docs/KOF-README.md)**
+
 #### KOF Configuration
 
 ```yaml
@@ -357,7 +472,9 @@ For any k0rdent-managed cluster (child clusters), retrieve the kubeconfig:
 kubectl get secret <cluster-name>-kubeconfig -n kcm-system -o jsonpath='{.data.value}' | base64 -d > ./k0sctl-config/<cluster-name>-kubeconfig
 ```
 
-See `notebooks/KUBECONFIG-RETRIEVAL.md` for detailed documentation.
+See `notebooks/KUBECONFIG-RETRIEVAL.md` for detailed kubeconfig retrieval documentation.
+
+For complete KOF deployment instructions, troubleshooting, and advanced usage, refer to the [KOF Documentation](docs/KOF-README.md).
 
 ### Configuration Examples
 
@@ -464,20 +581,33 @@ k0rdent-azure-setup/
 ├── deploy-k0rdent.sh           # Main orchestration script
 ├── deployment-state.yaml       # Current deployment state (auto-generated)
 ├── deployment-events.yaml      # Deployment event log (auto-generated)
+├── docs/                        # Documentation
+│   └── KOF-README.md           # KOF (k0rdent Operations Framework) documentation
 ├── etc/                        # Configuration files
 │   ├── config-user.sh          # DEPRECATED (use YAML config instead)
 │   ├── config-internal.sh      # Computed configuration (do not edit)
 │   ├── k0rdent-config.sh       # Central configuration loader
 │   ├── state-management.sh     # State tracking functions
-│   └── common-functions.sh     # Shared utility functions (1,500+ lines)
-├── bin/                        # Action scripts (7 consolidated scripts)
+│   ├── common-functions.sh     # Shared utility functions (1,500+ lines)
+│   ├── azure-cluster-functions.sh  # Azure child cluster utilities
+│   └── kof-functions.sh        # KOF-specific functions
+├── bin/                        # Action scripts
+│   ├── check-prerequisites.sh  # Centralized prerequisite checking
 │   ├── prepare-deployment.sh   # Deployment preparation (keys & cloud-init)
 │   ├── setup-azure-network.sh  # Azure infrastructure setup
 │   ├── create-azure-vms.sh     # VM creation with parallel deployment
 │   ├── manage-vpn.sh           # Comprehensive VPN management
 │   ├── install-k0s.sh          # k0s cluster installation with network validation
 │   ├── validate-pod-network.sh # Pod-to-pod network connectivity validation
-│   └── install-k0rdent.sh      # k0rdent installation on cluster
+│   ├── install-k0rdent.sh      # k0rdent installation on cluster
+│   ├── setup-azure-cluster-deployment.sh  # Azure child cluster capability
+│   ├── install-k0s-azure-csi.sh          # Azure Disk CSI Driver installation
+│   ├── install-kof-mothership.sh         # KOF mothership deployment
+│   ├── install-kof-regional.sh           # KOF regional cluster deployment
+│   ├── create-child.sh         # Create k0rdent-managed child clusters
+│   ├── list-child-clusters.sh  # List all child clusters
+│   ├── configure.sh            # Configuration management
+│   └── lockdown-ssh.sh         # SSH security management
 ├── azure-resources/            # Generated Azure resources  
 │   ├── k0rdent-XXXXXXXX-ssh-key     # Private SSH key
 │   └── k0rdent-XXXXXXXX-ssh-key.pub # Public SSH key

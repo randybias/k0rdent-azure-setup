@@ -12,7 +12,6 @@ This file tracks future enhancements and improvements that are not currently pri
 | **HIGH** | Bug Fixes | Bug 9: Reset operations fail when components are broken | 🆕 NEW |
 | **HIGH** | Minor Enhancements | Distribute kubeconfig to all k0rdent user home directories | 🆕 NEW |
 | **HIGH** | Minor Enhancements | Idempotent Deployment Process with Clear Logging | 🆕 NEW |
-| **HIGH** | Future Ideas | Azure Disk CSI Driver Integration | 🔄 IN PLANNING |
 | **MEDIUM** | Bug Fixes | Bug 3: Incorrect validation requiring at least 1 worker node | 🆕 NEW |
 | **MEDIUM** | Bug Fixes | Bug 7: Inconsistent controller naming convention | 🆕 NEW |
 | **MEDIUM** | Bug Fixes | Bug 12: Reset with --force doesn't clean up local state files | 🆕 NEW |
@@ -39,15 +38,16 @@ This file tracks future enhancements and improvements that are not currently pri
 | **LOW** | Minor Enhancements | Evaluate Nushell for Bash Script Rewrites | 🆕 NEW |
 | **LOW** | Minor Enhancements | direnv Integration | Optional |
 | **LOW** | Minor Enhancements | Azure VM Launch Manager with NATS | 🆕 NEW |
+| **LOW** | KOF Features | Extract KOF deployment logic into deploy-kof-stack.sh | 🆕 NEW |
 | **MEDIUM** | Documentation | Create k0rdent Architecture Overview | 🆕 NEW |
+| **MEDIUM** | KOF Testing | KOF End-to-End Deployment Validation | 🆕 NEW |
+| **MEDIUM** | KOF Testing | KOF Multi-Child Cluster Testing | 🆕 NEW |
+| **MEDIUM** | KOF Testing | KOF Observability Data Flow Verification | 🆕 NEW |
+| **LOW** | KOF Features | Custom Collector Configurations | 🆕 NEW |
+| **LOW** | KOF Features | Multi-Regional KOF Deployment Support | 🆕 NEW |
+| **LOW** | KOF Features | KOF Backup and Restore Capabilities | 🆕 NEW |
 | **FUTURE** | Future Ideas | Multi-Cluster Environment Management | 🆕 NEW |
 | **FUTURE** | Future Ideas | State Management Migration to Key-Value Store | 🆕 NEW |
-| **COMPLETED** | Bug Fixes | Bug 4: Missing reset capability in create-azure-vms.sh | ✅ FIXED |
-| **COMPLETED** | Bug Fixes | Bug 6: SSH keys not being cleaned up on reset | ✅ FIXED |
-| **COMPLETED** | Bug Fixes | Bug 8: VM creation failures not handled with recovery | ✅ FIXED |
-| **COMPLETED** | Bug Fixes | Bug 10: VM verification loop inefficiently rechecks | ✅ FIXED |
-| **COMPLETED** | Minor Enhancements | Configuration Validation System | ✅ COMPLETED |
-| **COMPLETED** | Minor Enhancements | ARM-based Configuration Examples | ✅ COMPLETED |
 
 ## High Priority Items
 
@@ -304,21 +304,7 @@ kcm    True    kcm-1-1-1   9m
 
 ### Future Ideas
 
-#### Azure Disk CSI Driver Integration
-**Priority**: High
-**Status**: 🔄 **IN PLANNING**
-
-**Description**: Integrate Azure Disk CSI Driver as the default storage provisioner for k0rdent deployments on Azure. This will enable persistent storage for applications like KOF that require PVCs.
-
-**Problem**: k0s clusters deployed on Azure have no storage provisioner, causing KOF components (Grafana, VictoriaMetrics) to fail due to unbound PVCs.
-
-**Implementation Plan**: Detailed plan available in `notebooks/AZURE-DISK-CSI-PLAN.md`
-
-**Key Components**:
-- Azure Disk CSI Driver installation after k0s deployment
-- Default storage class configuration (StandardSSD_LRS)
-- Integration with existing deployment scripts
-- State tracking for CSI installation
+[Moved completed items to the completed section]
 
 ## Medium Priority Items
 
@@ -1214,6 +1200,168 @@ kubeconfig/
 - Add metrics collection via NATS
 - Enable remote monitoring capabilities
 
+#### Extract KOF Deployment Logic into deploy-kof-stack.sh
+**Priority**: Low
+**Status**: 🆕 **NEW**
+
+**Description**: Extract the KOF deployment logic currently embedded in deploy-k0rdent.sh into a dedicated deploy-kof-stack.sh script for better modularity and maintainability.
+
+**Current Situation**:
+- KOF deployment is handled by deploy-k0rdent.sh with the `--with-kof` flag
+- Logic is embedded within the main orchestration script
+- Works well for current needs but could be more modular
+
+**Future Enhancement**:
+- Create `bin/deploy-kof-stack.sh` that orchestrates full KOF deployment
+- Move KOF-specific logic from deploy-k0rdent.sh
+- Maintain backward compatibility with `--with-kof` flag
+- Provide standalone KOF deployment capability
+
+**Benefits**:
+- Better separation of concerns
+- Easier to maintain KOF-specific logic
+- Allows independent KOF deployment/updates
+- Cleaner main deployment script
+
+**Implementation Approach**:
+1. Extract KOF deployment steps from deploy-k0rdent.sh
+2. Create orchestration script that calls existing KOF scripts in order
+3. Support partial deployments (mothership only, regional only, etc.)
+4. Include rollback capabilities
+5. Maintain integration with main deployment flow
+
+## KOF Testing and Validation
+
+### KOF End-to-End Deployment Validation
+**Priority**: Medium
+**Status**: 🆕 **NEW**
+
+**Description**: Comprehensive testing of the complete KOF deployment flow from mothership to child clusters.
+
+**Test Scenarios**:
+1. **Fresh Deployment**: Complete KOF stack on new k0rdent cluster
+2. **Incremental Deployment**: Add KOF to existing k0rdent cluster
+3. **Multi-Child Testing**: Deploy KOF across multiple child clusters
+4. **Failure Recovery**: Test deployment recovery from various failure points
+5. **Uninstall/Reinstall**: Clean removal and redeployment
+
+**Validation Points**:
+- Istio service mesh properly configured
+- KOF operators running and healthy
+- ClusterProfiles correctly applied
+- Metrics collection functioning
+- Cross-cluster communication working
+- Resource cleanup on uninstall
+
+### KOF Multi-Child Cluster Testing
+**Priority**: Medium
+**Status**: 🆕 **NEW**
+
+**Description**: Test KOF functionality across multiple child clusters to ensure proper scaling and federation.
+
+**Test Cases**:
+1. **Multiple Children per Regional**: Deploy 3-5 child clusters under one regional
+2. **Cross-Cluster Metrics**: Verify metrics flow from all children to regional
+3. **Label Management**: Test proper labeling and ClusterProfile application
+4. **Resource Isolation**: Ensure child clusters are properly isolated
+5. **Concurrent Deployments**: Deploy multiple children simultaneously
+
+**Success Criteria**:
+- All child clusters receive KOF components
+- Metrics aggregation works correctly
+- No resource conflicts between children
+- Proper namespace isolation maintained
+- Observability data flows correctly
+
+### KOF Observability Data Flow Verification
+**Priority**: Medium
+**Status**: 🆕 **NEW**
+
+**Description**: Verify that observability data (metrics, logs, traces) flows correctly through the KOF stack.
+
+**Verification Steps**:
+1. **Metrics Pipeline**: Test Prometheus/VictoriaMetrics data flow
+2. **Log Aggregation**: Verify log collection and forwarding
+3. **Trace Collection**: Test distributed tracing if configured
+4. **Data Retention**: Verify storage and retention policies
+5. **Query Performance**: Test Grafana dashboard responsiveness
+
+**Test Scenarios**:
+- Generate test metrics from child clusters
+- Verify data appears in regional cluster storage
+- Test data retention and cleanup
+- Validate dashboard functionality
+- Check alerting pipeline if configured
+
+## KOF Nice-to-Have Features
+
+### Custom Collector Configurations
+**Priority**: Low
+**Status**: 🆕 **NEW**
+
+**Description**: Support for custom metric collectors and exporters in KOF deployments.
+
+**Features**:
+- Custom Prometheus scrape configurations
+- Additional exporter deployments
+- Custom dashboard templates
+- Alert rule customization
+- Log parsing rules
+
+**Implementation Ideas**:
+- ConfigMap-based collector definitions
+- Helm values overlay support
+- Dynamic scrape target discovery
+- Custom dashboard provisioning
+- Alert routing configuration
+
+### Multi-Regional KOF Deployment Support
+**Priority**: Low
+**Status**: 🆕 **NEW**
+
+**Description**: Support for deploying KOF across multiple Azure regions with proper federation.
+
+**Capabilities**:
+- Deploy regional clusters in different Azure regions
+- Cross-region metrics federation
+- Global dashboard views
+- Region-specific resource optimization
+- Disaster recovery considerations
+
+**Technical Challenges**:
+- Cross-region networking
+- Data sovereignty compliance
+- Latency optimization
+- Cost management
+- Federation complexity
+
+### KOF Backup and Restore Capabilities
+**Priority**: Low
+**Status**: 🆕 **NEW**
+
+**Description**: Implement backup and restore functionality for KOF configuration and data.
+
+**Backup Scope**:
+- KOF configuration (ClusterProfiles, etc.)
+- Grafana dashboards and settings
+- Alert rules and configurations
+- Historical metrics data (optional)
+- Istio configurations
+
+**Features**:
+- Scheduled configuration backups
+- On-demand backup capability
+- Point-in-time restore
+- Selective component restore
+- Backup validation testing
+
+**Implementation Approach**:
+- Kubernetes resource backup (Velero integration?)
+- Persistent volume snapshots
+- Configuration export/import tools
+- Automated backup testing
+- Restore runbooks
+
 ## Future Ideas
 
 ### Multi-Cluster Environment Management
@@ -1334,119 +1482,6 @@ state_management:
 
 ## Completed Items
 
-### Bug Fixes
-
-#### Bug 4: Missing reset capability in create-azure-vms.sh (Regression)
-**Status**: ✅ **FIXED** - Resolved 2025-06-18
-**Priority**: ~~Medium~~ **COMPLETED**
-
-**Description**: ~~The script `bin/create-azure-vms.sh` does not have a reset argument and capability, unlike other scripts in the project that support `reset` functionality for cleanup.~~
-
-**Fix Applied**: Added `reset` command to create-azure-vms.sh with:
-- Single API call using `az vm list --output yaml` parsed with yq
-- Parallel VM deletion with `--no-wait` option
-- Optional wait for deletion completion (skippable with `--no-wait`)
-- State tracking for deleted VMs
-
-#### Bug 6: SSH keys not being cleaned up on reset
-**Status**: ✅ **FIXED** - Resolved in recent commits
-**Priority**: ~~Medium~~ **COMPLETED**
-
-**Description**: ~~SSH keys are not being cleaned up from the local filesystem when running reset operations.~~
-**Fix Applied**: SSH key cleanup implemented in setup-azure-network.sh reset function
-
-#### Bug 8: VM creation failures not handled with automatic recovery
-**Status**: ✅ **FIXED** - Resolved 2025-06-18
-**Priority**: ~~High~~ **COMPLETED**
-
-**Description**: ~~VM creation failures (both provisioning failures and cloud-init errors) are not automatically recovered, causing deployment to stall or continue with missing VMs.~~
-
-**Fix Applied**: Implemented "cattle not pets" methodology in create-azure-vms.sh:
-
-**VM Provisioning Failure Recovery**:
-- Detects VMs with `state == "Failed"` during the wait loop
-- Automatically deletes failed VMs with `az vm delete --no-wait`
-- Immediately recreates VM with same configuration
-- Tracks retry attempts (max 2 retries per VM)
-- Continues with deployment once VM is healthy
-
-**Cloud-init Failure Recovery**:
-- Added `check_cloud_init_error()` function to detect `status: error`
-- Triggers VM replacement when cloud-init errors are detected
-- Resets SSH verification status for recreated VMs
-- Tracks separate retry count for cloud-init failures (max 1 retry)
-
-**Implementation details**:
-- Enhanced VM wait loop with failure detection
-- Parallel deletion and recreation (no waiting for deletion)
-- State tracking for all retry attempts
-- Event logging for recreation attempts
-- Maintains deployment flow with automatic recovery
-
-**Benefits achieved**:
-- Fully automated recovery from transient Azure issues
-- No manual intervention required for common failures
-- Faster deployment with automatic issue resolution
-- Proper "cattle not pets" operations philosophy
-
-#### Bug 10: VM verification loop inefficiently rechecks already verified VMs
-**Status**: ✅ **FIXED** - Resolved 2025-06-18
-**Priority**: ~~Low~~ **COMPLETED**
-
-**Description**: ~~The VM monitoring loop in create-azure-vms.sh continues to recheck VMs that have already been verified as operational while waiting for other VMs to reach Succeeded state.~~
-
-**Fix Applied**: Added VM verification tracking system to create-azure-vms.sh:
-- **VM_VERIFIED array**: Tracks VMs that have passed both SSH connectivity and cloud-init validation
-- **Skip verification checks**: VMs marked as verified are skipped in subsequent monitoring loops
-- **Reset on recreation**: Verification status is reset when VMs are deleted and recreated due to failures
-- **Maintains retry logic**: Failed VMs continue to be monitored and recreated as needed
-
-**Implementation Details**:
-- Added `declare -A VM_VERIFIED` tracking array
-- Added verification check: `if [[ "${VM_VERIFIED[$HOST]:-}" == "true" ]]; then continue; fi`
-- Set verification flag: `VM_VERIFIED["$HOST"]="true"` after successful SSH + cloud-init validation
-- Reset verification flag: `VM_VERIFIED["$HOST"]="false"` when VMs are recreated
-
-**Benefits Achieved**:
-- Eliminated redundant SSH connection attempts to verified VMs
-- Reduced unnecessary cloud-init status checks on operational systems
-- Faster monitoring loop iterations focused on VMs needing attention
-- Cleaner deployment logs with less repetitive output
-- Reduced network overhead during multi-VM deployments
-
-**Performance Impact**: Significant improvement for large deployments with multiple VMs
-
-### Minor Enhancements
-
-#### Configuration Validation System
-**Status**: ✅ **COMPLETED** - Implemented in previous sessions
-**Priority**: ~~High~~ **COMPLETED**
-
-**Description**: ~~Pre-deployment configuration validation system~~
-
-**Implementation Completed**:
-- ✅ **Azure VM SKU availability validation**: Validates VM sizes are available in specified regions and zones
-- ✅ **Azure zone support validation**: Verifies availability zones are supported in target region
-- ✅ **Network configuration validation**: CIDR overlap detection and subnet validation
-- ✅ **Zone configuration validation**: Ensures zones exist in target region
-- ✅ **Interactive validation feedback**: Provides helpful error messages with suggested fixes
-- ✅ **Integration with deployment flow**: Runs validation before Azure resources are created
-- ✅ **Skip validation option**: `--skip-validation` flag for offline/faster operations
-
-**Benefits Achieved**: Prevents deployment failures from invalid configurations, provides early feedback on resource availability
-
-#### ARM-based Configuration Examples  
-**Status**: ✅ **COMPLETED** - Examples created
-**Priority**: ~~Low~~ **COMPLETED**
-
-**Description**: ~~Create ARM-optimized versions of existing configuration examples~~
-
-**Implementation Completed**:
-- ✅ `config/examples/production-arm64-southeastasia.yaml` - ARM64 production setup with Standard_D4pls_v6/D16pls_v6 VM sizes
-- ✅ `config/examples/production-arm64-southeastasia-spot.yaml` - ARM64 production with Spot instances
-- ✅ ARM64 Debian image support: `debian-12:12-arm64:latest`
-- ✅ ARM-optimized VM sizing configurations
-
-**Benefits Achieved**: Better performance/cost ratio for ARM workloads, native ARM64 support
+Completed items have been moved to `notebooks/completed/BACKLOG-COMPLETED.md`
 
 _Add other backlog items here as they come up during development..._

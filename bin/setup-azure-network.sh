@@ -102,9 +102,9 @@ show_status() {
 }
 
 deploy_resources() {
-    # Check prerequisites using generic framework
+    # Check script-specific prerequisites
+    # Note: Azure CLI is checked in bin/check-prerequisites.sh
     if ! check_prerequisites "setup-azure-network" \
-        "azure_cli:Azure CLI not available or not logged in:Run 'az login'" \
         "state_file:deployment state required:Run: bash bin/prepare-deployment.sh deploy"; then
         exit 1
     fi
