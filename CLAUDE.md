@@ -16,6 +16,7 @@ See `notebooks/KUBECONFIG-RETRIEVAL.md` for detailed documentation.
 - Do NOT run tests without confirmation
 - Ask before using git commit -A as frequently in this directory there are transient files we do NOT want to commit
 - When planning infrastructure, follow the pets vs cattle methodology and consider most cloud instances as cattle who can be easily replaced and that is the better solution than trying to spending excessive amounts of time troubleshooting transient problems
+- Always moved completed backlog items into notebooks/completed/BACKLOG-COMPLETED.md
 
 ## Development Environment
 

@@ -140,14 +140,10 @@ mark_setup_complete() {
     update_state "wg_laptop_config_created" "true"
 }
 
-# Enhanced prerequisite validation using generic framework
+# Script-specific prerequisite validation
 validate_full_prerequisites() {
-    if ! check_prerequisites "manage-vpn" \
-        "wireguard_tools:WireGuard tools not found:Install with: sudo apt install wireguard-tools (Linux) or brew install wireguard-tools (macOS)"; then
-        return 1
-    fi
-    
-    
+    # Note: WireGuard tools are checked in bin/check-prerequisites.sh
+    # This function now only validates script-specific prerequisites
     return 0
 }
 
@@ -221,8 +217,7 @@ generate_laptop_config_internal() {
     # Enhanced prerequisite validation
     validate_full_prerequisites
     
-    # Check Azure CLI and authentication
-    check_azure_cli
+    # Note: Azure CLI is checked in bin/check-prerequisites.sh
     
     # Check if Azure resources exist
     if ! check_azure_resource_exists "group" "$RG"; then
@@ -369,19 +364,9 @@ validate_connection_prerequisites() {
         exit 1
     fi
 
-    # Check if netcat is installed (needed for connectivity testing)
-    if ! command -v nc &> /dev/null; then
-        print_warning "netcat (nc) not found. Connectivity testing will be limited."
-        print_info "Install with: brew install netcat (macOS) or apt install netcat (Linux)"
-    fi
+    # Note: netcat is checked in bin/check-prerequisites.sh
 
-    # Check if wg-quick is available
-    if [[ -z "$WG_QUICK_PATH" ]] || [[ ! -x "$WG_QUICK_PATH" ]]; then
-        print_error "wg-quick not found. Please install WireGuard tools:"
-        echo "  macOS: brew install wireguard-tools"
-        echo "  Linux: apt install wireguard-tools"
-        exit 1
-    fi
+    # Note: wg-quick is checked in bin/check-prerequisites.sh
 }
 
 # Interactive GUI setup instructions

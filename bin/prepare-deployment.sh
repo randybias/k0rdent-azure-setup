@@ -14,26 +14,15 @@ source ./etc/common-functions.sh
 source ./etc/state-management.sh
 
 # Script-specific functions
-# Global prerequisites check (moved from deploy-k0rdent.sh)
+# Note: Global prerequisites are now checked by bin/check-prerequisites.sh
+# This function is kept for backward compatibility but just shows a message
 check_global_prerequisites() {
-    print_header "Checking Prerequisites"
-
-    # yq (required for state management)
-    check_yq_available
-    
-    # Azure CLI (for Azure operations)
-    check_azure_cli
-    
-    # WireGuard tools (for VPN setup)
-    check_wireguard_tools
-    
-    # k0sctl (critical for k0s deployment)
-    check_k0sctl
-    
-    # netcat (needed for connectivity testing)
-    check_netcat
-
-    print_success "All prerequisites satisfied"
+    print_info "Prerequisites should be checked using:"
+    print_info "  ./bin/check-prerequisites.sh"
+    print_info ""
+    print_info "Or via the main deployment script:"
+    print_info "  ./deploy-k0rdent.sh check"
+    return 0
 }
 
 show_usage() {
@@ -43,7 +32,6 @@ show_usage() {
   deploy       Generate both keys and cloud-init files
   reset        Remove all generated files
   status       Show generation status
-  check        Check prerequisites for deployment
   help         Show this help message" \
         "  -y, --yes        Skip confirmation prompts
   -q, --quiet      Suppress non-error output
@@ -126,8 +114,7 @@ show_status() {
 generate_wireguard_keys() {
     print_header "Generating WireGuard Keys"
     
-    # Check if WireGuard tools are installed
-    check_wireguard_tools
+    # Note: WireGuard tools are checked in bin/check-prerequisites.sh
     
     # Assign WireGuard IPs to all hosts (stores in state)
     print_info_quiet "Assigning WireGuard IP addresses..."
@@ -411,12 +398,11 @@ reset_preparation() {
 ORIGINAL_ARGS=("$@")
 
 # Use consolidated command handling
-handle_standard_commands "$0" "keys cloudinit deploy reset status check help" \
+handle_standard_commands "$0" "keys cloudinit deploy reset status help" \
     "keys" "generate_wireguard_keys" \
     "cloudinit" "generate_cloudinit_files" \
     "deploy" "deploy_preparation" \
     "reset" "reset_preparation" \
     "status" "show_status" \
-    "check" "check_global_prerequisites" \
     "help" "show_usage" \
     "usage" "show_usage"

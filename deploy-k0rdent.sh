@@ -145,7 +145,7 @@ run_deployment() {
     
     # Check prerequisites first
     print_info "Checking prerequisites..."
-    if ! bash bin/prepare-deployment.sh check; then
+    if ! bash bin/check-prerequisites.sh; then
         print_error "Prerequisites check failed. Please install missing tools and try again."
         exit 1
     fi
@@ -479,8 +479,7 @@ case "${POSITIONAL_ARGS[0]:-deploy}" in
         show_config
         ;;
     "check")
-        print_info "Prerequisites are checked in the preparation script:"
-        bash bin/prepare-deployment.sh check
+        bash bin/check-prerequisites.sh
         ;;
     "help"|"-h"|"--help")
         echo "Usage: $0 [command] [options]"
