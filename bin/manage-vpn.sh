@@ -95,7 +95,7 @@ show_comprehensive_status() {
         fi
     else
         # Linux: Check using wg show
-        if sudo wg show "$interface_name" &>/dev/null; then
+        if run_wg_command wg-show "$interface_name" &>/dev/null; then
             interface_active=true
             print_success "WireGuard interface active: $interface_name"
         fi
@@ -424,7 +424,7 @@ setup_wireguard_cli() {
             fi
         fi
     else
-        if sudo wg show "$interface_name" &>/dev/null; then
+        if run_wg_command wg-show "$interface_name" &>/dev/null; then
             print_warning "WireGuard interface '$interface_name' appears to be active"
             if [[ "$SKIP_PROMPTS" == "false" ]]; then
                 read -p "Do you want to restart the connection? (yes/no): " -r
@@ -445,7 +445,7 @@ setup_wireguard_cli() {
     # Start WireGuard interface
     print_info "Starting WireGuard interface: $interface_name"
     
-    if sudo "$WG_QUICK_PATH" up "$WG_CONFIG_FILE"; then
+    if run_wg_command wg-quick-up "$WG_CONFIG_FILE"; then
         print_success "WireGuard interface started successfully!"
         update_state "wg_vpn_connected" "true"
         add_event "vpn_connected" "WireGuard VPN connected successfully"
@@ -492,7 +492,7 @@ verify_and_show_connection_info() {
             fi
         fi
     else
-        if sudo wg show "$interface_name" &>/dev/null; then
+        if run_wg_command wg-show "$interface_name" &>/dev/null; then
             interface_active=true
             print_success "WireGuard interface is active: $interface_name"
             
@@ -524,7 +524,7 @@ test_wireguard_connectivity() {
     local interface_active=false
     
     # Just check if any WireGuard interface is up
-    if sudo wg show >/dev/null 2>&1; then
+    if run_wg_command wg-show >/dev/null 2>&1; then
         interface_active=true
         print_success "WireGuard interface is active"
     else
@@ -649,7 +649,7 @@ disconnect_wireguard() {
             interface_active=true
         fi
     else
-        if sudo wg show "$interface_name" &>/dev/null; then
+        if run_wg_command wg-show "$interface_name" &>/dev/null; then
             interface_active=true
         fi
     fi
@@ -707,7 +707,7 @@ reset_and_cleanup() {
                 shutdown_wireguard_interface "$WG_CONFIG_FILE"
             fi
         else
-            if sudo wg show "$interface_name" &>/dev/null; then
+            if run_wg_command wg-show "$interface_name" &>/dev/null; then
                 print_info "Disconnecting active WireGuard connection..."
                 shutdown_wireguard_interface "$interface_name"
             fi
