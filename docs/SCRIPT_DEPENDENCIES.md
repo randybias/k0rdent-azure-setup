@@ -12,6 +12,7 @@
 | **bin/install-k0s.sh** | - etc/common-functions.sh<br>- etc/state-management.sh | deploy-k0rdent.sh | Deploy k0s cluster |
 | **bin/install-k0rdent.sh** | - etc/common-functions.sh<br>- etc/state-management.sh | deploy-k0rdent.sh | Deploy k0rdent |
 | **bin/setup-azure-cluster-deployment.sh** | - etc/common-functions.sh<br>- etc/state-management.sh<br>- etc/azure-cluster-functions.sh | deploy-k0rdent.sh (--with-azure-children) | Setup Azure child cluster capability |
+| **bin/setup-aws-cluster-deployment.sh** | - etc/common-functions.sh<br>- etc/state-management.sh | User (manual) | Setup AWS child cluster capability |
 | **bin/install-k0s-azure-csi.sh** | - etc/common-functions.sh<br>- etc/state-management.sh | deploy-k0rdent.sh (--with-kof) | Install Azure Disk CSI Driver |
 | **bin/install-kof-mothership.sh** | - etc/common-functions.sh<br>- etc/state-management.sh<br>- etc/kof-functions.sh | deploy-k0rdent.sh (--with-kof) | Deploy KOF mothership |
 | **bin/install-kof-regional.sh** | - etc/common-functions.sh<br>- etc/state-management.sh<br>- etc/kof-functions.sh<br>- etc/azure-cluster-functions.sh | deploy-k0rdent.sh (--with-kof) | Deploy KOF regional cluster |

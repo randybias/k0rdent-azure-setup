@@ -146,7 +146,7 @@ Required tools:
    sudo yum install jq
    ```
 
-7. **Azure CLI** installed and authenticated:
+7. **Azure CLI** installed and authenticated (for Azure deployments):
    ```bash
    # Install Azure CLI (if needed)
    # macOS: brew install azure-cli
@@ -156,7 +156,16 @@ Required tools:
    az login
    ```
 
-8. **WireGuard tools** installed:
+8. **AWS CLI** installed (for AWS child cluster deployments):
+   ```bash
+   # Install AWS CLI (if needed)
+   # macOS: brew install awscli
+   # Linux: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
+   
+   # Note: Authentication handled by setup-aws-cluster-deployment.sh
+   ```
+
+9. **WireGuard tools** installed:
    ```bash
    # macOS
    brew install wireguard-tools
@@ -168,7 +177,7 @@ Required tools:
    sudo yum install wireguard-tools
    ```
 
-9. **k0sctl** - k0s cluster management tool:
+10. **k0sctl** - k0s cluster management tool:
    ```bash
    # Download latest release
    # macOS/Linux
@@ -177,7 +186,7 @@ Required tools:
    sudo mv k0sctl /usr/local/bin/
    ```
 
-10. **netcat (nc)** - Network connectivity tool:
+11. **netcat (nc)** - Network connectivity tool:
    ```bash
    # Usually pre-installed, but if missing:
    # macOS: brew install netcat
@@ -185,7 +194,7 @@ Required tools:
    # CentOS/RHEL: sudo yum install nc
    ```
 
-11. **kubectl** - Kubernetes command-line tool:
+12. **kubectl** - Kubernetes command-line tool:
    ```bash
    # macOS
    brew install kubectl
@@ -601,6 +610,7 @@ k0rdent-azure-setup/
 │   ├── validate-pod-network.sh # Pod-to-pod network connectivity validation
 │   ├── install-k0rdent.sh      # k0rdent installation on cluster
 │   ├── setup-azure-cluster-deployment.sh  # Azure child cluster capability
+│   ├── setup-aws-cluster-deployment.sh    # AWS child cluster capability
 │   ├── install-k0s-azure-csi.sh          # Azure Disk CSI Driver installation
 │   ├── install-kof-mothership.sh         # KOF mothership deployment
 │   ├── install-kof-regional.sh           # KOF regional cluster deployment
@@ -727,6 +737,86 @@ Each script supports standardized arguments and reset functionality:
 
 # Or use the main script to reset everything
 ./deploy-k0rdent.sh reset -y
+```
+
+## Child Cluster Deployment
+
+k0rdent can deploy child clusters to both Azure and AWS cloud providers after proper credential configuration.
+
+### Azure Child Cluster Setup
+
+Use `setup-azure-cluster-deployment.sh` to configure k0rdent with Azure credentials:
+
+```bash
+# Configure Azure credentials
+./bin/setup-azure-cluster-deployment.sh setup
+
+# Check status
+./bin/setup-azure-cluster-deployment.sh status
+
+# Remove Azure credentials
+./bin/setup-azure-cluster-deployment.sh cleanup
+```
+
+This script:
+- Creates an Azure Service Principal with Contributor role
+- Configures AzureClusterIdentity for CAPZ (Cluster API Azure)
+- Creates k0rdent Credential object for cluster deployments
+- Manages all Azure-specific resource templates
+
+### AWS Child Cluster Setup
+
+Use `setup-aws-cluster-deployment.sh` to configure k0rdent with AWS credentials:
+
+```bash
+# Configure AWS credentials with IAM role/user ARN
+./bin/setup-aws-cluster-deployment.sh setup --role-arn arn:aws:iam::123456789012:role/k0rdent-capa-role
+
+# Using IAM user with credentials file
+./bin/setup-aws-cluster-deployment.sh setup --role-arn arn:aws:iam::025066280552:user/k0rdent-user --region us-east-1
+
+# Check status
+./bin/setup-aws-cluster-deployment.sh status
+
+# Remove AWS credentials
+./bin/setup-aws-cluster-deployment.sh cleanup
+```
+
+Options:
+- `--role-arn ARN` (REQUIRED): ARN of pre-created IAM role or user
+- `--region REGION`: AWS region (default: us-east-1)
+- `--profile-name NAME`: AWS CLI profile name
+- `--source-profile NAME`: Source profile for role assumption
+
+#### AWS Prerequisites
+
+1. **IAM Role/User**: Must be manually created in AWS Console with these policies:
+   - `control-plane.cluster-api-provider-aws.sigs.k8s.io`
+   - `controllers.cluster-api-provider-aws.sigs.k8s.io`
+   - `nodes.cluster-api-provider-aws.sigs.k8s.io`
+   - `controllers-eks.cluster-api-provider-aws.sigs.k8s.io`
+
+2. **For IAM Roles**: Configure trust relationship to allow your AWS account to assume the role
+
+3. **For IAM Users**: Generate access keys and save to `k0rdent-<username>_accessKeys.csv`
+
+The script:
+- Configures AWS CLI for role assumption (when using roles)
+- Uses temporary STS credentials (for roles) or permanent keys (for users)
+- Creates AWSClusterStaticIdentity for CAPA (Cluster API AWS)
+- Creates k0rdent Credential object for cluster deployments
+- NO programmatic IAM creation - all AWS resources must be pre-created
+
+### Creating Child Clusters
+
+After configuring cloud credentials, use the standard k0rdent process:
+
+```bash
+# Create an Azure child cluster
+./bin/create-child.sh create --name my-azure-cluster --provider azure
+
+# Create an AWS child cluster
+./bin/create-child.sh create --name my-aws-cluster --provider aws
 ```
 
 ## Script Features
