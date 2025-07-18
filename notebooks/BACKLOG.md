@@ -13,6 +13,8 @@ This file tracks future enhancements and improvements that are not currently pri
 | **HIGH** | Minor Enhancements | Distribute kubeconfig to all k0rdent user home directories | 🆕 NEW |
 | **HIGH** | Minor Enhancements | Idempotent Deployment Process with Clear Logging | 🆕 NEW |
 | **HIGH** | Minor Enhancements | Add Deployment Timing Metrics | 🆕 NEW |
+| **HIGH** | Minor Enhancements | Create delete-all-child-clusters.sh with filtering (namespace, cloud, region) | 🆕 NEW |
+| **HIGH** | Minor Enhancements | Add credential verification step to AWS and Azure setup scripts | 🆕 NEW |
 | **MEDIUM** | Bug Fixes | Bug 3: Incorrect validation requiring at least 1 worker node | 🆕 NEW |
 | **MEDIUM** | Bug Fixes | Bug 7: Inconsistent controller naming convention | 🆕 NEW |
 | **MEDIUM** | Bug Fixes | Bug 12: Reset with --force doesn't clean up local state files | 🆕 NEW |
@@ -29,6 +31,7 @@ This file tracks future enhancements and improvements that are not currently pri
 | **MEDIUM** | Minor Enhancements | Migrate from WireGuard to Nebula Mesh VPN | 🆕 NEW |
 | **LOW** | Bug Fixes | Bug 5: VPN connectivity check hangs during reset | ⚠️ NEEDS TESTING |
 | **LOW** | Bug Fixes | Bug 11: Cloud-init success doesn't guarantee WireGuard setup | 🆕 NEW |
+| **LOW** | Bug Fixes | Bug 15: Old deployment files not being cleaned up | 🆕 NEW |
 | **LOW** | Minor Enhancements | Scoped Azure credentials management | 🆕 NEW |
 | **LOW** | Minor Enhancements | Bicep-Based Multi-VM Deployment | 🆕 NEW |
 | **LOW** | Minor Enhancements | Configuration Management Enhancements | 🆕 NEW |
@@ -39,6 +42,7 @@ This file tracks future enhancements and improvements that are not currently pri
 | **LOW** | Minor Enhancements | Evaluate Nushell for Bash Script Rewrites | 🆕 NEW |
 | **LOW** | Minor Enhancements | direnv Integration | Optional |
 | **LOW** | Minor Enhancements | Azure VM Launch Manager with NATS | 🆕 NEW |
+| **LOW** | Minor Enhancements | Add help arg and instructions to bin/create-child.sh | 🆕 NEW |
 | **LOW** | KOF Features | Extract KOF deployment logic into deploy-kof-stack.sh | 🆕 NEW |
 | **MEDIUM** | Documentation | Create k0rdent Architecture Overview | 🆕 NEW |
 | **MEDIUM** | KOF Testing | KOF End-to-End Deployment Validation | 🆕 NEW |
@@ -373,6 +377,90 @@ Phase Timing Summary:
 - k0s Installation: 8 minutes 20 seconds
 - k0rdent Installation: 2 minutes 10 seconds
 ```
+
+#### Add credential verification step to AWS and Azure setup scripts
+**Priority**: High
+**Status**: 🆕 **NEW**
+
+**Description**: Add credential verification to both AWS and Azure setup scripts to ensure credentials are valid and have necessary permissions before creating k0rdent resources.
+
+**Current Behavior**:
+- Scripts create Kubernetes secrets and identity resources without verifying credentials work
+- Invalid credentials only discovered when child cluster creation fails
+- No early validation of permissions or access
+
+**Expected Behavior**:
+- Verify credentials can authenticate to cloud provider
+- Check basic permissions (list resources, create VMs, etc.)
+- Provide clear error messages if credentials are invalid
+- Only create k0rdent resources after verification passes
+
+**Implementation Requirements**:
+
+1. **Azure Verification** (`bin/setup-azure-cluster-deployment.sh`):
+   - Test Service Principal authentication using `az login`
+   - Verify subscription access with `az account show`
+   - Check basic permissions like `az vm list` or `az group list`
+   - Clear error messages for common issues (expired credentials, wrong tenant, etc.)
+
+2. **AWS Verification** (`bin/setup-aws-cluster-deployment.sh`):
+   - Test IAM role assumption or IAM user credentials
+   - Use `aws sts get-caller-identity` to verify authentication
+   - Check basic permissions like `aws ec2 describe-instances`
+   - Handle both role assumption and direct IAM user scenarios
+   - Clear error messages for authentication failures
+
+3. **Common Features**:
+   - Add `--skip-verification` flag for cases where verification might fail but credentials are valid
+   - Log verification results clearly
+   - Exit early with helpful error messages on failure
+   - Consider adding permission requirement documentation
+
+**Example Implementation**:
+```bash
+# Azure verification
+verify_azure_credentials() {
+    log_info "Verifying Azure credentials..."
+    
+    if ! az account show --subscription "$SUBSCRIPTION_ID" &>/dev/null; then
+        log_error "Failed to access subscription $SUBSCRIPTION_ID"
+        log_error "Please verify your Service Principal has access to this subscription"
+        return 1
+    fi
+    
+    if ! az vm list --subscription "$SUBSCRIPTION_ID" &>/dev/null; then
+        log_warning "Unable to list VMs - credentials may lack necessary permissions"
+    fi
+    
+    log_success "Azure credentials verified successfully"
+}
+
+# AWS verification
+verify_aws_credentials() {
+    log_info "Verifying AWS credentials..."
+    
+    if ! aws sts get-caller-identity --profile "$PROFILE_NAME" &>/dev/null; then
+        log_error "Failed to authenticate with AWS"
+        log_error "Please verify your IAM role or credentials are configured correctly"
+        return 1
+    fi
+    
+    if ! aws ec2 describe-instances --profile "$PROFILE_NAME" --max-results 1 &>/dev/null; then
+        log_warning "Unable to describe EC2 instances - credentials may lack necessary permissions"
+    fi
+    
+    log_success "AWS credentials verified successfully"
+}
+```
+
+**Benefits**:
+- Early detection of credential issues
+- Better user experience with clear error messages
+- Prevents creation of invalid k0rdent resources
+- Reduces debugging time for authentication issues
+- Helps identify permission problems before deployment
+
+**Impact**: High priority as it significantly improves the user experience and prevents confusing failures during child cluster creation.
 
 ### Future Ideas
 
@@ -941,6 +1029,62 @@ kubectl config current-context
 
 **Impact**: Reduces deployment reliability, requires manual intervention, potential k0s installation failures
 
+#### Bug 15: Old deployment files not being cleaned up
+**Status**: 🆕 **NEW**
+**Priority**: Low
+
+**Description**: Old event and state files from previous deployments are not being properly cleaned up, leading to accumulation of stale files over time.
+
+**Current Issues**:
+- Old deployment state files remain in the `state/` directory
+- Previous event logs accumulate without cleanup
+- No automatic archival or rotation mechanism
+- Manual cleanup required to manage disk space
+- Potential confusion with multiple old state files present
+
+**Files Affected**:
+- `state/deployment-state.yaml` from previous runs
+- `state/deployment-events.yaml` from previous runs
+- Any temporary state files created during deployment
+- Potentially other deployment artifacts
+
+**Expected Behavior**:
+- Old state files should be moved to `old_deployments/` at start of new deployment
+- Automatic cleanup of very old archived deployments (e.g., older than 30 days)
+- Option to control retention period
+- Clear separation between current and historical state
+
+**Implementation Requirements**:
+- Add cleanup logic to deployment initialization
+- Implement file rotation/archival mechanism
+- Add configurable retention policy
+- Ensure current deployment files are never deleted
+- Add cleanup command for manual maintenance
+
+**Proposed Solution**:
+1. **On New Deployment Start**:
+   - Check for existing state files
+   - Archive to timestamped directory under `old_deployments/`
+   - Clean state directory for new deployment
+
+2. **Retention Policy**:
+   - Keep last N deployments (configurable, default: 10)
+   - Delete archives older than X days (configurable, default: 30)
+   - Never delete if only one deployment exists
+
+3. **Manual Cleanup Command**:
+   - Add `--cleanup-old` flag to deployment script
+   - Provide dry-run option to see what would be deleted
+   - Allow force cleanup of all old deployments
+
+**Benefits**:
+- Prevents disk space issues from accumulated files
+- Cleaner working directory
+- Easier to identify current vs old deployments
+- Maintains useful history while removing ancient data
+
+**Impact**: Low priority as it doesn't affect functionality, but good housekeeping practice for long-term usage.
+
 ### Minor Enhancements
 
 #### Scoped Azure credentials management
@@ -1271,6 +1415,60 @@ kubeconfig/
 - Implement distributed tracing
 - Add metrics collection via NATS
 - Enable remote monitoring capabilities
+
+#### Add help arg and instructions to bin/create-child.sh
+**Priority**: Low
+**Status**: 🆕 **NEW**
+
+**Description**: Add a help argument and comprehensive usage instructions to the `bin/create-child.sh` script for better user experience.
+
+**Current State**:
+- Script lacks help documentation
+- No usage examples or parameter descriptions
+- Users must read script source to understand options
+
+**Implementation Requirements**:
+- Add `-h` and `--help` argument handling
+- Implement comprehensive usage output including:
+  - Script description and purpose
+  - All available arguments and their descriptions
+  - Required vs optional parameters
+  - Usage examples for common scenarios
+  - Prerequisites and dependencies
+- Follow existing help format patterns from other scripts
+
+**Example Help Output**:
+```
+Usage: create-child.sh [OPTIONS] --cluster-name NAME
+
+Create a new child cluster managed by k0rdent
+
+Options:
+  -h, --help                Show this help message
+  --cluster-name NAME       Name for the child cluster (required)
+  --location LOCATION       Azure region (default: inherits from config)
+  --vm-size SIZE           VM instance size (default: Standard_A4_v2)
+  --node-count COUNT       Number of nodes (default: 3)
+  --dry-run                Show what would be created without executing
+
+Examples:
+  # Create a basic child cluster
+  ./bin/create-child.sh --cluster-name my-child
+
+  # Create cluster with specific VM size and location
+  ./bin/create-child.sh --cluster-name prod-child --location westus2 --vm-size Standard_D4s_v3
+
+Prerequisites:
+  - k0rdent management cluster must be deployed
+  - Valid kubeconfig for management cluster
+  - Azure credentials configured
+```
+
+**Benefits**:
+- Better user experience
+- Self-documenting script
+- Reduced support questions
+- Consistent with other script patterns
 
 #### Extract KOF Deployment Logic into deploy-kof-stack.sh
 **Priority**: Low
