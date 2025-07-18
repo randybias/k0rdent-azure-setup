@@ -28,6 +28,8 @@ This file tracks future enhancements and improvements that are not currently pri
 | **MEDIUM** | Minor Enhancements | Documentation Improvements | 🆕 NEW |
 | **MEDIUM** | Minor Enhancements | Versioning System | 🆕 NEW |
 | **MEDIUM** | Minor Enhancements | Cloud Provider Abstraction | 🆕 NEW |
+| **MEDIUM** | Minor Enhancements | Add support for Google child deployments | 🆕 NEW |
+| **MEDIUM** | Minor Enhancements | Refactor create-child scripts to extract common components | 🆕 NEW |
 | **MEDIUM** | Minor Enhancements | Migrate from WireGuard to Nebula Mesh VPN | 🆕 NEW |
 | **LOW** | Bug Fixes | Bug 5: VPN connectivity check hangs during reset | ⚠️ NEEDS TESTING |
 | **LOW** | Bug Fixes | Bug 11: Cloud-init success doesn't guarantee WireGuard setup | 🆕 NEW |
@@ -897,6 +899,119 @@ kubectl config current-context
   - Move Azure-specific commands to dedicated modules
   - Design plugin architecture for cloud providers
   - Enable configuration-driven provider selection
+
+#### Add support for Google child deployments
+**Priority**: Medium
+**Status**: 🆕 **NEW**
+
+**Description**: Add support for creating Google Cloud Platform (GCP) child clusters through k0rdent, extending the existing Azure and AWS capabilities.
+
+**Current State**:
+- k0rdent supports Azure and AWS child cluster deployments
+- Google Cloud provider integration is missing
+- No scripts or templates for GCP child clusters
+
+**Implementation Requirements**:
+1. **Create GCP Setup Script** (`bin/setup-gcp-cluster-deployment.sh`):
+   - Service account credential configuration
+   - GCP project validation
+   - Create GCPClusterIdentity resource
+   - Configure necessary IAM roles and permissions
+   - Credential verification before resource creation
+
+2. **GCP Provider Integration**:
+   - Add GCP provider support to k0rdent
+   - Create ClusterDeployment templates for GCP
+   - Support for GCP compute instances
+   - VPC and networking configuration
+   - Zone/region selection support
+
+3. **Configuration Support**:
+   - Add GCP section to configuration YAML
+   - Support for GCP-specific instance types
+   - Region and zone mapping
+   - Project ID configuration
+
+4. **Testing and Documentation**:
+   - Test GCP child cluster creation
+   - Update documentation with GCP examples
+   - Add GCP-specific troubleshooting guide
+   - Verify k0rdent management of GCP clusters
+
+**Benefits**:
+- Complete multi-cloud support (Azure, AWS, GCP)
+- Consistent interface across all major cloud providers
+- Enables hybrid cloud deployments
+- Broader adoption potential
+
+**Technical Considerations**:
+- GCP authentication model differs from Azure/AWS
+- Instance type naming conventions vary
+- Network architecture differences
+- Cost optimization strategies per provider
+
+#### Refactor create-child scripts to extract common components
+**Priority**: Medium
+**Status**: 🆕 **NEW**
+
+**Description**: Refactor the create-child scripts to extract common components into a single support script, leaving only cloud-specific pieces in the per-cloud scripts.
+
+**Current State**:
+- Separate scripts for Azure (`create-azure-child.sh`) and AWS (`create-aws-child.sh`)
+- Significant code duplication between scripts
+- Common logic mixed with cloud-specific implementation
+- Maintenance burden when updating common functionality
+
+**Proposed Architecture**:
+1. **Common Support Script** (`etc/child-cluster-common.sh`):
+   - Cluster name validation and generation
+   - k0rdent API interactions
+   - ClusterDeployment resource creation
+   - State tracking and management
+   - Kubeconfig retrieval logic
+   - Error handling and logging
+   - Common validation functions
+
+2. **Cloud-Specific Scripts** (minimal):
+   - Cloud credential validation
+   - Provider-specific template selection
+   - Cloud-specific parameter validation
+   - Call common functions with provider context
+
+**Implementation Plan**:
+1. **Analysis Phase**:
+   - Identify all common code between existing scripts
+   - Document cloud-specific requirements
+   - Design common function interfaces
+
+2. **Extraction Phase**:
+   - Create `etc/child-cluster-common.sh`
+   - Move common functions with parameters for cloud-specific values
+   - Create standardized interfaces for cloud providers
+
+3. **Refactor Phase**:
+   - Update `create-azure-child.sh` to use common functions
+   - Update `create-aws-child.sh` to use common functions
+   - Ensure backward compatibility
+
+4. **Extension Phase**:
+   - Template for new cloud providers (GCP, etc.)
+   - Documentation for adding new providers
+   - Testing framework for all providers
+
+**Benefits**:
+- Reduced code duplication
+- Easier maintenance and updates
+- Consistent behavior across cloud providers
+- Simpler addition of new cloud providers
+- Single source of truth for child cluster logic
+- Better testing coverage
+
+**Technical Considerations**:
+- Maintain existing script interfaces
+- Preserve all current functionality
+- Clear separation of concerns
+- Extensible design for future providers
 
 #### Create k0rdent Architecture Overview
 **Priority**: Medium
