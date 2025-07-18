@@ -16,6 +16,7 @@ AZURE_EVENTS_FILE="$STATE_DIR/azure-events.yaml"
 
 # Archive existing state files to old_deployments
 archive_existing_state() {
+    local reason="${1:-deployment}"  # Default reason is "deployment"
     local timestamp=$(date +%Y-%m-%d_%H-%M-%S)
     local old_deployments_dir="./old_deployments"
     
@@ -31,7 +32,7 @@ archive_existing_state() {
     fi
     
     # Create archive directory name
-    local archive_dir="${old_deployments_dir}/${deployment_id}_${timestamp}"
+    local archive_dir="${old_deployments_dir}/${deployment_id}_${timestamp}_${reason}"
     
     # Create archive directory
     mkdir -p "$archive_dir"
@@ -63,9 +64,6 @@ archive_existing_state() {
 init_deployment_state() {
     local deployment_id="$1"
     local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    
-    # Archive existing state files before creating new ones
-    archive_existing_state
     
     # Ensure state directory exists
     mkdir -p "$STATE_DIR"
@@ -430,14 +428,26 @@ populate_wg_ips_array() {
         return 1
     fi
     
+    # Check if wireguard_peers exists in state file
+    local has_peers=$(yq eval 'has("wireguard_peers")' "$DEPLOYMENT_STATE_FILE" 2>/dev/null)
+    if [[ "$has_peers" != "true" ]]; then
+        # No wireguard peers yet, return silently
+        return 0
+    fi
+    
     # Get all peer names and their IPs
     local peers
     peers=$(yq eval '.wireguard_peers | keys | .[]' "$DEPLOYMENT_STATE_FILE" 2>/dev/null)
     
+    # Handle empty or null peers gracefully
+    if [[ -z "$peers" || "$peers" == "null" ]]; then
+        return 0
+    fi
+    
     while IFS= read -r peer; do
         if [[ -n "$peer" && "$peer" != "null" ]]; then
             local ip=$(yq eval ".wireguard_peers.${peer}.ip" "$DEPLOYMENT_STATE_FILE" 2>/dev/null)
-            if [[ "$ip" != "null" ]]; then
+            if [[ "$ip" != "null" && -n "$ip" ]]; then
                 WG_IPS["$peer"]="$ip"
             fi
         fi

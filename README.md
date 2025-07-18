@@ -447,7 +447,7 @@ kof:
   
   # Regional cluster configuration
   regional:
-    cluster_name: ""  # Will default to ${K0RDENT_PREFIX}-regional
+    cluster_name: ""  # Will default to ${K0RDENT_CLUSTERID}-regional
     domain: "regional.example.com"  # Required for KOF regional cluster
     admin_email: "admin@example.com"  # Required for KOF certificates
     location: "southeastasia"  # Azure region for regional cluster

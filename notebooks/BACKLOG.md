@@ -21,7 +21,7 @@ This file tracks future enhancements and improvements that are not currently pri
 | **MEDIUM** | Bug Fixes | Bug 12: Reset with --force doesn't clean up local state files | 🆕 NEW |
 | **MEDIUM** | Bug Fixes | Bug 13: State not being archived to old_deployments | 🆕 NEW |
 | **MEDIUM** | Bug Fixes | Bug 14: Fast reset option for development workflows | 🆕 NEW |
-| **MEDIUM** | Minor Enhancements | Rationalize PREFIX/SUFFIX to CLUSTERID | 🆕 NEW |
+| **MEDIUM** | Minor Enhancements | Rationalize CLUSTERID to CLUSTERID | 🆕 NEW |
 | **MEDIUM** | Minor Enhancements | Rethink child cluster state management architecture | 🆕 NEW |
 | **MEDIUM** | Minor Enhancements | Azure API Optimization with Local Caching | 🆕 NEW |
 | **MEDIUM** | Minor Enhancements | Azure CLI Output Format Standardization | 🆕 NEW |
@@ -688,20 +688,20 @@ old_deployments/
 
 ### Minor Enhancements
 
-#### Rationalize and normalize PREFIX and SUFFIX to become CLUSTERID everywhere
+#### Rationalize and normalize CLUSTERID to become CLUSTERID everywhere
 **Priority**: Medium
 **Status**: 🆕 **NEW**
 
-**Description**: The codebase currently uses both PREFIX and SUFFIX concepts for cluster identification, which creates confusion and inconsistency. These should be unified into a single CLUSTERID concept throughout the codebase.
+**Description**: The codebase currently uses both CLUSTERID concepts for cluster identification, which creates confusion and inconsistency. These should be unified into a single CLUSTERID concept throughout the codebase.
 
 **Current Issues**:
-- `K0RDENT_PREFIX` contains the full cluster identifier (e.g., "k0rdent-wuwrp8f0")
+- `K0RDENT_CLUSTERID` contains the full cluster identifier (e.g., "k0rdent-wuwrp8f0")
 - Suffix is extracted from prefix in various places
 - Naming is inconsistent and confusing
 - Different scripts handle the prefix/suffix differently
 
 **Proposed Changes**:
-- Replace `K0RDENT_PREFIX` with `K0RDENT_CLUSTERID` throughout
+- Replace `K0RDENT_CLUSTERID` with `K0RDENT_CLUSTERID` throughout
 - Remove all suffix extraction logic
 - Use consistent naming: `${K0RDENT_CLUSTERID}` everywhere
 - Update all references in scripts, configs, and state files
@@ -864,14 +864,14 @@ regions:
 **Description**: Create a sourceable shell script in the k0sctl-config directory that properly sets the KUBECONFIG environment variable for easy cluster access.
 
 **Current Situation**:
-- Kubeconfig file is generated at `./k0sctl-config/${K0RDENT_PREFIX}-kubeconfig`
+- Kubeconfig file is generated at `./k0sctl-config/${K0RDENT_CLUSTERID}-kubeconfig`
 - Users must manually set KUBECONFIG or use --kubeconfig flag
 - No convenient way to quickly set up shell environment for cluster access
 
 **Proposed Solution**:
 Create a file `./k0sctl-config/kubeconfig-env.sh` (or similar) that contains:
 ```bash
-export KUBECONFIG="$(pwd)/k0sctl-config/${K0RDENT_PREFIX}-kubeconfig"
+export KUBECONFIG="$(pwd)/k0sctl-config/${K0RDENT_CLUSTERID}-kubeconfig"
 ```
 
 **Implementation Details**:
@@ -883,7 +883,7 @@ export KUBECONFIG="$(pwd)/k0sctl-config/${K0RDENT_PREFIX}-kubeconfig"
 **Enhanced Version Could Include**:
 ```bash
 # Set kubeconfig
-export KUBECONFIG="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/${K0RDENT_PREFIX}-kubeconfig"
+export KUBECONFIG="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/${K0RDENT_CLUSTERID}-kubeconfig"
 
 # Helpful aliases
 alias k='kubectl'

@@ -14,7 +14,7 @@ source ./etc/state-management.sh
 
 # Output directory and file
 K0SCTL_DIR="./k0sctl-config"
-KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_PREFIX}-kubeconfig"
+KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_CLUSTERID}-kubeconfig"
 
 # Script-specific functions
 show_usage() {
@@ -41,7 +41,7 @@ uninstall_k0rdent() {
     fi
     
     # Find SSH private key
-    SSH_KEY_PATH=$(find ./azure-resources -name "${K0RDENT_PREFIX}-ssh-key" -type f 2>/dev/null | head -1)
+    SSH_KEY_PATH=$(find ./azure-resources -name "${K0RDENT_CLUSTERID}-ssh-key" -type f 2>/dev/null | head -1)
     
     if [[ -n "$SSH_KEY_PATH" ]]; then
         # Get the first controller IP
@@ -78,9 +78,9 @@ if ! check_file_exists "$KUBECONFIG_FILE" "Kubeconfig file"; then
 fi
 
 # Find SSH private key
-SSH_KEY_PATH=$(find ./azure-resources -name "${K0RDENT_PREFIX}-ssh-key" -type f 2>/dev/null | head -1)
+SSH_KEY_PATH=$(find ./azure-resources -name "${K0RDENT_CLUSTERID}-ssh-key" -type f 2>/dev/null | head -1)
 if [[ -z "$SSH_KEY_PATH" ]]; then
-    print_error "SSH private key not found. Expected: ./azure-resources/${K0RDENT_PREFIX}-ssh-key"
+    print_error "SSH private key not found. Expected: ./azure-resources/${K0RDENT_CLUSTERID}-ssh-key"
     print_info "Run: ./setup-azure-network.sh"
     exit 1
 fi
@@ -96,15 +96,29 @@ if [[ "$COMMAND" == "deploy" ]]; then
     add_event "k0rdent_installation_started" "Starting k0rdent installation process"
     
     # Get the first controller IP
-    CONTROLLER_IP="${WG_IPS[k0s-controller]}"
+    # Find the first controller node
+    local controller_name=""
+    for host in "${VM_HOSTS[@]}"; do
+        if [[ "${VM_TYPE_MAP[$host]}" == "controller" ]]; then
+            controller_name="$host"
+            break
+        fi
+    done
     
-    print_info "Testing SSH connectivity to controller node..."
+    if [[ -z "$controller_name" ]]; then
+        print_error "No controller node found in configuration"
+        exit 1
+    fi
+    
+    CONTROLLER_IP="${WG_IPS[$controller_name]}"
+    
+    print_info "Testing SSH connectivity to controller node $controller_name..."
     if ! execute_remote_command "$CONTROLLER_IP" "echo 'SSH OK'" "Test SSH to controller" 10 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null; then
         print_error "Cannot connect to controller node. Ensure WireGuard VPN is connected."
         exit 1
     fi
     
-    print_info "Installing Helm on controller node k0s-controller..."
+    print_info "Installing Helm on controller node $controller_name..."
     if execute_remote_command "$CONTROLLER_IP" "command -v helm" "Check if Helm is installed" 10 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null; then
         print_success "Helm already installed"
     else
@@ -183,7 +197,7 @@ show_status() {
     print_header "k0rdent Installation Status"
     
     # Find SSH private key
-    SSH_KEY_PATH=$(find ./azure-resources -name "${K0RDENT_PREFIX}-ssh-key" -type f 2>/dev/null | head -1)
+    SSH_KEY_PATH=$(find ./azure-resources -name "${K0RDENT_CLUSTERID}-ssh-key" -type f 2>/dev/null | head -1)
     
     if [[ -n "$SSH_KEY_PATH" ]]; then
         # Get the first controller IP

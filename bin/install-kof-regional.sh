@@ -16,7 +16,7 @@ source ./etc/azure-cluster-functions.sh  # Azure cluster deployment with retry l
 
 # Output directory and file (reuse from k0rdent)
 K0SCTL_DIR="./k0sctl-config"
-KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_PREFIX}-kubeconfig"
+KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_CLUSTERID}-kubeconfig"
 
 # Script-specific functions
 show_usage() {
@@ -159,8 +159,8 @@ deploy_kof_regional() {
     local kof_version=$(get_kof_config "version" "1.1.0")
     local location=$(get_kof_config "regional.location" "eastus")
     # Generate regional cluster name with location
-    # Extract just the suffix part from K0RDENT_PREFIX (remove "k0rdent-" prefix)
-    local prefix_suffix="${K0RDENT_PREFIX#k0rdent-}"
+    # Extract just the suffix part from K0RDENT_CLUSTERID (remove "k0rdent-" prefix)
+    local prefix_suffix="${K0RDENT_CLUSTERID#k0rdent-}"
     local regional_cluster_name=$(get_kof_config "regional.cluster_name" "kof-regional-${prefix_suffix}-${location}")
     local regional_domain=$(get_kof_config "regional.domain" "")
     local admin_email=$(get_kof_config "regional.admin_email" "")

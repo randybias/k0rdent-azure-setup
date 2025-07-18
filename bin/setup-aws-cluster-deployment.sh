@@ -18,10 +18,10 @@ source ./etc/state-management.sh     # State tracking
 
 # Output directory and file (reuse from k0rdent)
 K0SCTL_DIR="./k0sctl-config"
-KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_PREFIX}-kubeconfig"
+KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_CLUSTERID}-kubeconfig"
 
 # Default values
-AWS_PROFILE_NAME="${K0RDENT_PREFIX}-capa"
+AWS_PROFILE_NAME="${K0RDENT_CLUSTERID}-capa"
 AWS_SOURCE_PROFILE="default"
 AWS_REGION="us-east-1"
 AWS_SECRET_NAME="aws-cluster-identity-secret"

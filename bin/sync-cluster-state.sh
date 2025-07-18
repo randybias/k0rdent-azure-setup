@@ -14,7 +14,7 @@ source ./etc/state-management.sh     # State tracking
 
 # Output directory (reuse from k0rdent)
 K0SCTL_DIR="./k0sctl-config"
-KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_PREFIX}-kubeconfig"
+KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_CLUSTERID}-kubeconfig"
 
 # Initialize variables
 NAMESPACE=""

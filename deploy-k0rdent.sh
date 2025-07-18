@@ -95,7 +95,7 @@ show_config() {
     
     echo
     echo "Project Settings:"
-    echo "  Prefix: $K0RDENT_PREFIX"
+    echo "  Prefix: $K0RDENT_CLUSTERID"
     echo "  Region: $AZURE_LOCATION"
     echo "  Resource Group: $RG"
     
@@ -138,10 +138,10 @@ show_config() {
     echo "  Azure Child Clusters: $(if [[ "$WITH_AZURE_CHILDREN" == "true" ]]; then echo "ENABLED"; else echo "Disabled"; fi)"
     echo "  KOF Installation: $(if [[ "$WITH_KOF" == "true" ]]; then echo "ENABLED"; else echo "Disabled"; fi)"
     
-    if [[ -f "./k0sctl-config/${K0RDENT_PREFIX}-kubeconfig" ]]; then
+    if [[ -f "./k0sctl-config/${K0RDENT_CLUSTERID}-kubeconfig" ]]; then
         echo
         echo "Kubeconfig:"
-        echo "  Location: ./k0sctl-config/${K0RDENT_PREFIX}-kubeconfig"
+        echo "  Location: ./k0sctl-config/${K0RDENT_CLUSTERID}-kubeconfig"
     fi
 }
 
@@ -263,7 +263,7 @@ show_next_steps() {
     echo "Cluster Access:"
     echo "  - WireGuard VPN is connected"
     echo "  - k0rdent cluster is installed and running"
-    echo "  - kubectl configuration is available at: ./k0sctl-config/${K0RDENT_PREFIX}-kubeconfig"
+    echo "  - kubectl configuration is available at: ./k0sctl-config/${K0RDENT_CLUSTERID}-kubeconfig"
     
     if [[ "$WITH_AZURE_CHILDREN" == "true" ]]; then
         echo ""
@@ -282,7 +282,7 @@ show_next_steps() {
     
     echo ""
     echo "Management Commands:"
-    echo "  - Export kubeconfig: export KUBECONFIG=\$PWD/k0sctl-config/${K0RDENT_PREFIX}-kubeconfig"
+    echo "  - Export kubeconfig: export KUBECONFIG=\$PWD/k0sctl-config/${K0RDENT_CLUSTERID}-kubeconfig"
     echo "  - Check cluster status: kubectl get nodes"
     echo "  - View k0rdent resources: kubectl get all -A"
     echo "  - Disconnect VPN: ./bin/manage-vpn.sh disconnect"
@@ -294,7 +294,7 @@ show_next_steps() {
 
 run_fast_reset() {
     print_header "Fast k0rdent Deployment Reset (Azure-specific)"
-    print_warning "FAST RESET MODE: This will skip individual cleanup and delete the entire Azure resource group"
+    print_warning "FAST RESET MODE: This will disconnect VPN and delete the entire Azure resource group"
     print_warning "Resource group to be deleted: $RG"
     print_info "Note: Fast reset is Azure-specific and leverages resource group deletion"
     echo ""
@@ -309,18 +309,32 @@ run_fast_reset() {
     
     print_info "Starting fast reset..."
     
-    # Step 1: Delete Azure resource group (if it exists)
+    # Step 1: Disconnect WireGuard VPN if connected
+    if [[ -f "$WG_CONFIG_FILE" ]]; then
+        print_header "Step 1: Disconnecting WireGuard VPN"
+        bash bin/manage-vpn.sh reset $DEPLOY_FLAGS || true
+    else
+        print_info "Step 1: No WireGuard VPN to disconnect"
+    fi
+    
+    # Step 2: Delete Azure resource group (if it exists)
     if check_resource_group_exists "$RG"; then
-        print_header "Step 1: Deleting Azure Resource Group"
+        print_header "Step 2: Deleting Azure Resource Group"
         print_info "Deleting resource group: $RG"
         az group delete --name "$RG" --yes --no-wait
         print_success "Resource group deletion initiated (running in background)"
     else
-        print_info "Step 1: No Azure resource group to delete"
+        print_info "Step 2: No Azure resource group to delete"
     fi
     
-    # Step 2: Clean up local files
-    print_header "Step 2: Cleaning Up Local Files"
+    # Step 3: Clean up local files
+    print_header "Step 3: Cleaning Up Local Files"
+    
+    # Archive state files before removal
+    if [[ -f "$DEPLOYMENT_STATE_FILE" ]] || [[ -f "$DEPLOYMENT_EVENTS_FILE" ]]; then
+        print_info "Archiving state files to old_deployments..."
+        archive_existing_state "fast-reset"
+    fi
     
     # Remove WireGuard configuration
     if [[ -d "$WG_DIR" ]]; then
@@ -382,7 +396,7 @@ run_full_reset() {
     print_header "Full k0rdent Deployment Reset"
     
     # Define kubeconfig location
-    local KUBECONFIG_FILE="./k0sctl-config/${K0RDENT_PREFIX}-kubeconfig"
+    local KUBECONFIG_FILE="./k0sctl-config/${K0RDENT_CLUSTERID}-kubeconfig"
     
     # Check if KOF was deployed and handle regional clusters first
     local kof_deployed=$(get_state "deployment_flags_kof" 2>/dev/null || echo "false")
@@ -537,6 +551,10 @@ run_full_reset() {
     # Step 7: Clean up deployment state files
     if [[ -f "$DEPLOYMENT_STATE_FILE" ]] || [[ -f "$DEPLOYMENT_EVENTS_FILE" ]]; then
         print_header "Step 7: Removing Deployment State Files"
+        # Archive state files before removal
+        print_info "Archiving state files to old_deployments..."
+        archive_existing_state "full-reset"
+        
         if [[ -f "$DEPLOYMENT_STATE_FILE" ]]; then
             rm -f "$DEPLOYMENT_STATE_FILE"
             print_info "Removed deployment-state.yaml"

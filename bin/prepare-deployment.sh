@@ -292,7 +292,7 @@ deploy_preparation() {
     # Initialize deployment state if it doesn't exist
     if ! state_file_exists; then
         print_info "Initializing deployment state tracking..."
-        init_deployment_state "$K0RDENT_PREFIX"
+        init_deployment_state "$K0RDENT_CLUSTERID"
         add_event "preparation_started" "Beginning deployment preparation"
     else
         print_info "Using existing deployment state"
