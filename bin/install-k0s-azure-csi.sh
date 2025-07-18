@@ -19,7 +19,7 @@ source ./etc/state-management.sh
 
 # Output directory and file
 K0SCTL_DIR="./k0sctl-config"
-KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_PREFIX}-kubeconfig"
+KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_CLUSTERID}-kubeconfig"
 
 # Azure CSI Driver version
 AZURE_CSI_VERSION="${AZURE_CSI_VERSION:-v1.30.0}"
@@ -91,7 +91,7 @@ create_azure_cloud_provider_config() {
     "location": "$location",
     "vnetName": "$vnet_name",
     "subnetName": "$subnet_name",
-    "securityGroupName": "${K0RDENT_PREFIX}-nsg",
+    "securityGroupName": "${K0RDENT_CLUSTERID}-nsg",
     "vnetResourceGroup": "$resource_group",
     "useManagedIdentityExtension": false,
     "useInstanceMetadata": true,

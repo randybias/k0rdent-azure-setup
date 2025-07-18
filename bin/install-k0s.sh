@@ -14,8 +14,8 @@ source ./etc/state-management.sh
 
 # Output directory and file
 K0SCTL_DIR="./k0sctl-config"
-K0SCTL_FILE="$K0SCTL_DIR/${K0RDENT_PREFIX}-k0sctl.yaml"
-KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_PREFIX}-kubeconfig"
+K0SCTL_FILE="$K0SCTL_DIR/${K0RDENT_CLUSTERID}-k0sctl.yaml"
+KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_CLUSTERID}-kubeconfig"
 
 # Script-specific functions
 show_usage() {
@@ -84,9 +84,9 @@ generate_k0s_config() {
     fi
 
     # Find SSH private key
-    SSH_KEY_PATH=$(find ./azure-resources -name "${K0RDENT_PREFIX}-ssh-key" -type f 2>/dev/null | head -1)
+    SSH_KEY_PATH=$(find ./azure-resources -name "${K0RDENT_CLUSTERID}-ssh-key" -type f 2>/dev/null | head -1)
     if [[ -z "$SSH_KEY_PATH" ]]; then
-        print_error "SSH private key not found. Expected: ./azure-resources/${K0RDENT_PREFIX}-ssh-key"
+        print_error "SSH private key not found. Expected: ./azure-resources/${K0RDENT_CLUSTERID}-ssh-key"
         print_info "Run: ./setup-azure-network.sh"
         exit 1
     fi
@@ -118,7 +118,7 @@ generate_k0s_config() {
     fi
 
     # Generate k0sctl YAML
-    print_info "Generating ${K0RDENT_PREFIX}-k0sctl.yaml configuration file..."
+    print_info "Generating ${K0RDENT_CLUSTERID}-k0sctl.yaml configuration file..."
     
     # Update state phase
     update_state "phase" "k0s_config_generation"
@@ -127,7 +127,7 @@ generate_k0s_config() {
 apiVersion: k0sctl.k0sproject.io/v1beta1
 kind: Cluster
 metadata:
-  name: $K0RDENT_PREFIX
+  name: $K0RDENT_CLUSTERID
 spec:
   hosts:
 EOF
@@ -212,7 +212,7 @@ EOF
 
     # Display summary
     print_header "Configuration Summary"
-    echo "Cluster Name: $K0RDENT_PREFIX"
+    echo "Cluster Name: $K0RDENT_CLUSTERID"
     echo "SSH User: $SSH_USERNAME"
     echo "SSH Key: $SSH_KEY_PATH"
     echo "k0s Version: $K0S_VERSION"

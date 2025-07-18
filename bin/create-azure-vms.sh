@@ -520,7 +520,7 @@ show_status() {
     fi
     
     # Local SSH key
-    SSH_PRIVATE_KEY="$MANIFEST_DIR/${K0RDENT_PREFIX}-ssh-key"
+    SSH_PRIVATE_KEY="$MANIFEST_DIR/${K0RDENT_CLUSTERID}-ssh-key"
     SSH_PUBLIC_KEY="$SSH_PRIVATE_KEY.pub"
     if check_local_ssh_key_exists "$SSH_PRIVATE_KEY" "$SSH_PUBLIC_KEY"; then
         print_success "Local SSH keys exist"
@@ -564,7 +564,7 @@ deploy_vms() {
     fi
     
     # Check if local SSH keys exist
-    SSH_PRIVATE_KEY="$MANIFEST_DIR/${K0RDENT_PREFIX}-ssh-key"
+    SSH_PRIVATE_KEY="$MANIFEST_DIR/${K0RDENT_CLUSTERID}-ssh-key"
     SSH_PUBLIC_KEY="$SSH_PRIVATE_KEY.pub"
     if ! check_local_ssh_key_exists "$SSH_PRIVATE_KEY" "$SSH_PUBLIC_KEY"; then
         print_error "Local SSH keys not found."

@@ -15,7 +15,7 @@ source ./etc/kof-functions.sh        # ONLY KOF-specific additions
 
 # Output directory and file (reuse from k0rdent)
 K0SCTL_DIR="./k0sctl-config"
-KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_PREFIX}-kubeconfig"
+KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_CLUSTERID}-kubeconfig"
 
 # Script-specific functions
 show_usage() {

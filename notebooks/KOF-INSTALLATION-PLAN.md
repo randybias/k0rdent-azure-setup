@@ -376,7 +376,7 @@ source ./etc/state-management.sh     # State tracking functions
 source ./etc/kof-functions.sh        # ONLY KOF-specific additions
 
 # Use existing variables from k0rdent-config.sh:
-# - K0RDENT_PREFIX (deployment prefix)
+# - K0RDENT_CLUSTERID (deployment cluster ID)
 # - KUBECONFIG_FILE (path to kubeconfig)
 # - CONFIG_YAML (loaded configuration)
 # - All other k0rdent variables

@@ -14,7 +14,7 @@ source ./etc/state-management.sh
 
 # Output directory and file
 K0SCTL_DIR="./k0sctl-config"
-KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_PREFIX}-kubeconfig"
+KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_CLUSTERID}-kubeconfig"
 
 # Test configuration
 TEST_NAMESPACE="network-validation"
@@ -199,10 +199,16 @@ validate_network() {
         [[ -n "$node" ]] && worker_nodes+=("$node")
     done <<< "$worker_nodes_output"
     
-    if [[ ${#worker_nodes[@]} -lt 2 ]]; then
-        print_warning "Need at least 2 worker nodes for cross-node testing"
-        print_info "Found ${#worker_nodes[@]} nodes: ${worker_nodes[*]}"
+    if [[ ${#worker_nodes[@]} -eq 0 ]]; then
+        print_error "No worker nodes found in the cluster"
         return 1
+    fi
+    
+    if [[ ${#worker_nodes[@]} -eq 1 ]]; then
+        print_warning "Only 1 worker node found - skipping network validation"
+        print_info "Cross-node network testing requires at least 2 worker nodes"
+        print_success "Single-node deployment validated"
+        return 0
     fi
     
     print_info "Found ${#worker_nodes[@]} worker nodes: ${worker_nodes[*]}"

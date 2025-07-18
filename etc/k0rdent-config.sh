@@ -32,4 +32,4 @@ source ./etc/config-internal.sh
 WG_CONFIG_FILE="$WG_DIR/wgk0${RANDOM_SUFFIX}.conf"
 
 
-echo "==> k0rdent configuration loaded (prefix: $K0RDENT_PREFIX, region: $AZURE_LOCATION)" 
+echo "==> k0rdent configuration loaded (cluster ID: $K0RDENT_CLUSTERID, region: $AZURE_LOCATION)" 

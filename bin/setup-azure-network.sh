@@ -35,7 +35,7 @@ show_usage() {
 
 show_status() {
     # Prepare status information
-    local SSH_PRIVATE_KEY="$MANIFEST_DIR/${K0RDENT_PREFIX}-ssh-key"
+    local SSH_PRIVATE_KEY="$MANIFEST_DIR/${K0RDENT_CLUSTERID}-ssh-key"
     local SSH_PUBLIC_KEY="$SSH_PRIVATE_KEY.pub"
     local port_info=""
     local wg_port=$(get_state "config.wireguard_port" 2>/dev/null || echo "null")
@@ -148,7 +148,7 @@ deploy_resources() {
     fi
     
     # Generate local SSH key pair
-    SSH_PRIVATE_KEY="$MANIFEST_DIR/${K0RDENT_PREFIX}-ssh-key"
+    SSH_PRIVATE_KEY="$MANIFEST_DIR/${K0RDENT_CLUSTERID}-ssh-key"
     SSH_PUBLIC_KEY="$SSH_PRIVATE_KEY.pub"
     
     # Ensure SSH key directory exists
@@ -156,7 +156,7 @@ deploy_resources() {
     
     print_info_quiet "Generating local SSH key pair: $SSH_PRIVATE_KEY"
     if [[ ! -f "$SSH_PRIVATE_KEY" ]]; then
-        ssh-keygen -t rsa -b 4096 -f "$SSH_PRIVATE_KEY" -N "" -C "k0rdent-${K0RDENT_PREFIX}"
+        ssh-keygen -t rsa -b 4096 -f "$SSH_PRIVATE_KEY" -N "" -C "k0rdent-${K0RDENT_CLUSTERID}"
         print_success "SSH key pair generated locally"
     else
         print_info_verbose "SSH key pair already exists locally"

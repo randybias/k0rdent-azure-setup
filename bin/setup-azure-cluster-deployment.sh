@@ -14,10 +14,10 @@ source ./etc/state-management.sh     # State tracking
 
 # Output directory and file (reuse from k0rdent)
 K0SCTL_DIR="./k0sctl-config"
-KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_PREFIX}-kubeconfig"
+KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_CLUSTERID}-kubeconfig"
 
 # Constants from k0rdent documentation  
-AZURE_SP_NAME="${K0RDENT_PREFIX}-cluster-deployment-sp"
+AZURE_SP_NAME="${K0RDENT_CLUSTERID}-cluster-deployment-sp"
 AZURE_SECRET_NAME="azure-cluster-identity-secret"
 AZURE_IDENTITY_NAME="azure-cluster-identity"
 KCM_CREDENTIAL_NAME="azure-cluster-credential"
