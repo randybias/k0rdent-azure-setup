@@ -11,9 +11,20 @@ if [[ $K0S_CONTROLLER_COUNT -lt 1 ]]; then
     exit 1
 fi
 
-if [[ $K0S_WORKER_COUNT -lt 1 ]]; then
-    echo "ERROR: K0S_WORKER_COUNT must be at least 1"
+if [[ $K0S_WORKER_COUNT -lt 0 ]]; then
+    echo "ERROR: K0S_WORKER_COUNT must be 0 or greater"
     exit 1
+fi
+
+# If no workers, ensure at least one controller (for workload scheduling)
+if [[ $K0S_WORKER_COUNT -eq 0 ]] && [[ $K0S_CONTROLLER_COUNT -lt 1 ]]; then
+    echo "ERROR: When K0S_WORKER_COUNT is 0, at least 1 controller is required"
+    exit 1
+fi
+
+# Warn about worker count of 0
+if [[ $K0S_WORKER_COUNT -eq 0 ]]; then
+    echo "WARNING: No dedicated worker nodes configured. Controller(s) must be configured to schedule workloads."
 fi
 
 # Warn about even number of controllers (not recommended for HA)
@@ -53,11 +64,7 @@ VM_SIZES=()  # New array to track VM size
 
 # Generate controller definitions
 for (( i=0; i<$K0S_CONTROLLER_COUNT; i++ )); do
-    if [[ $i -eq 0 ]]; then
-        hostname="k0s-controller"
-    else
-        hostname="k0s-controller-$((i+1))"
-    fi
+    hostname="k0s-controller-$((i+1))"
     
     # Determine zone (cycle through available zones)
     zone_index=$((i % ${#CONTROLLER_ZONES[@]}))
