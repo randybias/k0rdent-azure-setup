@@ -17,6 +17,8 @@
 | **bin/install-kof-mothership.sh** | - etc/common-functions.sh<br>- etc/state-management.sh<br>- etc/kof-functions.sh | deploy-k0rdent.sh (--with-kof) | Deploy KOF mothership |
 | **bin/install-kof-regional.sh** | - etc/common-functions.sh<br>- etc/state-management.sh<br>- etc/kof-functions.sh<br>- etc/azure-cluster-functions.sh | deploy-k0rdent.sh (--with-kof) | Deploy KOF regional cluster |
 | **bin/lockdown-ssh.sh** | - etc/common-functions.sh | User (optional) | Security hardening |
+| **bin/create-azure-child.sh** | - etc/common-functions.sh<br>- etc/state-management.sh | User (manual) | Create Azure k0rdent child clusters |
+| **bin/create-aws-child.sh** | - etc/common-functions.sh<br>- etc/state-management.sh | User (manual) | Create AWS k0rdent child clusters |
 | **bin/configure.sh** | None | etc/k0rdent-config.sh | YAML config parser |
 | **etc/k0rdent-config.sh** | - bin/configure.sh<br>- etc/config-internal.sh | All scripts | Configuration loader |
 | **etc/config-internal.sh** | None | etc/k0rdent-config.sh | Dynamic value computation |

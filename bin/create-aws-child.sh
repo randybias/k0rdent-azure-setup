@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# Script: create-child.sh
-# Purpose: Create a k0rdent child cluster deployment
-# Usage: bash create-child.sh --cluster-name <name> --cloud <cloud> --location <location> [options]
-# Prerequisites: k0rdent management cluster with configured credentials
+# Script: create-aws-child.sh
+# Purpose: Create a k0rdent AWS child cluster deployment
+# Usage: bash create-aws-child.sh --cluster-name <name> --region <region> [options]
+# Prerequisites: k0rdent management cluster with configured AWS credentials
 
 set -euo pipefail
 
@@ -18,8 +18,8 @@ KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_PREFIX}-kubeconfig"
 
 # Initialize variables
 CLUSTER_NAME=""
-CLOUD=""
-LOCATION=""
+REGION=""
+AVAILABILITY_ZONES=""  # Optional, comma-separated list
 NAMESPACE=""
 TEMPLATE=""
 CREDENTIAL=""
@@ -38,10 +38,10 @@ WORKER_NUMBER=""
 show_usage() {
     print_usage "$0" \
         "  --cluster-name <name>           Name of the child cluster to create (required)
-         --cloud <provider>              Cloud provider: azure (required)
-         --location <region>             Cloud region/location (required)
-         --cp-instance-size <size>       Control plane instance size (required)
-         --worker-instance-size <size>   Worker node instance size (required)
+         --region <region>               AWS region (e.g., us-east-1, us-west-2) (required)
+         --availability-zones <zones>    Availability zones (comma-separated, e.g., \"us-east-1a,us-east-1b\")
+         --cp-instance-size <size>       Control plane instance size (e.g., t3.medium) (required)
+         --worker-instance-size <size>   Worker node instance size (e.g., t3.large) (required)
          --root-volume-size <gb>         Root volume size in GB (required)
          --namespace <ns>                Kubernetes namespace (required)
          --template <name>               Cluster template to use (required)
@@ -54,21 +54,21 @@ show_usage() {
          --cluster-labels <labels>       Cluster labels in key=value,key2=value2 format
          --cluster-annotations <annotations> Cluster annotations in key=value,key2=value2 format" \
         "  -h, --help                     Show this help message" \
-        "  $0 --cluster-name my-cluster --cloud azure --location eastus \\
-             --cp-instance-size Standard_A4_v2 --worker-instance-size Standard_A4_v2 \\
-             --root-volume-size 32 --namespace kcm-system \\
-             --template azure-standalone-cp-1-0-8 --credential azure-cluster-credential \\
+        "  $0 --cluster-name my-cluster --region us-east-1 \\
+             --cp-instance-size t3.medium --worker-instance-size t3.large \\
+             --root-volume-size 50 --namespace kcm-system \\
+             --template aws-standalone-cp-1-0-8 --credential aws-cluster-credential \\
              --cp-number 1 --worker-number 3 \\
-             --cluster-identity-name azure-cluster-identity --cluster-identity-namespace kcm-system \\
-             \\
-           $0 --cluster-name regional-cluster --cloud azure --location westus2 \\
-             --cp-instance-size Standard_A4_v2 --worker-instance-size Standard_A4_v2 \\
-             --root-volume-size 32 --namespace kcm-system \\
-             --template azure-standalone-cp-1-0-8 --credential azure-cluster-identity-cred \\
-             --cp-number 1 --worker-number 3 \\
-             --cluster-identity-name azure-cluster-identity --cluster-identity-namespace kcm-system \\
-             --cluster-annotations k0rdent.mirantis.com/kof-regional-domain=my.domain.com,k0rdent.mirantis.com/kof-cert-email=admin@domain.com \\
-             --cluster-labels k0rdent.mirantis.com/kof-storage-secrets=true,k0rdent.mirantis.com/kof-cluster-role=child"
+             --cluster-identity-name aws-cluster-identity --cluster-identity-namespace kcm-system
+             
+           $0 --cluster-name ha-cluster --region us-west-2 \\
+             --availability-zones \"us-west-2a,us-west-2b,us-west-2c\" \\
+             --cp-instance-size m5.large --worker-instance-size m5.xlarge \\
+             --root-volume-size 100 --namespace kcm-system \\
+             --template aws-ha-cp-1-0-8 --credential aws-cluster-credential \\
+             --cp-number 3 --worker-number 3 \\
+             --cluster-identity-name aws-cluster-identity --cluster-identity-namespace kcm-system \\
+             --cluster-labels environment=production,team=platform"
     }
 
 # Parse arguments
@@ -79,12 +79,12 @@ parse_arguments() {
                 CLUSTER_NAME="$2"
                 shift 2
                 ;;
-            --cloud)
-                CLOUD="$2"
+            --region)
+                REGION="$2"
                 shift 2
                 ;;
-            --location)
-                LOCATION="$2"
+            --availability-zones)
+                AVAILABILITY_ZONES="$2"
                 shift 2
                 ;;
             --cp-instance-size)
@@ -161,13 +161,8 @@ validate_arguments() {
         ((errors++))
     fi
     
-    if [[ -z "$CLOUD" ]]; then
-        print_error "Cloud provider is required (--cloud)"
-        ((errors++))
-    fi
-    
-    if [[ -z "$LOCATION" ]]; then
-        print_error "Location is required (--location)"
+    if [[ -z "$REGION" ]]; then
+        print_error "Region is required (--region)"
         ((errors++))
     fi
     
@@ -221,16 +216,6 @@ validate_arguments() {
         ((errors++))
     fi
     
-    # Validate cloud provider
-    case "$CLOUD" in
-        azure)
-            # No defaults, all parameters are required
-            ;;
-        *)
-            print_error "Unsupported cloud provider: $CLOUD (currently only 'azure' is supported)"
-            ((errors++))
-            ;;
-    esac
     
     if [[ $errors -gt 0 ]]; then
         print_error "Please fix the above errors and try again"
@@ -262,21 +247,17 @@ check_prerequisites() {
         return 1
     fi
     
-    # Check if credentials are configured for the specified cloud
-    case "$CLOUD" in
-        azure)
-            if [[ "$(get_azure_state "azure_credentials_configured")" != "true" ]]; then
-                print_error "Azure credentials not configured. Run: bash bin/setup-azure-cluster-deployment.sh setup"
-                return 1
-            fi
-            
-            # Verify credential exists
-            if ! kubectl get credential "$CREDENTIAL" -n "$NAMESPACE" &>/dev/null; then
-                print_error "Azure credential '$CREDENTIAL' not found in namespace '$NAMESPACE'"
-                return 1
-            fi
-            ;;
-    esac
+    # Check if AWS credentials are configured
+    if [[ "$(get_state "aws_credentials_configured")" != "true" ]]; then
+        print_error "AWS credentials not configured. Run: bash bin/setup-aws-cluster-deployment.sh setup --role-arn <ARN>"
+        return 1
+    fi
+    
+    # Verify credential exists
+    if ! kubectl get credential "$CREDENTIAL" -n "$NAMESPACE" &>/dev/null; then
+        print_error "AWS credential '$CREDENTIAL' not found in namespace '$NAMESPACE'"
+        return 1
+    fi
     
     # Check if cluster template exists
     if ! kubectl get clustertemplate "$TEMPLATE" -n "$NAMESPACE" &>/dev/null; then
@@ -290,23 +271,15 @@ check_prerequisites() {
     return 0
 }
 
-# Get cloud-specific configuration
-get_cloud_config() {
-    case "$CLOUD" in
-        azure)
-            # Get subscription ID from Azure credentials
-            local subscription_id=$(get_azure_state "azure_subscription_id")
-            if [[ -z "$subscription_id" || "$subscription_id" == "null" ]]; then
-                print_error "Azure subscription ID not found in state"
-                return 1
-            fi
-            echo "$subscription_id"
-            ;;
-        *)
-            print_error "Unsupported cloud provider: $CLOUD"
-            return 1
-            ;;
-    esac
+# Get AWS account configuration
+get_aws_config() {
+    # Get account ID from AWS credentials
+    local account_id=$(get_state "aws_account_id")
+    if [[ -z "$account_id" || "$account_id" == "null" ]]; then
+        print_error "AWS account ID not found in state"
+        return 1
+    fi
+    echo "$account_id"
 }
 
 # Convert cluster labels to YAML format
@@ -351,9 +324,9 @@ format_cluster_annotations() {
 create_cluster_deployment() {
     print_header "Creating Child Cluster Deployment"
     
-    # Get cloud-specific configuration
-    local cloud_config
-    cloud_config=$(get_cloud_config)
+    # Get AWS account configuration
+    local account_id
+    account_id=$(get_aws_config)
     
     # Format cluster labels and annotations
     local formatted_labels
@@ -364,8 +337,9 @@ create_cluster_deployment() {
     
     print_info "Cluster Configuration:"
     print_info "  Name: $CLUSTER_NAME"
-    print_info "  Cloud: $CLOUD"
-    print_info "  Location: $LOCATION"
+    print_info "  Cloud: AWS"
+    print_info "  Region: $REGION"
+    [[ -n "$AVAILABILITY_ZONES" ]] && print_info "  Availability Zones: $AVAILABILITY_ZONES"
     print_info "  Template: $TEMPLATE"
     print_info "  Credential: $CREDENTIAL"
     print_info "  Namespace: $NAMESPACE"
@@ -378,19 +352,12 @@ create_cluster_deployment() {
     print_info "  Dry Run: $DRY_RUN"
     [[ -n "$CLUSTER_LABELS" ]] && print_info "  Labels: $CLUSTER_LABELS"
     [[ -n "$CLUSTER_ANNOTATIONS" ]] && print_info "  Annotations: $CLUSTER_ANNOTATIONS"
-    
-    case "$CLOUD" in
-        azure)
-            print_info "  Subscription ID: $cloud_config"
-            ;;
-    esac
+    print_info "  Account ID: $account_id"
     
     # Create ClusterDeployment YAML
     print_info "Creating ClusterDeployment..."
     
-    case "$CLOUD" in
-        azure)
-            cat <<EOF | kubectl apply -f -
+    cat <<EOF | kubectl apply -f -
 apiVersion: k0rdent.mirantis.com/v1beta1
 kind: ClusterDeployment
 metadata:
@@ -406,23 +373,23 @@ spec:
     clusterIdentity:
       name: $CLUSTER_IDENTITY_NAME
       namespace: $CLUSTER_IDENTITY_NAMESPACE
-    location: "$LOCATION"
-    subscriptionID: "$cloud_config"
+    region: "$REGION"
     controlPlaneNumber: $CP_NUMBER
     controlPlane:
-      vmSize: $CP_INSTANCE_SIZE
+      instanceType: $CP_INSTANCE_SIZE
       rootVolumeSize: $ROOT_VOLUME_SIZE
     workersNumber: $WORKER_NUMBER
     worker:
-      vmSize: $WORKER_INSTANCE_SIZE
+      instanceType: $WORKER_INSTANCE_SIZE
       rootVolumeSize: $ROOT_VOLUME_SIZE
 EOF
-            ;;
-    esac
+
+    # Note: availability zones configuration would be added here if k0rdent templates support it
+    # availabilityZones: ["$AVAILABILITY_ZONES"] if specified
     
     # Track cluster creation event (k0rdent is source of truth for state)
     init_cluster_events "$CLUSTER_NAME"
-    add_cluster_event "$CLUSTER_NAME" "cluster_deployment_created" "ClusterDeployment '$CLUSTER_NAME' created for $CLOUD cluster in $LOCATION"
+    add_cluster_event "$CLUSTER_NAME" "cluster_deployment_created" "ClusterDeployment '$CLUSTER_NAME' created for AWS cluster in $REGION"
     add_cluster_event "$CLUSTER_NAME" "cluster_config_recorded" "Template: $TEMPLATE, Credential: $CREDENTIAL, DryRun: $DRY_RUN"
     
     if [[ "$DRY_RUN" == "true" ]]; then
