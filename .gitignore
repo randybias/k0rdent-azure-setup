@@ -41,8 +41,15 @@ Thumbs.db
 cloud-init-yaml/
 config/k0rdent.yaml
 
-# Azure credentials (contains sensitive data)
+# Cloud credentials (contains sensitive data)
 config/azure-credentials.yaml
+config/aws-credentials.yaml
+
+# AWS access key files
+*_accessKeys.csv
 
 # Temporary scratch directory
 scratch/
+
+# WireGuard setuid wrapper binary (not to be committed)
+bin/utils/wg-wrapper
