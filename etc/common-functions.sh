@@ -714,6 +714,25 @@ VERBOSE_MODE=false
 YES_TO_ALL=false
 
 # Standard usage function
+# Helper function to format command list
+format_command_list() {
+    local commands="$1"
+    echo "$commands" | sed 's/^/  /'
+}
+
+# Helper function to format option list
+format_option_list() {
+    local options="$1"
+    echo "$options" | sed 's/^/  /'
+}
+
+# Helper function to format example list
+format_example_list() {
+    local examples="$1"
+    echo "$examples" | sed 's/^/  /'
+}
+
+# Improved print_usage function with better formatting
 print_usage() {
     local script_name="$1"
     local commands="$2"
@@ -721,16 +740,16 @@ print_usage() {
     local examples="$4"
     
     cat << EOF
-Usage: $script_name [command] [options]
+$(print_bold "Usage:") $script_name [command] [options]
 
-Commands:
-$commands
+$(print_bold "Commands:")
+$(format_command_list "$commands")
 
-Options:
-$options
+$(print_bold "Options:")
+$(format_option_list "$options")
 
-Examples:
-$examples
+$(print_bold "Examples:")
+$(format_example_list "$examples")
 EOF
 }
 

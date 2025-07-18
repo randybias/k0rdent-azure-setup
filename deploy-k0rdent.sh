@@ -38,6 +38,7 @@ SKIP_PROMPTS=false
 NO_WAIT=false
 WITH_AZURE_CHILDREN=false
 WITH_KOF=false
+FAST_RESET=false
 DEPLOY_FLAGS=""
 
 # Custom argument parsing to handle our specific flags
@@ -58,6 +59,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --with-kof)
             WITH_KOF=true
+            shift
+            ;;
+        --fast)
+            FAST_RESET=true
             shift
             ;;
         -h|--help)
@@ -153,6 +158,10 @@ run_deployment() {
 
     # Record start time
     DEPLOYMENT_START_TIME=$(date +%s)
+    DEPLOYMENT_START_DATE=$(date "+%Y-%m-%d %H:%M:%S %Z")
+    
+    print_info "Deployment started at: $DEPLOYMENT_START_DATE"
+    echo
 
     # Step 1: Prepare deployment (keys and cloud-init)
     print_header "Step 1: Preparing Deployment (Keys & Cloud-Init)"
@@ -221,12 +230,30 @@ run_deployment() {
 
     # Calculate and display total deployment time
     DEPLOYMENT_END_TIME=$(date +%s)
+    DEPLOYMENT_END_DATE=$(date "+%Y-%m-%d %H:%M:%S %Z")
     DEPLOYMENT_DURATION=$((DEPLOYMENT_END_TIME - DEPLOYMENT_START_TIME))
-    DEPLOYMENT_MINUTES=$((DEPLOYMENT_DURATION / 60))
+    
+    # Calculate hours, minutes, and seconds
+    DEPLOYMENT_HOURS=$((DEPLOYMENT_DURATION / 3600))
+    DEPLOYMENT_MINUTES=$(((DEPLOYMENT_DURATION % 3600) / 60))
     DEPLOYMENT_SECONDS=$((DEPLOYMENT_DURATION % 60))
 
-    print_header "Deployment Time"
-    echo "Total deployment time: ${DEPLOYMENT_MINUTES} minutes and ${DEPLOYMENT_SECONDS} seconds"
+    print_header "Deployment Completed"
+    echo "End Time: $DEPLOYMENT_END_DATE"
+    echo ""
+    echo -n "Total Duration: "
+    if [[ $DEPLOYMENT_HOURS -gt 0 ]]; then
+        echo "${DEPLOYMENT_HOURS} hours ${DEPLOYMENT_MINUTES} minutes ${DEPLOYMENT_SECONDS} seconds"
+    elif [[ $DEPLOYMENT_MINUTES -gt 0 ]]; then
+        echo "${DEPLOYMENT_MINUTES} minutes ${DEPLOYMENT_SECONDS} seconds"
+    else
+        echo "${DEPLOYMENT_SECONDS} seconds"
+    fi
+    
+    # Update state with timing information
+    update_state "deployment_start_time" "$DEPLOYMENT_START_DATE"
+    update_state "deployment_end_time" "$DEPLOYMENT_END_DATE"
+    update_state "deployment_duration_seconds" "$DEPLOYMENT_DURATION"
 }
 
 show_next_steps() {
@@ -265,7 +292,93 @@ show_next_steps() {
     echo "  $0 reset"
 }
 
+run_fast_reset() {
+    print_header "Fast k0rdent Deployment Reset (Azure-specific)"
+    print_warning "FAST RESET MODE: This will skip individual cleanup and delete the entire Azure resource group"
+    print_warning "Resource group to be deleted: $RG"
+    print_info "Note: Fast reset is Azure-specific and leverages resource group deletion"
+    echo ""
+    
+    if [[ "$SKIP_PROMPTS" == "false" ]]; then
+        read -p "Are you sure you want to proceed with fast reset? (yes/no): " -r
+        if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+            echo "Fast reset cancelled."
+            return
+        fi
+    fi
+    
+    print_info "Starting fast reset..."
+    
+    # Step 1: Delete Azure resource group (if it exists)
+    if check_resource_group_exists "$RG"; then
+        print_header "Step 1: Deleting Azure Resource Group"
+        print_info "Deleting resource group: $RG"
+        az group delete --name "$RG" --yes --no-wait
+        print_success "Resource group deletion initiated (running in background)"
+    else
+        print_info "Step 1: No Azure resource group to delete"
+    fi
+    
+    # Step 2: Clean up local files
+    print_header "Step 2: Cleaning Up Local Files"
+    
+    # Remove WireGuard configuration
+    if [[ -d "$WG_DIR" ]]; then
+        rm -rf "$WG_DIR"
+        print_info "Removed WireGuard directory"
+    fi
+    
+    # Remove cloud-init files
+    if [[ -d "$CLOUD_INIT_DIR" ]]; then
+        rm -rf "$CLOUD_INIT_DIR"
+        print_info "Removed cloud-init directory"
+    fi
+    
+    # Remove k0sctl configuration
+    if [[ -d "./k0sctl-config" ]]; then
+        rm -rf ./k0sctl-config
+        print_info "Removed k0sctl-config directory"
+    fi
+    
+    # Remove project suffix file
+    if [[ -f "$SUFFIX_FILE" ]]; then
+        rm -f "$SUFFIX_FILE"
+        print_info "Removed project suffix file"
+    fi
+    
+    # Remove state files
+    if [[ -f "$DEPLOYMENT_STATE_FILE" ]] || [[ -f "$DEPLOYMENT_EVENTS_FILE" ]]; then
+        rm -f "$DEPLOYMENT_STATE_FILE" "$DEPLOYMENT_EVENTS_FILE"
+        rm -f "$KOF_STATE_FILE" "$KOF_EVENTS_FILE"
+        rm -f "$AZURE_STATE_FILE" "$AZURE_EVENTS_FILE"
+        print_info "Removed state files"
+    fi
+    
+    # Remove logs directory
+    if [[ -d "./logs" ]]; then
+        rm -rf ./logs
+        print_info "Removed logs directory"
+    fi
+    
+    # Clean up SSH keys directory
+    if [[ -d "./ssh-keys" ]]; then
+        rm -rf ./ssh-keys
+        print_info "Removed SSH keys directory"
+    fi
+    
+    print_header "Fast Reset Complete"
+    print_success "All k0rdent resources have been removed"
+    print_info "Azure resource group deletion is running in background"
+    print_info "You can now run a fresh deployment with: $0 deploy"
+}
+
 run_full_reset() {
+    # Check if fast reset was requested
+    if [[ "$FAST_RESET" == "true" ]]; then
+        run_fast_reset
+        return
+    fi
+    
     print_header "Full k0rdent Deployment Reset"
     
     # Define kubeconfig location
@@ -432,6 +545,23 @@ run_full_reset() {
             rm -f "$DEPLOYMENT_EVENTS_FILE"
             print_info "Removed deployment-events.yaml"
         fi
+        # Also remove other state files
+        if [[ -f "$KOF_STATE_FILE" ]]; then
+            rm -f "$KOF_STATE_FILE"
+            print_info "Removed kof-state.yaml"
+        fi
+        if [[ -f "$KOF_EVENTS_FILE" ]]; then
+            rm -f "$KOF_EVENTS_FILE"
+            print_info "Removed kof-events.yaml"
+        fi
+        if [[ -f "$AZURE_STATE_FILE" ]]; then
+            rm -f "$AZURE_STATE_FILE"
+            print_info "Removed azure-state.yaml"
+        fi
+        if [[ -f "$AZURE_EVENTS_FILE" ]]; then
+            rm -f "$AZURE_EVENTS_FILE"
+            print_info "Removed azure-events.yaml"
+        fi
         print_success "Deployment state files removed"
     else
         print_info "Step 7: No deployment state files to remove"
@@ -496,6 +626,7 @@ case "${POSITIONAL_ARGS[0]:-deploy}" in
         echo "  --no-wait               Skip waiting for resources (where applicable)"
         echo "  --with-azure-children   Enable Azure child cluster deployment capability"
         echo "  --with-kof              Deploy KOF (mothership + regional cluster)"
+        echo "  --fast                  Fast reset (skip cleanup, delete resource group)"
         echo "  -h, --help              Show this help message"
         echo ""
         echo "Examples:"
@@ -503,6 +634,7 @@ case "${POSITIONAL_ARGS[0]:-deploy}" in
         echo "  $0 deploy --with-azure-children  # Deploy with Azure child cluster support"
         echo "  $0 deploy --with-kof             # Deploy with KOF components"
         echo "  $0 deploy --with-azure-children --with-kof  # Full deployment"
+        echo "  $0 reset --fast                  # Fast reset for development"
         ;;
     *)
         print_error "Unknown command: ${POSITIONAL_ARGS[0]}"

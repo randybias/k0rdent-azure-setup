@@ -14,10 +14,58 @@ KOF_EVENTS_FILE="$STATE_DIR/kof-events.yaml"
 AZURE_STATE_FILE="$STATE_DIR/azure-state.yaml"
 AZURE_EVENTS_FILE="$STATE_DIR/azure-events.yaml"
 
+# Archive existing state files to old_deployments
+archive_existing_state() {
+    local timestamp=$(date +%Y-%m-%d_%H-%M-%S)
+    local old_deployments_dir="./old_deployments"
+    
+    # Check if there are any state files to archive
+    if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]] && [[ ! -f "$DEPLOYMENT_EVENTS_FILE" ]]; then
+        return 0  # Nothing to archive
+    fi
+    
+    # Get deployment ID from existing state if available
+    local deployment_id=""
+    if [[ -f "$DEPLOYMENT_STATE_FILE" ]]; then
+        deployment_id=$(yq eval '.deployment_id' "$DEPLOYMENT_STATE_FILE" 2>/dev/null || echo "unknown")
+    fi
+    
+    # Create archive directory name
+    local archive_dir="${old_deployments_dir}/${deployment_id}_${timestamp}"
+    
+    # Create archive directory
+    mkdir -p "$archive_dir"
+    
+    # Move existing state files to archive
+    if [[ -f "$DEPLOYMENT_STATE_FILE" ]]; then
+        mv "$DEPLOYMENT_STATE_FILE" "$archive_dir/"
+        print_info "Archived deployment-state.yaml to $archive_dir/"
+    fi
+    
+    if [[ -f "$DEPLOYMENT_EVENTS_FILE" ]]; then
+        mv "$DEPLOYMENT_EVENTS_FILE" "$archive_dir/"
+        print_info "Archived deployment-events.yaml to $archive_dir/"
+    fi
+    
+    # Archive any other state files
+    for state_file in "$KOF_STATE_FILE" "$KOF_EVENTS_FILE" "$AZURE_STATE_FILE" "$AZURE_EVENTS_FILE"; do
+        if [[ -f "$state_file" ]]; then
+            mv "$state_file" "$archive_dir/"
+            local filename=$(basename "$state_file")
+            print_info "Archived $filename to $archive_dir/"
+        fi
+    done
+    
+    print_success "State files archived to $archive_dir/"
+}
+
 # Initialize new deployment state file
 init_deployment_state() {
     local deployment_id="$1"
     local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    
+    # Archive existing state files before creating new ones
+    archive_existing_state
     
     # Ensure state directory exists
     mkdir -p "$STATE_DIR"
