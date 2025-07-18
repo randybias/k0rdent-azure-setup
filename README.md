@@ -614,7 +614,8 @@ k0rdent-azure-setup/
 │   ├── install-k0s-azure-csi.sh          # Azure Disk CSI Driver installation
 │   ├── install-kof-mothership.sh         # KOF mothership deployment
 │   ├── install-kof-regional.sh           # KOF regional cluster deployment
-│   ├── create-child.sh         # Create k0rdent-managed child clusters
+│   ├── create-azure-child.sh   # Create Azure k0rdent-managed child clusters
+│   ├── create-aws-child.sh     # Create AWS k0rdent-managed child clusters
 │   ├── list-child-clusters.sh  # List all child clusters
 │   ├── configure.sh            # Configuration management
 │   └── lockdown-ssh.sh         # SSH security management
@@ -809,15 +810,34 @@ The script:
 
 ### Creating Child Clusters
 
-After configuring cloud credentials, use the standard k0rdent process:
+After configuring cloud credentials, use the cloud-specific scripts:
+
+#### Azure Child Clusters
 
 ```bash
-# Create an Azure child cluster
-./bin/create-child.sh create --name my-azure-cluster --provider azure
-
-# Create an AWS child cluster
-./bin/create-child.sh create --name my-aws-cluster --provider aws
+./bin/create-azure-child.sh --cluster-name my-cluster --location eastus \
+  --cp-instance-size Standard_B2s --worker-instance-size Standard_B2s \
+  --root-volume-size 32 --namespace kcm-system \
+  --template azure-standalone-cp-1-0-8 --credential azure-cluster-credential \
+  --cp-number 1 --worker-number 2 \
+  --cluster-identity-name azure-cluster-identity --cluster-identity-namespace kcm-system
 ```
+
+#### AWS Child Clusters  
+
+```bash
+./bin/create-aws-child.sh --cluster-name my-cluster --region us-east-1 \
+  --cp-instance-size t3.medium --worker-instance-size t3.large \
+  --root-volume-size 50 --namespace kcm-system \
+  --template aws-standalone-cp-1-0-10 --credential aws-cluster-credential \
+  --cp-number 1 --worker-number 2 \
+  --cluster-identity-name aws-cluster-identity --cluster-identity-namespace kcm-system
+```
+
+Both scripts support:
+- `--dry-run` for simulation mode
+- `--cluster-labels` and `--cluster-annotations` for metadata
+- `--availability-zones` (AWS only) for zone distribution
 
 ## Script Features
 
