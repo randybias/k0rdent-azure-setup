@@ -99,6 +99,16 @@ check_netcat() {
     print_success "netcat is installed"
 }
 
+# AWS CLI validation
+check_aws_cli() {
+    if ! command -v aws &> /dev/null; then
+        print_error "AWS CLI (aws) is not installed. Please install it first."
+        echo "Visit: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
+        exit 1
+    fi
+    print_success "AWS CLI is installed"
+}
+
 # Check yq installation (required for YAML parsing)
 check_yq() {
     if ! command -v yq &> /dev/null; then
@@ -402,7 +412,7 @@ shutdown_wireguard_interface() {
         # Step 1: Try graceful shutdown with wg-quick if config exists
         if [[ -n "$config_file" ]] && [[ -f "$config_file" ]] && [[ -n "$wg_quick_path" ]]; then
             print_info "Attempting graceful shutdown with wg-quick..."
-            if sudo "$wg_quick_path" down "$config_file" 2>&1; then
+            if run_wg_command wg-quick-down "$config_file" 2>&1; then
                 print_success "wg-quick down completed"
             else
                 print_warning "wg-quick down failed (continuing with cleanup)"
@@ -427,7 +437,7 @@ shutdown_wireguard_interface() {
     else
         # Linux logic (unchanged)
         # Check if interface exists using wg show
-        if ! sudo wg show "$interface_name" &>/dev/null; then
+        if ! run_wg_command wg-show "$interface_name" &>/dev/null; then
             print_info "WireGuard interface '$interface_name' is not active"
             return 0
         fi
@@ -435,7 +445,7 @@ shutdown_wireguard_interface() {
         # Try wg-quick first
         local wg_quick_path=$(get_wg_quick_path)
         if [[ -n "$wg_quick_path" ]]; then
-            if sudo "$wg_quick_path" down "$interface_name" 2>/dev/null; then
+            if run_wg_command wg-quick-down "$interface_name" 2>/dev/null; then
                 print_success "WireGuard interface '$interface_name' shut down successfully"
                 return 0
             fi
@@ -461,6 +471,48 @@ get_wg_path() {
 
 get_wg_quick_path() {
     which wg-quick 2>/dev/null || echo "/usr/bin/wg-quick"
+}
+
+# Check if the setuid wrapper is available
+check_wg_wrapper() {
+    # Get the directory where k0rdent-config.sh is located
+    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local wrapper_path="$(cd "$script_dir/.." && pwd)/bin/utils/wg-wrapper"
+    
+    if [[ -f "$wrapper_path" ]] && [[ -u "$wrapper_path" ]]; then
+        echo "$wrapper_path"
+        return 0
+    fi
+    return 1
+}
+
+# Execute WireGuard command with wrapper if available, otherwise use sudo
+run_wg_command() {
+    local wrapper_path
+    if wrapper_path=$(check_wg_wrapper); then
+        # Use wrapper without sudo
+        "$wrapper_path" "$@"
+    else
+        # Fall back to sudo
+        case "$1" in
+            wg-show)
+                shift
+                sudo wg show "$@"
+                ;;
+            wg-quick-up)
+                shift
+                sudo wg-quick up "$@"
+                ;;
+            wg-quick-down)
+                shift
+                sudo wg-quick down "$@"
+                ;;
+            *)
+                echo "Unknown command: $1" >&2
+                return 1
+                ;;
+        esac
+    fi
 }
 
 # File existence validation
