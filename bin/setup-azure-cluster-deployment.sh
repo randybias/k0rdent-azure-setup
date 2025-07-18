@@ -110,11 +110,51 @@ wait_for_capz_ready() {
     return 1
 }
 
+verify_azure_credentials() {
+    print_info "Verifying Azure credentials..."
+    
+    # Test basic authentication
+    if ! az account show &>/dev/null; then
+        print_error "Failed to authenticate with Azure"
+        print_error "Please verify your Azure CLI authentication with: az login"
+        return 1
+    fi
+    
+    # Get subscription info to verify access
+    local subscription_info
+    subscription_info=$(az account show --output json)
+    local subscription_id=$(echo "$subscription_info" | jq -r '.id')
+    
+    # Test basic permissions - try to list resource groups
+    if ! az group list --subscription "$subscription_id" --output table &>/dev/null; then
+        print_warning "Unable to list resource groups - credentials may lack necessary permissions"
+    else
+        print_success "Successfully verified access to subscription"
+    fi
+    
+    # Test VM permissions - try to list VM sizes in the target location
+    local test_location="${AZURE_LOCATION:-eastus}"
+    if ! az vm list-sizes --location "$test_location" --subscription "$subscription_id" --output table &>/dev/null; then
+        print_warning "Unable to list VM sizes - credentials may lack VM creation permissions"
+    else
+        print_success "Successfully verified VM permissions in $test_location"
+    fi
+    
+    print_success "Azure credentials verification completed"
+    return 0
+}
+
 setup_azure_credentials() {
     print_header "Setting up Azure Credentials for k0rdent"
     
     # Check prerequisites
     if ! check_prerequisites; then
+        return 1
+    fi
+    
+    # Verify Azure credentials before proceeding
+    if ! verify_azure_credentials; then
+        print_error "Azure credential verification failed"
         return 1
     fi
     
@@ -148,6 +188,28 @@ setup_azure_credentials() {
     local client_secret=$(echo "$sp_result" | jq -r '.password')
     
     print_success "Service Principal created: $client_id"
+    
+    # Verify the Service Principal credentials work
+    print_info "Verifying Service Principal credentials..."
+    
+    # Wait a moment for SP to propagate
+    sleep 5
+    
+    # Test SP authentication
+    if az login --service-principal \
+        --username "$client_id" \
+        --password "$client_secret" \
+        --tenant "$tenant_id" &>/dev/null; then
+        print_success "Service Principal authentication verified"
+        # Switch back to original authentication
+        az account show &>/dev/null || az login &>/dev/null
+    else
+        print_error "Failed to authenticate with the new Service Principal"
+        print_error "The Service Principal may need more time to propagate, or there may be a permissions issue"
+        # Clean up the failed SP
+        az ad sp delete --id "$client_id" 2>/dev/null || true
+        return 1
+    fi
     
     # Save credentials to local file
     print_info "Saving Azure credentials to config/azure-credentials.yaml..."
