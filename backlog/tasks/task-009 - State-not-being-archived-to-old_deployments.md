@@ -1,7 +1,7 @@
 ---
 id: task-009
 title: State not being archived to old_deployments
-status: To Do
+status: Done
 assignee:
   - rbias
 created_date: '2025-07-20'
@@ -25,6 +25,10 @@ State files under state/ directory are not being archived into old_deployments/ 
 - [ ] Ensure atomic move operation to prevent data loss
 - [ ] Implement archive structure with deployment ID and timestamp
 
+
+## Implementation Notes
+
+Implemented archive_existing_state() function that archives to timestamped directories with deployment ID. Listed as completed in BACKLOG-COMPLETED-2025-01-20.md.
 ## Technical Details
 
 ### Current Behavior
