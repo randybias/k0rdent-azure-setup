@@ -48,23 +48,38 @@ This HA setup provides controller redundancy across zones for high availability.
 
 ## Video Demonstration
 
-[![Watch the video](demos/k0rdent-azure-script-setup.png)](demos/k0rdent-azure-script-setup.mp4)
+For a complete walkthrough of the deployment process, watch this demonstration:
+
+[![k0rdent Azure Deployment Demo](https://img.youtube.com/vi/aT4YqmcEQj0/maxresdefault.jpg)](https://www.youtube.com/watch?v=aT4YqmcEQj0)
+
+*Click the image above to watch the deployment demonstration on YouTube*
 
 ## Quick Start
 
-1. **Clone the repository**:
+```bash
+# Clone the repository
+git clone https://github.com/randybias/k0rdent-azure-setup
+cd k0rdent-azure-setup
+
+# Initialize configuration
+./bin/configure.sh init
+
+# Deploy everything
+./deploy-k0rdent.sh deploy
+
+# When done, clean up everything
+./deploy-k0rdent.sh reset
+```
+
+### Super Quick Start
+
+1. **Prerequisites check** (automatic):
    ```bash
-   git clone <repo>
-   cd k0rdent-azure-setup
+   ./deploy-k0rdent.sh check
    ```
 
-2. **Create configuration**:
+2. **Initialize configuration**:
    ```bash
-   # Use minimal template (single controller + worker)
-   ./bin/configure.sh init
-   
-   # Or choose from available templates
-   ./bin/configure.sh templates
    ./bin/configure.sh init --template production
    ```
 
@@ -87,192 +102,112 @@ All prerequisites are automatically checked at the beginning of the deployment p
 # Check prerequisites using the main script
 ./deploy-k0rdent.sh check
 
-# Or run the prerequisites check directly
+# Or use the dedicated script
 ./bin/check-prerequisites.sh
 ```
 
-Required tools:
+**Required tools and versions:**
+- **Azure CLI**: >= 2.40.0
+- **jq**: >= 1.6 (JSON processor)
+- **yq**: >= 4.0 (YAML processor)
+- **kubectl**: >= 1.27.0
+- **WireGuard**: Any recent version
+- **k0sctl**: 0.19.4 (auto-downloaded if missing)
+- **nc (netcat)**: For network connectivity testing
+- **Homebrew** (macOS): For installing missing dependencies
 
-1. **Bash version 5.0+** - Modern bash features required
-   ```bash
-   # macOS
-   brew install bash
-   
-   # Ubuntu/Debian  
-   sudo apt update && sudo apt install bash
-   ```
+**macOS-specific tools** (auto-installed):
+- GNU grep (ggrep)
+- GNU sed (gsed)
+- GNU getopt
 
-2. **SSH client** - For remote VM management:
-   ```bash
-   # Usually pre-installed on most systems
-   # Ubuntu/Debian: sudo apt install openssh-client
-   # CentOS/RHEL: sudo yum install openssh-clients
-   ```
+**Azure requirements:**
+- Active Azure subscription
+- Logged in via `az login`
+- Subscription selected (if you have multiple)
 
-3. **curl** - For downloading tools and scripts:
-   ```bash
-   # macOS
-   brew install curl
-   
-   # Ubuntu/Debian
-   sudo apt install curl
-   
-   # CentOS/RHEL
-   sudo yum install curl
-   ```
+## Features
 
-4. **base64** - For encoding/decoding (usually pre-installed):
-   ```bash
-   # Part of coreutils, typically pre-installed
-   # Ubuntu/Debian: sudo apt install coreutils
-   # CentOS/RHEL: sudo yum install coreutils
-   ```
+### Intelligent Orchestration
 
-5. **yq** - YAML processor (version 4.x):
-   ```bash
-   # macOS
-   brew install yq
-   
-   # Ubuntu/Debian
-   sudo snap install yq
-   # or
-   sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-   sudo chmod +x /usr/local/bin/yq
-   ```
-
-6. **jq** - JSON processor:
-   ```bash
-   # macOS
-   brew install jq
-   
-   # Ubuntu/Debian
-   sudo apt install jq
-   
-   # CentOS/RHEL
-   sudo yum install jq
-   ```
-
-7. **Azure CLI** installed and authenticated (for Azure deployments):
-   ```bash
-   # Install Azure CLI (if needed)
-   # macOS: brew install azure-cli
-   # Linux: curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-   
-   # Login to Azure
-   az login
-   ```
-
-8. **AWS CLI** installed (for AWS child cluster deployments):
-   ```bash
-   # Install AWS CLI (if needed)
-   # macOS: brew install awscli
-   # Linux: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
-   
-   # Note: Authentication handled by setup-aws-cluster-deployment.sh
-   ```
-
-9. **WireGuard tools** installed:
-   ```bash
-   # macOS
-   brew install wireguard-tools
-   
-   # Ubuntu/Debian
-   sudo apt install wireguard
-   
-   # CentOS/RHEL
-   sudo yum install wireguard-tools
-   ```
-
-10. **k0sctl** - k0s cluster management tool:
-   ```bash
-   # Download latest release
-   # macOS/Linux
-   curl -sSLf https://github.com/k0sproject/k0sctl/releases/latest/download/k0sctl-$(uname -s)-$(uname -m) -o k0sctl
-   chmod +x k0sctl
-   sudo mv k0sctl /usr/local/bin/
-   ```
-
-11. **netcat (nc)** - Network connectivity tool:
-   ```bash
-   # Usually pre-installed, but if missing:
-   # macOS: brew install netcat
-   # Ubuntu/Debian: sudo apt install netcat
-   # CentOS/RHEL: sudo yum install nc
-   ```
-
-12. **kubectl** - Kubernetes command-line tool:
-   ```bash
-   # macOS
-   brew install kubectl
-   
-   # Linux - see official docs
-   # https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/
-   ```
-
-12. **helm** - Kubernetes package manager:
-   ```bash
-   # macOS
-   brew install helm
-   
-   # Linux
-   curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-   ```
-
-13. **git** - Version control system:
-   ```bash
-   # macOS
-   brew install git
-   
-   # Ubuntu/Debian
-   sudo apt install git
-   
-   # CentOS/RHEL
-   sudo yum install git
-   ```
-
-14. **Common utilities** (timeout, mktemp, stat, ping, network tools):
-   ```bash
-   # macOS
-   brew install coreutils  # Provides timeout, mktemp, and GNU versions of utilities
-   
-   # Ubuntu/Debian
-   sudo apt install coreutils iproute2 iputils-ping
-   
-   # CentOS/RHEL
-   sudo yum install coreutils iproute iputils
-   ```
-
-**Note**: The scripts also assume a standard POSIX-compliant shell environment with common utilities like grep, sed, awk, cut, tr, sort, etc. These are typically pre-installed on all Unix-like systems.
-
-### Deployment
-
-You have two options for deployment:
-
-1. **Automated End-to-End Deployment** - Use `deploy-k0rdent.sh` for a complete automated deployment
-2. **Manual Step-by-Step Deployment** - Run each stage manually for more control
-
-#### Option 1: Automated Deployment (Recommended)
-
-Run the complete deployment process:
+The project includes a master orchestration script that handles the entire deployment lifecycle:
 
 ```bash
+# Full deployment
 ./deploy-k0rdent.sh deploy
+
+# Check status
+./deploy-k0rdent.sh status
+
+# Reset everything
+./deploy-k0rdent.sh reset
+
+# Fast reset (Azure-specific)
+./deploy-k0rdent.sh reset --fast
 ```
 
-For automated deployments without prompts:
+### Configuration System
+
+YAML-based configuration with multiple deployment sizes:
 
 ```bash
-./deploy-k0rdent.sh deploy -y
+# Initialize with production configuration
+./bin/configure.sh init --template production
+
+# View available templates
+./bin/configure.sh list-templates
+
+# Validate configuration
+./bin/configure.sh validate
 ```
 
-The deployment script automatically checks all prerequisites before starting.
+#### Available Configuration Templates
 
-#### Modular Deployment Options
+- **minimal**: 1 controller, 1 worker (development)
+- **small**: 1 controller, 2 workers (testing)
+- **production**: 3 controllers, 2 workers (HA setup)
+- **production-spot**: Same as production but using Azure Spot instances
+- **single-node**: 1 controller only (minimal testing)
+- **large**: 3 controllers, 5 workers (larger deployments)
 
-The deployment is modular - by default, only the base k0rdent cluster is installed. Additional components can be enabled with flags:
+### State Management
+
+The deployment process tracks state comprehensively:
+
+- **State persistence**: All deployment state saved to `state/deployment-state.yaml`
+- **Event tracking**: Detailed event log in `state/deployment-events.yaml`
+- **Resume capability**: Interrupted deployments can be resumed
+- **Resource verification**: Continuous validation of resource state
+
+### Enhanced VM Deployment
+
+- **Parallel creation**: All VMs created simultaneously
+- **Zone distribution**: Automatic HA zone assignment
+- **Failure recovery**: Automatic retry on VM creation failures
+- **Cloud-init validation**: Ensures proper VM initialization
+- **Progress tracking**: Real-time status updates
+
+### Network Security
+
+- **WireGuard VPN**: Secure mesh network for all communications
+- **Firewall rules**: Proper NSG configuration
+- **SSH lockdown**: Optional SSH access restriction to VPN only
+- **Private networking**: All cluster communication over private IPs
+
+## Deployment Workflow
+
+### Option 1: Automated Full Deployment
+
+The recommended approach using the orchestration script:
 
 ```bash
-# Deploy with Azure child cluster management capability
+# Initialize configuration
+./bin/configure.sh init
+
+# Run full deployment
+./deploy-k0rdent.sh deploy
+
+# Deploy with optional features
 ./deploy-k0rdent.sh deploy --with-azure-children
 
 # Deploy with KOF (k0rdent Observability and FinOps)
@@ -323,684 +258,352 @@ All scripts support standardized arguments:
 - `-h, --help` - Show help message
 
 Examples:
-
 ```bash
-# Automated deployment without prompts
+# Skip all confirmations
 ./deploy-k0rdent.sh deploy -y
 
-# Create VMs without waiting for provisioning
-./create-azure-vms.sh --no-wait
+# Reset without confirmations
+./deploy-k0rdent.sh reset --yes
 
-# Reset everything without confirmation
-./deploy-k0rdent.sh reset -y
+# Fast reset for development
+./deploy-k0rdent.sh reset --fast -y
 ```
 
-### Check Status
+## Post-Deployment Operations
+
+### Accessing the Cluster
+
+After successful deployment:
 
 ```bash
-# Show deployment configuration
-./deploy-k0rdent.sh config
+# Set kubeconfig
+export KUBECONFIG=$PWD/k0sctl-config/k0rdent-<deployment-id>-kubeconfig
 
-# Check prerequisites
-./deploy-k0rdent.sh check
-```
-
-## Configuration
-
-k0rdent uses a YAML-based configuration system for easy customization:
-
-### Quick Configuration
-
-```bash
-# List available templates
-./bin/configure.sh templates
-
-# Create configuration from template
-./bin/configure.sh init --template minimal      # Single node (default)
-./bin/configure.sh init --template development  # Dev environment
-./bin/configure.sh init --template production   # HA production setup
-
-# View current configuration
-./bin/configure.sh show
-
-# Validate VM availability for configuration
-./bin/configure.sh validate
-
-# Skip validation during configuration creation
-./bin/configure.sh init --template production --skip-validation
-
-# Edit configuration manually
-vim ./config/k0rdent.yaml
-```
-
-### Available Templates
-
-- **minimal** - Single controller + worker (default, cost-effective)
-- **development** - 1 controller + 2 workers across zones
-- **production** - 3 controllers + 3 workers (HA setup)
-- **production-arm64-southeastasia** - ARM64 optimized for Southeast Asia
-- **production-arm64-southeastasia-spot** - ARM64 with Spot VMs for cost savings
-
-#### Example YAML Configuration
-```yaml
-# Cluster Topology
-cluster:
-  controllers:
-    count: 3  # Number of k0s controllers (1, 3, 5, etc.)
-  workers:
-    count: 2  # Number of k0s workers
-
-# VM Sizing
-vm_sizing:
-  controller:
-    size: "Standard_D4pls_v6"  # Controllers (4 vCPUs, 8GB ARM64)
-  worker:
-    size: "Standard_D4pls_v6"  # Workers (4 vCPUs, 8GB ARM64)
-
-# Azure Settings
-azure:
-  location: "southeastasia"  # Azure region
-  vm_image: "Debian:debian-12:12-arm64:latest"
-  vm_priority: "Regular"  # Regular or Spot
-  eviction_policy: "Deallocate"  # For Spot VMs
-```
-
-See `config/examples/` for more configuration templates:
-- `minimal.yaml` - Single controller + worker setup  
-- `production.yaml` - HA setup with 3 controllers
-- `development.yaml` - Optimized for development/testing
-- `production-arm64-southeastasia.yaml` - ARM64 optimized for Southeast Asia
-- `production-arm64-southeastasia-spot.yaml` - ARM64 with Spot VMs for cost savings
-
-### Software Versions
-
-Current default versions in all templates:
-
-```yaml
-software:
-  k0s:
-    version: "v1.33.2+k0s.0"
-  k0rdent:
-    version: "1.1.1"
-    registry: "oci://ghcr.io/k0rdent/kcm/charts/kcm"
-    namespace: "kcm-system"
-```
-
-### KOF (k0rdent Observability and FinOps)
-
-KOF is an optional component that provides observability and FinOps capabilities for k0rdent clusters. It can be enabled in the configuration or deployed with the `--with-kof` flag.
-
-📚 **For comprehensive KOF documentation, see [docs/KOF-README.md](docs/KOF-README.md)**
-
-#### KOF Configuration
-
-```yaml
-kof:
-  enabled: false  # Set to true or use --with-kof flag
-  version: "1.1.0"
-  
-  # Istio configuration for KOF
-  istio:
-    version: "1.1.0"
-    namespace: "istio-system"
-  
-  # Mothership configuration
-  mothership:
-    namespace: "kof"
-    storage_class: "default"
-    collectors:
-      global: {}  # Custom global collectors can be added here
-  
-  # Regional cluster configuration
-  regional:
-    cluster_name: ""  # Will default to ${K0RDENT_CLUSTERID}-regional
-    domain: "regional.example.com"  # Required for KOF regional cluster
-    admin_email: "admin@example.com"  # Required for KOF certificates
-    location: "southeastasia"  # Azure region for regional cluster
-    template: "azure-standalone-cp-1-0-8"  # k0rdent cluster template
-    credential: "azure-cluster-credential"  # Azure credential name
-    cp_instance_size: "Standard_A4_v2"  # Control plane VM size
-    worker_instance_size: "Standard_A4_v2"  # Worker node VM size
-    root_volume_size: "32"  # Root volume size in GB
-```
-
-When KOF is enabled, the deployment will:
-1. Install Azure Disk CSI Driver on the management cluster (required for KOF persistent storage)
-2. Deploy KOF mothership with Istio service mesh
-3. Create a KOF regional cluster in the specified Azure location
-4. Configure observability and FinOps data collection
-5. Automatically retrieve and save the regional cluster kubeconfig to `k0sctl-config/`
-
-#### Accessing KOF Regional Cluster
-
-After KOF deployment, the regional cluster kubeconfig is automatically saved:
-```bash
-export KUBECONFIG=$PWD/k0sctl-config/kof-regional-<deployment-id>-<location>-kubeconfig
+# Verify cluster access
 kubectl get nodes
+kubectl get all -A
 ```
 
-#### Child Cluster Kubeconfig Retrieval
+### Managing WireGuard VPN
 
-For any k0rdent-managed cluster (child clusters), retrieve the kubeconfig:
 ```bash
-# From management cluster
+# Check VPN status
+./bin/manage-vpn.sh status
+
+# Disconnect VPN
+./bin/manage-vpn.sh disconnect
+
+# Reconnect VPN
+./bin/manage-vpn.sh connect
+
+# View detailed VPN information
+./bin/manage-vpn.sh info
+```
+
+### Deploying k0rdent Applications
+
+k0rdent is a comprehensive platform that provides:
+- Multi-cluster management capabilities
+- Infrastructure provisioning across cloud providers
+- Application lifecycle management
+- Built-in observability and monitoring
+
+After k0rdent is installed, you can:
+
+1. **Deploy child clusters**:
+   ```bash
+   # Setup Azure for child cluster deployments
+   ./bin/setup-azure-cluster-deployment.sh setup
+   
+   # Create a child cluster
+   ./bin/create-azure-child.sh --cluster-name my-child --location eastus
+   ```
+
+2. **Access the k0rdent UI**:
+   ```bash
+   # Port-forward to access k0rdent dashboard
+   kubectl port-forward -n kcm-system svc/kcm-gateway 8080:80
+   # Open http://localhost:8080 in your browser
+   ```
+
+3. **Install applications**:
+   - Use k0rdent's application catalog
+   - Deploy custom applications via GitOps
+   - Manage multi-cluster deployments
+
+### Optional: KOF (k0rdent Operations Framework)
+
+KOF provides centralized observability for k0rdent-managed clusters:
+
+```bash
+# Deploy k0rdent with KOF enabled
+./deploy-k0rdent.sh deploy --with-kof
+
+# Or install KOF on existing deployment
+./bin/install-kof-mothership.sh deploy
+./bin/install-kof-regional.sh deploy
+```
+
+KOF includes:
+- **Mothership cluster**: Central observability hub with Grafana dashboards
+- **Regional clusters**: Metrics aggregation points for child clusters
+- **Automatic integration**: Child clusters automatically send metrics when labeled appropriately
+
+### Child Cluster Management
+
+k0rdent can manage child clusters across different cloud providers:
+
+```bash
+# Azure child clusters
+./bin/create-azure-child.sh --cluster-name prod-app --location westus2
+
+# AWS child clusters (requires AWS credentials setup)
+./bin/setup-aws-cluster-deployment.sh setup
+./bin/create-aws-child.sh --cluster-name dev-app --region us-east-1
+```
+
+### Retrieving Kubeconfigs
+
+For any k0rdent-managed cluster:
+
+```bash
+# List available cluster kubeconfigs
+kubectl get secrets -n kcm-system | grep kubeconfig
+
+# Retrieve a specific cluster's kubeconfig
 kubectl get secret <cluster-name>-kubeconfig -n kcm-system -o jsonpath='{.data.value}' | base64 -d > ./k0sctl-config/<cluster-name>-kubeconfig
 ```
 
-See `notebooks/KUBECONFIG-RETRIEVAL.md` for detailed kubeconfig retrieval documentation.
+See `backlog/docs/doc-004 - Kubeconfig-Retrieval.md` for detailed kubeconfig retrieval documentation.
 
 For complete KOF deployment instructions, troubleshooting, and advanced usage, refer to the [KOF Documentation](docs/KOF-README.md).
 
 ### Configuration Examples
 
-#### HA Setup with 3 Controllers
-```yaml
-cluster:
-  controllers:
-    count: 3
-  workers:
-    count: 2
-```
-Creates: `k0s-controller`, `k0s-controller-2`, `k0s-controller-3`, `k0s-worker-1`, `k0s-worker-2`
-
-#### Single Controller Setup
-```yaml
-cluster:
-  controllers:
-    count: 1
-  workers:
-    count: 4
-```
-Creates: `k0s-controller`, `k0s-worker-1`, `k0s-worker-2`, `k0s-worker-3`, `k0s-worker-4`
-
 #### Small Development Setup
+
+`config/deployments/dev.yaml`:
 ```yaml
-cluster:
-  controllers:
+name: "dev"
+size: "small"
+k0s:
+  controller:
     count: 1
-  workers:
+    size: "Standard_B2s"
+  worker:
     count: 2
-vm_sizing:
-  controller:
-    size: "Standard_B2s"     # Smaller/cheaper
-  worker:
-    size: "Standard_B2ms"
+    size: "Standard_B2s"
 ```
 
-#### Large Production Setup
+#### Production HA Setup
+
+`config/deployments/prod.yaml`:
 ```yaml
-cluster:
-  controllers:
-    count: 3
-  workers:
-    count: 10
-vm_sizing:
+name: "prod"
+size: "production"
+azure:
+  location: "westus2"
+k0s:
   controller:
-    size: "Standard_D4s_v3"
+    count: 3
+    size: "Standard_D4s_v5"
   worker:
-    size: "Standard_D8s_v3"      # Larger workers
+    count: 5
+    size: "Standard_D8s_v5"
 ```
 
-### Internal Configuration (`etc/config-internal.sh`)
+### Recovery and Cleanup
 
-Automatically computed values (do not edit):
+#### Fast Reset (Development)
 
-- **VM Arrays**: Dynamically generated based on counts
-- **Resource Naming**: Uses random suffix for uniqueness
-- **IP Mapping**: WireGuard IPs assigned automatically
-- **Validation**: Ensures minimum requirements and HA best practices
-
-## Deployment State Tracking
-
-The project includes an intelligent state tracking system that significantly optimizes Azure deployments:
-
-### Key Benefits
-
-- **80-85% Reduction in Azure API Calls**: From 125-140 calls down to 20-25 per deployment
-- **Centralized State Management**: Single YAML-based state file replaces scattered CSV manifests
-- **Event-Driven Lifecycle**: Complete audit trail of all deployment actions
-- **Resume Capability**: Can resume deployments from any point in the process
-- **Backup and Recovery**: Automatic state backup on completion with cleanup on reset
-
-### State Files
-
-- **`deployment-state.yaml`**: Current deployment state with VM status, configuration snapshot, and progress tracking
-- **`deployment-events.yaml`**: Complete event log with timestamps and detailed action history
-- **`old_deployments/`**: Backup directory for completed deployment states
-
-### State Tracking Features
+For quick iteration during development:
 
 ```bash
-# View current deployment state
-yq eval '.' deployment-state.yaml
-
-# Check deployment events
-yq eval '.events[] | select(.action == "vm_deployment_completed")' deployment-events.yaml
-
-# Resume deployment from any point
-./deploy-k0rdent.sh deploy  # Automatically detects and continues from current state
+# Fast reset - deletes Azure resource group and cleans up
+./deploy-k0rdent.sh reset --fast -y
 ```
 
-The state system tracks:
-- Azure resource creation status (RG, VNet, SSH keys)
-- VM deployment with IP addresses and provisioning state
-- WireGuard key generation and VPN connectivity
-- k0s cluster deployment progress
-- k0rdent installation and readiness verification
+This:
+- Skips individual resource deletion
+- Deletes entire Azure resource group
+- Cleans up all local files
+- Takes seconds instead of minutes
 
-## File Structure
+#### Full Reset
 
-```
-k0rdent-azure-setup/
-├── README.md                    # This file
-├── deploy-k0rdent.sh           # Main orchestration script
-├── deployment-state.yaml       # Current deployment state (auto-generated)
-├── deployment-events.yaml      # Deployment event log (auto-generated)
-├── docs/                        # Documentation
-│   └── KOF-README.md           # KOF (k0rdent Operations Framework) documentation
-├── etc/                        # Configuration files
-│   ├── config-user.sh          # DEPRECATED (use YAML config instead)
-│   ├── config-internal.sh      # Computed configuration (do not edit)
-│   ├── k0rdent-config.sh       # Central configuration loader
-│   ├── state-management.sh     # State tracking functions
-│   ├── common-functions.sh     # Shared utility functions (1,500+ lines)
-│   ├── azure-cluster-functions.sh  # Azure child cluster utilities
-│   └── kof-functions.sh        # KOF-specific functions
-├── bin/                        # Action scripts
-│   ├── check-prerequisites.sh  # Centralized prerequisite checking
-│   ├── prepare-deployment.sh   # Deployment preparation (keys & cloud-init)
-│   ├── setup-azure-network.sh  # Azure infrastructure setup
-│   ├── create-azure-vms.sh     # VM creation with parallel deployment
-│   ├── manage-vpn.sh           # Comprehensive VPN management
-│   ├── install-k0s.sh          # k0s cluster installation with network validation
-│   ├── validate-pod-network.sh # Pod-to-pod network connectivity validation
-│   ├── install-k0rdent.sh      # k0rdent installation on cluster
-│   ├── setup-azure-cluster-deployment.sh  # Azure child cluster capability
-│   ├── setup-aws-cluster-deployment.sh    # AWS child cluster capability
-│   ├── install-k0s-azure-csi.sh          # Azure Disk CSI Driver installation
-│   ├── install-kof-mothership.sh         # KOF mothership deployment
-│   ├── install-kof-regional.sh           # KOF regional cluster deployment
-│   ├── create-azure-child.sh   # Create Azure k0rdent-managed child clusters
-│   ├── create-aws-child.sh     # Create AWS k0rdent-managed child clusters
-│   ├── list-child-clusters.sh  # List all child clusters
-│   ├── configure.sh            # Configuration management
-│   └── lockdown-ssh.sh         # SSH security management
-├── azure-resources/            # Generated Azure resources  
-│   ├── k0rdent-XXXXXXXX-ssh-key     # Private SSH key
-│   └── k0rdent-XXXXXXXX-ssh-key.pub # Public SSH key
-├── wireguard/                  # WireGuard configuration and keys
-│   ├── *_privkey and *_pubkey files # WireGuard keys per host
-│   └── wgk0XXXXXXXX.conf           # Laptop WireGuard config
-├── cloud-inits/               # VM cloud-init configurations
-│   ├── k0s-controller-cloud-init.yaml
-│   ├── k0s-controller-2-cloud-init.yaml
-│   ├── k0s-controller-3-cloud-init.yaml
-│   ├── k0s-worker-1-cloud-init.yaml
-│   └── k0s-worker-2-cloud-init.yaml
-├── laptop-wg-config/          # Generated laptop WireGuard config
-│   └── k0rdent-laptop.conf
-├── k0sctl-config/             # k0s cluster configuration and kubeconfig
-│   ├── <prefix>-k0sctl.yaml
-│   └── <prefix>-kubeconfig
-└── old_deployments/           # Backup directory for completed deployments
-    ├── k0rdent-XXXXXXXX_deployment-state_YYYY-MM-DD.yaml
-    └── k0rdent-XXXXXXXX_deployment-events_YYYY-MM-DD.yaml
-```
-
-## Scripts Reference
-
-### deploy-k0rdent.sh
-
-Main orchestration script with commands:
-- `deploy` - Run full deployment with confirmation
-- `reset` - Remove all k0rdent resources in proper order
-- `config` - Show deployment configuration
-- `check` - Verify prerequisites only
-- `help` - Show usage information
-
-Options:
-- `-y, --yes` - Skip confirmation prompts
-- `--no-wait` - Pass to child scripts to skip resource waiting
-- `-h, --help` - Show help message
-
-The orchestrator automatically passes flags to all child scripts for consistent behavior.
-
-### Individual Scripts
-
-**prepare-deployment.sh**: Consolidated deployment preparation handling:
-- WireGuard key generation for all hosts
-- WireGuard port selection (30000-64000)
-- Cloud-init file generation with keys and configuration
-- Commands: `keys`, `cloudinit`, `deploy`, `reset`, `status`
-
-**setup-azure-network.sh**: Creates Azure infrastructure:
-- Resource group, VNet, subnet, and NSG
-- SSH key generation and import to Azure
-- Security rules for SSH and WireGuard
-- Tracks all resources in manifest for cleanup
-
-**create-azure-vms.sh**: Asynchronous VM deployment with intelligent failure recovery:
-- **Async VM Creation**: VMs launched in parallel background processes with PID tracking
-- **Automatic Failure Recovery**: Detects failed VMs and cloud-init errors, automatically recreates
-- **Single Monitoring Loop**: Efficient Azure API usage with single bulk calls every 30 seconds
-- **Cattle-not-Pets Methodology**: Failed VMs are immediately deleted and recreated
-- **Retry Management**: Tracks retry attempts per VM (max 3 retries) with intelligent exit conditions
-- **Cloud-init Validation**: Monitors cloud-init status and triggers VM replacement on errors
-- **SSH Connectivity Testing**: Verifies SSH access before marking VMs as operational
-- **State-based Monitoring**: Tracks VM provisioning states (Creating → Succeeded → Operational)
-- **Optimized Verification**: Skip rechecking already verified VMs, cleaner logs for VMs without state
-- **Process Health Monitoring**: Detects dead VM creation processes and automatically retries
-- Support for `--no-wait` to skip verification and `reset` for bulk VM cleanup
-
-**manage-vpn.sh**: Comprehensive VPN management with enhanced workflow:
-- **Two-step process**: `setup` (one-time configuration) and `connect` (fast, repeatable)
-- WireGuard configuration generation for laptop
-- Connection management (CLI and GUI support)
-- Connectivity testing and troubleshooting
-- Commands: `setup`, `connect`, `disconnect`, `test`, `status`, `cleanup`, `reset`
-- Backwards compatibility with `generate` command
-
-**lockdown-ssh.sh**: Optional SSH security management:
-- Remove SSH access from internet after VPN is working
-- Restore SSH access when needed
-- Simple rule-based approach (no backup/restore complexity)
-- Commands: `lockdown`, `unlock`, `status`
-
-**install-k0s.sh**: Installs and configures k0s Kubernetes cluster with:
-- k0sctl configuration generation
-- Support for single controller or HA multi-controller setups
-- SSH connectivity testing
-- Kubeconfig retrieval and validation
-- Automatic pod-to-pod network validation after deployment
-- State tracking for cluster deployment progress
-- `config` command for step-by-step deployment support
-
-**validate-pod-network.sh**: Validates cluster network connectivity:
-- Tests pod-to-pod connectivity across all worker nodes
-- Deploys lightweight test pods on each node
-- Verifies cross-node network communication with ping tests
-- Automatically cleans up test resources on success
-- Blocks deployment if network validation fails
-- Commands: `validate`, `cleanup`
-
-**install-k0rdent.sh**: Installs k0rdent on the k0s cluster with:
-- Helm-based installation using OCI registry
-- Automatic cluster detection and configuration
-- Installation status verification
-- k0rdent readiness verification with pod status checking
-- State tracking for installation progress and component readiness
-
-Each script supports standardized arguments and reset functionality:
+For complete cleanup:
 
 ```bash
-# Reset individual components
-./bin/prepare-deployment.sh reset -y     # Remove keys and cloud-init files
-./bin/setup-azure-network.sh reset -y    # Delete Azure resources
-./bin/create-azure-vms.sh reset -y       # Delete VMs (prompts for each)
-./bin/manage-vpn.sh reset -y             # Remove VPN configuration
-./bin/lockdown-ssh.sh unlock -y          # Restore SSH access if locked down
-./bin/install-k0s.sh uninstall -y        # Remove k0s cluster
-./bin/install-k0rdent.sh uninstall -y    # Uninstall k0rdent
+# Full reset with confirmations
+./deploy-k0rdent.sh reset
 
-# Or use the main script to reset everything
+# Skip confirmations
 ./deploy-k0rdent.sh reset -y
 ```
 
-## Child Cluster Deployment
+#### Resume Interrupted Deployment
 
-k0rdent can deploy child clusters to both Azure and AWS cloud providers after proper credential configuration.
-
-### Azure Child Cluster Setup
-
-Use `setup-azure-cluster-deployment.sh` to configure k0rdent with Azure credentials:
+If deployment is interrupted:
 
 ```bash
-# Configure Azure credentials
-./bin/setup-azure-cluster-deployment.sh setup
-
-# Check status
-./bin/setup-azure-cluster-deployment.sh status
-
-# Remove Azure credentials
-./bin/setup-azure-cluster-deployment.sh cleanup
+# Resume from where it left off
+./deploy-k0rdent.sh deploy --resume
 ```
 
-This script:
-- Creates an Azure Service Principal with Contributor role
-- Configures AzureClusterIdentity for CAPZ (Cluster API Azure)
-- Creates k0rdent Credential object for cluster deployments
-- Manages all Azure-specific resource templates
+### Advanced VM Management
 
-### AWS Child Cluster Setup
+The project supports flexible VM configurations:
 
-Use `setup-aws-cluster-deployment.sh` to configure k0rdent with AWS credentials:
+#### Zone Distribution
+
+VMs are automatically distributed across availability zones:
+- Controllers spread across zones 2, 3, 2 (for 3 controllers)
+- Workers distributed to maintain balance
+- Ensures HA during zone failures
+
+#### Parallel VM Operations
 
 ```bash
-# Configure AWS credentials with IAM role/user ARN
-./bin/setup-aws-cluster-deployment.sh setup --role-arn arn:aws:iam::123456789012:role/k0rdent-capa-role
+# Create all VMs in parallel
+./bin/create-azure-vms.sh deploy
 
-# Using IAM user with credentials file
-./bin/setup-aws-cluster-deployment.sh setup --role-arn arn:aws:iam::025066280552:user/k0rdent-user --region us-east-1
+# Delete all VMs (parallel with --no-wait)
+./bin/create-azure-vms.sh reset --no-wait
 
-# Check status
-./bin/setup-aws-cluster-deployment.sh status
-
-# Remove AWS credentials
-./bin/setup-aws-cluster-deployment.sh cleanup
+# Check VM status
+./bin/create-azure-vms.sh status
 ```
 
-Options:
-- `--role-arn ARN` (REQUIRED): ARN of pre-created IAM role or user
-- `--region REGION`: AWS region (default: us-east-1)
-- `--profile-name NAME`: AWS CLI profile name
-- `--source-profile NAME`: Source profile for role assumption
-
-#### AWS Prerequisites
-
-1. **IAM Role/User**: Must be manually created in AWS Console with these policies:
-   - `control-plane.cluster-api-provider-aws.sigs.k8s.io`
-   - `controllers.cluster-api-provider-aws.sigs.k8s.io`
-   - `nodes.cluster-api-provider-aws.sigs.k8s.io`
-   - `controllers-eks.cluster-api-provider-aws.sigs.k8s.io`
-
-2. **For IAM Roles**: Configure trust relationship to allow your AWS account to assume the role
-
-3. **For IAM Users**: Generate access keys and save to `k0rdent-<username>_accessKeys.csv`
-
-The script:
-- Configures AWS CLI for role assumption (when using roles)
-- Uses temporary STS credentials (for roles) or permanent keys (for users)
-- Creates AWSClusterStaticIdentity for CAPA (Cluster API AWS)
-- Creates k0rdent Credential object for cluster deployments
-- NO programmatic IAM creation - all AWS resources must be pre-created
-
-### Creating Child Clusters
-
-After configuring cloud credentials, use the cloud-specific scripts:
-
-#### Azure Child Clusters
+#### SSH Access Management
 
 ```bash
-./bin/create-azure-child.sh --cluster-name my-cluster --location eastus \
-  --cp-instance-size Standard_B2s --worker-instance-size Standard_B2s \
-  --root-volume-size 32 --namespace kcm-system \
-  --template azure-standalone-cp-1-0-8 --credential azure-cluster-credential \
-  --cp-number 1 --worker-number 2 \
-  --cluster-identity-name azure-cluster-identity --cluster-identity-namespace kcm-system
+# List SSH commands for all VMs
+./bin/create-azure-vms.sh ssh-info
+
+# Connect to specific VM
+ssh -i ./azure-resources/ssh_key azureuser@<public-ip>
 ```
 
-#### AWS Child Clusters  
+### Monitoring and Observability
+
+#### Native Kubernetes Monitoring
 
 ```bash
-./bin/create-aws-child.sh --cluster-name my-cluster --region us-east-1 \
-  --cp-instance-size t3.medium --worker-instance-size t3.large \
-  --root-volume-size 50 --namespace kcm-system \
-  --template aws-standalone-cp-1-0-10 --credential aws-cluster-credential \
-  --cp-number 1 --worker-number 2 \
-  --cluster-identity-name aws-cluster-identity --cluster-identity-namespace kcm-system
+# View cluster resources
+kubectl top nodes
+kubectl top pods -A
+
+# Check cluster health
+kubectl get componentstatuses
+kubectl get events -A --sort-by='.lastTimestamp'
 ```
 
-Both scripts support:
-- `--dry-run` for simulation mode
-- `--cluster-labels` and `--cluster-annotations` for metadata
-- `--availability-zones` (AWS only) for zone distribution
+#### KOF Observability Stack
 
-## Script Features
-
-### Logging and Output Management
-
-Azure commands generate verbose output that can clutter the console. The scripts now include:
-
-- **Timestamped log files**: Azure command output is captured in `logs/` directory with timestamps
-- **Clean console output**: Only essential progress messages and results are shown on screen
-- **Automatic log cleanup**: The `logs/` directory is removed during reset operations
-- **Git ignore**: Log files are automatically excluded from version control
-
-Example log file: `logs/setup-azure-network_20241204_143052.log`
-
-### Robust VM Creation
-
-The VM creation process has been enhanced for reliability:
-
-- **Existing VM detection**: Scripts continue gracefully if VMs already exist instead of failing
-- **Partial deployment support**: Only creates missing VMs, skips existing ones
-- **Retry-friendly**: Allows re-running deployment scripts without conflicts
-- **Clear status reporting**: Shows which VMs exist vs. which will be created
-
-### WireGuard Configuration Improvements
-
-- **Compatible file naming**: Configuration files use format `wgk0XXXXXXXX.conf` for compatibility with `wg-quick`
-- **Secure permissions**: Configuration files are automatically set to 600 permissions
-- **Interface name validation**: Ensures WireGuard interface names are valid and don't contain special characters
-
-## SSH Access
-
-After deployment, SSH to any VM using the generated key:
+When deployed with `--with-kof`, access Grafana dashboards:
 
 ```bash
-ssh -i ./azure-resources/k0rdent-XXXXXXXX-ssh-key k0rdent@<PUBLIC_IP>
+# Port-forward to Grafana (in KOF mothership)
+kubectl port-forward -n kof-monitoring svc/kof-mothership-grafana 3000:80
+
+# Access at http://localhost:3000
+# Default credentials are in the deployment
 ```
 
-## WireGuard Setup
+### Networking Details
 
-### VM Configuration
+#### WireGuard VPN Topology
 
-Each VM is automatically configured with:
-- WireGuard interface `wg0`
-- Unique private key and IP address
-- Peer configuration for laptop hub
-- Auto-start on boot
-
-### Laptop Configuration
-
-Create a WireGuard configuration on your laptop using the generated keys:
-
-```ini
-[Interface]
-PrivateKey = <mylaptop_private_key_from_manifest>
-Address = 172.24.24.1/32
-ListenPort = <port_from_wireguard-port.txt>
-
-[Peer]
-PublicKey = <vm_public_key_from_manifest>
-AllowedIPs = <vm_wg_ip>/32
-Endpoint = <vm_public_ip>:<wireguard_port>
-PersistentKeepalive = 25
+```
+Laptop (172.24.24.1) ← Hub-and-Spoke → All VMs
+         ↓
+   Controllers (172.24.24.11-13)
+   Workers (172.24.24.14+)
 ```
 
-## Monitoring Cloud-Init
+#### Network Security Groups
 
-Check cloud-init progress on VMs:
+Automatic NSG rules:
+- SSH (22): Configurable access
+- WireGuard (51820): Public access
+- VXLAN (8472): Internal only
+- Kubernetes APIs: Internal only
+- kubelet (10250): Internal only
 
-```bash
-# Check status
-sudo cloud-init status
+#### Private Networking
 
-# View logs
-sudo journalctl -u cloud-init-final
-
-# Check WireGuard status
-sudo systemctl status wg-quick@wg0
-sudo wg show
-```
-
-## Cleanup
-
-To completely remove all k0rdent resources:
-
-```bash
-./deploy-k0rdent.sh reset
-```
-
-The reset process intelligently handles child clusters:
-- If KOF is deployed, the regional cluster is removed first
-- Azure child clusters are cleaned up before the management cluster
-- All resources are removed in the proper dependency order
-
-This will remove resources in the proper order:
-1. Uninstall k0rdent from cluster
-2. Remove k0s cluster
-3. Disconnect WireGuard VPN
-4. Remove laptop WireGuard configuration
-5. Azure VMs and network resources
-6. Cloud-init files  
-7. WireGuard keys
-8. Backup deployment state to `old_deployments/` directory
-9. Clean up current deployment state files
-10. Project suffix file (for completely fresh deployments)
-
-The cleanup process preserves deployment history by backing up state files before removal, allowing you to review past deployments if needed.
-
-For individual component cleanup, you can also run:
-
-```bash
-./bin/install-k0rdent.sh uninstall    # Uninstall k0rdent only
-./bin/install-k0s.sh uninstall        # Remove k0s cluster only
-./bin/setup-azure-network.sh reset    # Remove Azure resources only
-./bin/prepare-deployment.sh reset     # Remove WireGuard keys and cloud-init files
-./bin/create-azure-vms.sh reset       # Delete k0rdent VMs and OS disks individually
-```
-
-**Note**: The project suffix file is only removed when using `./deploy-k0rdent.sh reset` to ensure a completely fresh deployment. Individual script resets preserve the project identifier.
+All cluster communication happens over WireGuard:
+- No public endpoints for Kubernetes
+- Encrypted node-to-node communication
+- Secure laptop-to-cluster access
 
 ## Troubleshooting
 
 ### Troubleshooting Guides
 
-Detailed troubleshooting guides are available in `notebooks/troubleshooting_guide/`:
+Detailed troubleshooting guides are available in `backlog/docs/` (filter by type: troubleshooting):
 - **KOF Child Cluster Issues**: See `kof-child-cluster-not-deploying.md`
 
 ### Common Issues
 
-1. **Quota Exceeded**: Reduce VM size in your YAML configuration
-2. **Zone Availability**: Check ARM64 VM availability in your region
-3. **Network Conflicts**: Ensure no existing resources conflict with names
-
-### Debug Commands
+#### WireGuard Connection Issues
 
 ```bash
-# Check Azure resources
-az group list --query "[?contains(name, 'k0rdent-')]"
+# Check WireGuard status
+./bin/manage-vpn.sh status
 
-# Check VM status
-az vm list --resource-group <resource-group> --show-details
+# View detailed logs
+./bin/manage-vpn.sh info
 
-# View cloud-init logs
-ssh -i ./azure-resources/k0rdent-*-ssh-key k0rdent@<vm-ip> 'sudo cat /var/log/cloud-init-output.log'
+# Reset WireGuard completely
+./bin/manage-vpn.sh reset
 ```
 
-## Security Features
+#### VM Creation Failures
 
-- SSH keys generated locally and securely stored
-- WireGuard for encrypted communication
-- Network Security Groups with minimal required access
-- Private key files with proper permissions (600)
-- Resource naming with random suffixes for uniqueness
-- **Optional SSH lockdown**: Remove internet SSH access after VPN is working
+The system automatically retries failed VMs, but if issues persist:
 
-### SSH Lockdown (Optional)
+```bash
+# Check VM status
+./bin/create-azure-vms.sh status
 
-After WireGuard VPN is working, you can optionally remove SSH access from the internet:
+# View Azure logs
+az vm list -g <resource-group> -o table
+
+# Manual retry
+./bin/create-azure-vms.sh deploy
+```
+
+#### State Recovery
+
+If state becomes corrupted:
+
+```bash
+# Backup current state
+cp -r state/ state.backup/
+
+# Reset and start fresh
+./deploy-k0rdent.sh reset --force
+```
+
+### Logging and Debugging
+
+All scripts support verbose output:
+
+```bash
+# Run any script with verbose logging
+DEBUG=1 ./deploy-k0rdent.sh deploy
+
+# Check state files
+cat state/deployment-state.yaml
+cat state/deployment-events.yaml
+```
+
+## Security Considerations
+
+### SSH Access Lockdown
+
+After deployment, you can restrict SSH access to VPN only:
 
 ```bash
 # Remove SSH access from internet (VPN access still works)
@@ -1071,6 +674,65 @@ kubectl get all -A
 - Fixed network validation for single-worker deployments
 - Fixed hardcoded controller names in k0rdent installation script
 - Fixed `populate_wg_ips_array()` to handle missing wireguard_peers gracefully
+
+## Development and Project Management
+
+This project uses [Backlog.md](https://github.com/MrLesk/Backlog.md) for task management and documentation. Backlog.md is a markdown-native task management system built specifically for Git repositories.
+
+### Project Structure
+
+```
+backlog/
+├── tasks/          # Project tasks and feature requests
+├── docs/           # Design documents, troubleshooting guides, and technical references
+├── decisions/      # Architecture Decision Records (ADRs)
+└── completed/      # Archived completed implementation plans
+```
+
+### Task Management
+
+```bash
+# View all tasks
+backlog task list --plain
+
+# View high-priority tasks
+backlog task list --plain | grep HIGH
+
+# Work on a task
+backlog task edit <task-id> -s "In Progress" -a @yourname
+
+# Create a new task
+backlog task create "Task Title" -d "Description" -l "bug,high-priority"
+
+# View task details
+backlog task <task-id> --plain
+```
+
+### Documentation
+
+- **Design Documents**: Find architecture and design specs in `backlog/docs/` (type: design)
+- **Troubleshooting**: Find guides in `backlog/docs/` (type: troubleshooting)
+- **Technical References**: API docs and integration guides in `backlog/docs/` (type: reference)
+- **Architecture Decisions**: Find ADRs in `backlog/decisions/`
+
+### Contributing
+
+**Prerequisites**: Install [Backlog.md](https://github.com/MrLesk/Backlog.md#installation) for task management:
+```bash
+# macOS
+brew install backlog-md
+
+# Linux/Windows
+# See installation instructions at https://github.com/MrLesk/Backlog.md
+```
+
+1. Check existing tasks: `backlog task list --plain`
+2. Pick or create a task for your work
+3. Move task to "In Progress" status
+4. Follow the development guidelines in `CLAUDE.md`
+5. Update task with implementation notes when complete
+
+For more details on using Backlog.md, see the [official documentation](https://github.com/MrLesk/Backlog.md).
 
 ---
 

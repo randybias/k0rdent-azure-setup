@@ -9,7 +9,7 @@ When k0rdent creates managed clusters, it stores their kubeconfigs as Secrets in
 ```bash
 kubectl get secret <cluster-name>-kubeconfig -n kcm-system -o jsonpath='{.data.value}' | base64 -d > ./k0sctl-config/<cluster-name>-kubeconfig
 ```
-See `notebooks/KUBECONFIG-RETRIEVAL.md` for detailed documentation.
+See `backlog/docs/doc-004 - Kubeconfig-Retrieval.md` for detailed documentation.
 
 ### macOS WireGuard Interface Naming
 On macOS, WireGuard interfaces are always named utun0 through utun9 (dynamically assigned), not by the configuration name. When using `wg show` on macOS, you must use the actual utun interface name, not the configuration name like "wgk0r5jkseel". The configuration name is only used by wg-quick to track which utun interface belongs to which configuration.
@@ -19,7 +19,19 @@ On macOS, WireGuard interfaces are always named utun0 through utun9 (dynamically
 - Do NOT run tests without confirmation
 - Ask before using git commit -A as frequently in this directory there are transient files we do NOT want to commit
 - When planning infrastructure, follow the pets vs cattle methodology and consider most cloud instances as cattle who can be easily replaced and that is the better solution than trying to spending excessive amounts of time troubleshooting transient problems
-- Always moved completed backlog items into notebooks/completed/BACKLOG-COMPLETED.md
+
+## Task Management Transition (2025-07-20)
+
+**IMPORTANT**: We have fully migrated to using Backlog.md (https://github.com/MrLesk/Backlog.md) for all task management and documentation.
+
+- **Old System**: Previously used `notebooks/BACKLOG.md` and various subdirectories
+- **New System**: Now using the `backlog` CLI tool with structured directories:
+  - `backlog/tasks/` - All project tasks (48 migrated)
+  - `backlog/docs/` - Design specs, troubleshooting guides, references
+  - `backlog/decisions/` - Architecture Decision Records (ADRs)
+  - `backlog/completed/` - Historical implementation plans
+- **Migration Date**: 2025-07-20
+- **Usage**: Use `backlog` CLI commands for all task management (see guidelines below)
 
 ## Development Environment
 
@@ -104,12 +116,29 @@ source ./etc/kof-functions.sh        # Only KOF-specific additions
 - WireGuard config files use pattern `wgk0${suffix}.conf` where suffix is extracted from cluster ID
 - No more mixed PREFIX/SUFFIX terminology - everything is CLUSTERID now
 
-## Troubleshooting Guidelines
+## Documentation and Decision Management
 
-### Troubleshooting Documentation
-- When you successfully troubleshoot a problem, record it under a subdirectory called notebooks/troubleshooting_guide for future reference
-- Create a new markdown file for every problem resolved
-- Always check the troubleshooting directory to see if there is something relevant when starting a new troubleshooting process
+### Documentation (backlog/docs/)
+- **Design Documents**: Store all design documents and architectural plans in `backlog/docs/`
+- **Troubleshooting Guides**: Create troubleshooting documents with type: troubleshooting
+- **Technical References**: API documentation, integration guides, etc.
+- **Format**: Use `doc-XXX - Title.md` naming convention
+- **Types**: design, troubleshooting, reference, guide, other
+
+### Decisions (backlog/decisions/)
+- **Architectural Decisions**: Record all key architectural decisions as ADRs (Architecture Decision Records)
+- **Format**: Use `decision-XXX - Title.md` naming convention
+- **Structure**: Context, Decision, Consequences
+- **Status**: proposed, accepted, rejected, superseded
+- **Purpose**: Maintain a history of why certain technical choices were made
+
+### Directory Usage Guidelines
+- **Tasks**: Use `backlog task create` for all new tasks and features
+- **Troubleshooting**: Create docs in `backlog/docs/` with type: troubleshooting
+- **Design Documents**: Create docs in `backlog/docs/` with type: design
+- **Technical References**: Create docs in `backlog/docs/` with type: reference
+- **Architecture Decisions**: Create ADRs in `backlog/decisions/`
+- **DEPRECATED**: The notebooks/ directory has been removed
 
 <!-- BACKLOG.MD GUIDELINES START -->
 # Instructions for the usage of Backlog.md CLI Tool

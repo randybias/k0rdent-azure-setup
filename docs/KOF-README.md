@@ -353,4 +353,4 @@ KOF is designed to integrate seamlessly with k0rdent's cluster management:
 
 ---
 
-For implementation details and development notes, see `notebooks/KOF-INSTALLATION-PLAN.md`
+For related tasks and implementation details, see KOF-related tasks in `backlog/tasks/` (use `backlog task list --plain | grep -i kof`)
