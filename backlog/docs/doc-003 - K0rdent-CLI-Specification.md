@@ -1,6 +1,6 @@
 ---
 id: doc-003
-title: K0rdent CLI Specification
+title: k0rdent CLI Specification
 type: design
 created_date: '2025-07-20'
 updated_date: '2025-07-20'
