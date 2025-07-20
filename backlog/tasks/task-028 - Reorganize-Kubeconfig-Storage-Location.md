@@ -1,9 +1,9 @@
 ---
 id: task-028
 title: Reorganize Kubeconfig Storage Location
-status: In Progress
+status: To Do
 assignee:
-  - '@claude'
+  - '@rbias'
 created_date: '2025-07-20'
 updated_date: '2025-07-20'
 labels:
@@ -36,3 +36,7 @@ Move kubeconfig files from k0sctl-config/ directory to a dedicated kubeconfig/ d
 6. Update documentation (README.md, CLAUDE.md, and any other docs)
 7. Test the changes with a deployment
 8. Create migration instructions for existing users
+
+## Implementation Notes
+
+Attempted implementation but decided to keep all state in state/ directory for simplicity. The k0sctl-config/ directory name is fine as-is and doesn't need to be changed.
