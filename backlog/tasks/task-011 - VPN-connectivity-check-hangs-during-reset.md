@@ -1,7 +1,7 @@
 ---
 id: task-011
 title: VPN connectivity check hangs during reset
-status: To Do
+status: Done
 assignee:
   - rbias
 created_date: '2025-07-20'
@@ -24,6 +24,10 @@ When running reset operations (uninstalling k0rdent or removing k0s cluster), th
 - [ ] Reset operations complete cleanly without requiring manual interruption
 - [ ] Ping commands timeout properly if VPN is disconnected
 
+
+## Implementation Notes
+
+Ping timeouts have been implemented (ping -c 3 -W 5000) to prevent hangs. The 5-second timeout ensures VPN connectivity checks don't block reset operations.
 ## Technical Details
 
 ### Recent Updates
