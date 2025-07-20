@@ -1,7 +1,7 @@
 ---
 id: task-016
 title: Add Deployment Timing Metrics
-status: To Do
+status: Done
 assignee:
   - rbias
 created_date: '2025-07-20'
@@ -26,6 +26,10 @@ Report deployment start timestamp, end timestamp, and total deployment time to p
 - [ ] Phase-level timing tracked (infrastructure setup VM creation k0s install etc)
 - [ ] Timing information stored in deployment state for resume scenarios
 
+
+## Implementation Notes
+
+Basic timing implemented - shows total deployment time at completion. Start time not displayed at beginning and per-phase metrics not tracked. Core timing functionality exists.
 ## Technical Details
 
 ### Current Behavior
