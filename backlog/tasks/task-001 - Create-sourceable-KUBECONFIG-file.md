@@ -8,7 +8,6 @@ created_date: '2025-07-20'
 updated_date: '2025-07-20'
 labels:
   - enhancement
-  - medium-priority
   - developer-experience
 dependencies: []
 priority: medium
