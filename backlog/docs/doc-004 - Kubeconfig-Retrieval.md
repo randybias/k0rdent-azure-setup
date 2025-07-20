@@ -1,3 +1,9 @@
+---
+id: doc-004
+title: Kubeconfig Retrieval
+type: design
+created_date: '2025-07-20'
+---
 # Kubeconfig Retrieval from k0rdent-Managed Clusters
 
 This document describes how to retrieve kubeconfig files for clusters managed by k0rdent.

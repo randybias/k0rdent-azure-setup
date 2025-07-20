@@ -1,3 +1,9 @@
+---
+id: doc-002
+title: Troubleshooting KOF Child Cluster Not Deploying
+type: troubleshooting
+created_date: '2025-07-20'
+---
 # Troubleshooting: KOF Components Not Deploying to Child Cluster
 
 ## Problem
