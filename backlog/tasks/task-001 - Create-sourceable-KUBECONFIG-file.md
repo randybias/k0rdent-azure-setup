@@ -3,7 +3,7 @@ id: task-001
 title: Create sourceable KUBECONFIG file
 status: To Do
 assignee:
-  - '@rbias'
+  - rbias
 created_date: '2025-07-20'
 updated_date: '2025-07-20'
 labels:
@@ -11,6 +11,7 @@ labels:
   - medium-priority
   - developer-experience
 dependencies: []
+priority: medium
 ---
 
 ## Description
