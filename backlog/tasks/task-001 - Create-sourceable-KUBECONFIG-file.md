@@ -1,7 +1,7 @@
 ---
 id: task-001
 title: Create sourceable KUBECONFIG file
-status: In Progress
+status: To Do
 assignee:
   - '@rbias'
 created_date: '2025-07-20'
