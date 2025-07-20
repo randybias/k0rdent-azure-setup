@@ -95,7 +95,7 @@ show_config() {
     
     echo
     echo "Project Settings:"
-    echo "  Prefix: $K0RDENT_CLUSTERID"
+    echo "  Cluster ID: $K0RDENT_CLUSTERID"
     echo "  Region: $AZURE_LOCATION"
     echo "  Resource Group: $RG"
     
@@ -354,10 +354,10 @@ run_fast_reset() {
         print_info "Removed k0sctl-config directory"
     fi
     
-    # Remove project suffix file
-    if [[ -f "$SUFFIX_FILE" ]]; then
-        rm -f "$SUFFIX_FILE"
-        print_info "Removed project suffix file"
+    # Remove project clusterid file
+    if [[ -f "$CLUSTERID_FILE" ]]; then
+        rm -f "$CLUSTERID_FILE"
+        print_info "Removed project clusterid file"
     fi
     
     # Remove state files
@@ -542,10 +542,10 @@ run_full_reset() {
         print_info "Step 6: No deployment preparation files to remove"
     fi
 
-    # Clean up project suffix file (only when using deploy-k0rdent.sh reset)
-    if [[ -f "$SUFFIX_FILE" ]]; then
-        print_info "Removing project suffix file for fresh deployment"
-        rm -f "$SUFFIX_FILE"
+    # Clean up project clusterid file (only when using deploy-k0rdent.sh reset)
+    if [[ -f "$CLUSTERID_FILE" ]]; then
+        print_info "Removing project clusterid file for fresh deployment"
+        rm -f "$CLUSTERID_FILE"
     fi
 
     # Step 7: Clean up deployment state files

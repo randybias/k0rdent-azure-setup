@@ -33,17 +33,18 @@ if [[ $K0S_CONTROLLER_COUNT -gt 1 ]] && [[ $((K0S_CONTROLLER_COUNT % 2)) -eq 0 ]
 fi
 
 # ---- Computed Variables ----
-# Random suffix for resource naming
-SUFFIX_FILE="./.project-suffix"
-if [[ -f "$SUFFIX_FILE" ]]; then
-    RANDOM_SUFFIX=$(cat "$SUFFIX_FILE")
+# Cluster ID for resource naming
+CLUSTERID_FILE="./.clusterid"
+if [[ -f "$CLUSTERID_FILE" ]]; then
+    K0RDENT_CLUSTERID=$(cat "$CLUSTERID_FILE")
 else
-    RANDOM_SUFFIX=$(head /dev/urandom | base64 | tr -dc 'a-z0-9' | head -c 8)
-    echo "$RANDOM_SUFFIX" > "$SUFFIX_FILE"
+    # Generate new cluster ID
+    RANDOM_ID=$(head /dev/urandom | base64 | tr -dc 'a-z0-9' | head -c 8)
+    K0RDENT_CLUSTERID="k0rdent-${RANDOM_ID}"
+    echo "$K0RDENT_CLUSTERID" > "$CLUSTERID_FILE"
 fi
 
 # Resource naming
-K0RDENT_CLUSTERID="k0rdent-${RANDOM_SUFFIX}"
 RG="${K0RDENT_CLUSTERID}-resgrp"
 VNET_NAME="${K0RDENT_CLUSTERID}-vnet"
 SUBNET_NAME="${K0RDENT_CLUSTERID}-subnet"

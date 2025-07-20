@@ -1,10 +1,9 @@
 # Generated deployment artifacts
-.k0rdent-suffix
+.clusterid
 azure-resources/
 wireguard/
 cloud-inits/
 logs/
-.project-suffix
 k0sctl-config/
 old_deployments/
 
