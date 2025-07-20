@@ -1,7 +1,7 @@
 ---
 id: task-033
 title: Extract KOF deployment logic into deploy-kof-stack.sh
-status: To Do
+status: Done
 assignee:
   - rbias
 created_date: '2025-07-20'
