@@ -35,7 +35,7 @@ usage() {
 # Function to find the kubeconfig file with project suffix
 find_kubeconfig() {
     local k0sctl_dir="$PROJECT_ROOT/k0sctl-config"
-    local project_suffix_file="$PROJECT_ROOT/.project-suffix"
+    local clusterid_file="$PROJECT_ROOT/.clusterid"
     
     # Check if k0sctl-config directory exists
     if [[ ! -d "$k0sctl_dir" ]]; then
@@ -43,21 +43,21 @@ find_kubeconfig() {
         return 1
     fi
     
-    # Check if .project-suffix file exists
-    if [[ ! -f "$project_suffix_file" ]]; then
-        echo "Waiting for .project-suffix file to appear..."
+    # Check if .clusterid file exists
+    if [[ ! -f "$clusterid_file" ]]; then
+        echo "Waiting for .clusterid file to appear..."
         return 1
     fi
     
-    # Read the project suffix
-    local suffix=$(cat "$project_suffix_file" 2>/dev/null | tr -d '\n\r')
-    if [[ -z "$suffix" ]]; then
-        echo "Project suffix file is empty, waiting..."
+    # Read the cluster ID
+    local clusterid=$(cat "$clusterid_file" 2>/dev/null | tr -d '\n\r')
+    if [[ -z "$clusterid" ]]; then
+        echo "Cluster ID file is empty, waiting..."
         return 1
     fi
     
-    # Look for kubeconfig file with the suffix (suffix-kubeconfig format)
-    local kubeconfig_file="$k0sctl_dir/k0rdent-$suffix-kubeconfig"
+    # Look for kubeconfig file with the cluster ID
+    local kubeconfig_file="$k0sctl_dir/$clusterid-kubeconfig"
     
     if [[ ! -f "$kubeconfig_file" ]]; then
         echo "Waiting for kubeconfig file: $kubeconfig_file"
@@ -136,12 +136,12 @@ monitor_child_clusters() {
 
 # Function to get resource group name
 get_resource_group_name() {
-    local project_suffix_file="$PROJECT_ROOT/.project-suffix"
+    local clusterid_file="$PROJECT_ROOT/.clusterid"
     
-    if [[ -f "$project_suffix_file" ]]; then
-        local suffix=$(cat "$project_suffix_file" 2>/dev/null | tr -d '\n\r')
-        if [[ -n "$suffix" ]]; then
-            echo "k0rdent-${suffix}-resgrp"
+    if [[ -f "$clusterid_file" ]]; then
+        local clusterid=$(cat "$clusterid_file" 2>/dev/null | tr -d '\n\r')
+        if [[ -n "$clusterid" ]]; then
+            echo "${clusterid}-resgrp"
             return 0
         fi
     fi
@@ -167,9 +167,9 @@ check_azure_vms_preconditions() {
             continue
         fi
         
-        # Wait for project suffix file
-        if [[ ! -f "$PROJECT_ROOT/.project-suffix" ]]; then
-            echo "Waiting for .project-suffix file to appear..."
+        # Wait for cluster ID file
+        if [[ ! -f "$PROJECT_ROOT/.clusterid" ]]; then
+            echo "Waiting for .clusterid file to appear..."
             sleep 5
             continue
         fi

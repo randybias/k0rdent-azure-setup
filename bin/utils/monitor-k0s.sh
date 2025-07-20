@@ -4,7 +4,7 @@ export KUBECONFIG=""
 # Function to find the kubeconfig file with project suffix
 find_kubeconfig() {
     local k0sctl_dir="./k0sctl-config"
-    local project_suffix_file=".project-suffix"
+    local clusterid_file=".clusterid"
     
     # Check if k0sctl-config directory exists
     if [[ ! -d "$k0sctl_dir" ]]; then
@@ -12,21 +12,21 @@ find_kubeconfig() {
         return 1
     fi
     
-    # Check if .project-suffix file exists
-    if [[ ! -f "$project_suffix_file" ]]; then
-        echo "Waiting for .project-suffix file to appear..."
+    # Check if .clusterid file exists
+    if [[ ! -f "$clusterid_file" ]]; then
+        echo "Waiting for .clusterid file to appear..."
         return 1
     fi
     
-    # Read the project suffix
-    local suffix=$(cat "$project_suffix_file" 2>/dev/null | tr -d '\n\r')
-    if [[ -z "$suffix" ]]; then
-        echo "Project suffix file is empty, waiting..."
+    # Read the cluster ID
+    local clusterid=$(cat "$clusterid_file" 2>/dev/null | tr -d '\n\r')
+    if [[ -z "$clusterid" ]]; then
+        echo "Cluster ID file is empty, waiting..."
         return 1
     fi
     
-    # Look for kubeconfig file with the suffix (suffix-kubeconfig format)
-    local kubeconfig_file="$k0sctl_dir/k0rdent-$suffix-kubeconfig"
+    # Look for kubeconfig file with the cluster ID
+    local kubeconfig_file="$k0sctl_dir/$clusterid-kubeconfig"
     
     while [[ ! -f "$kubeconfig_file" ]]; do
         echo "Waiting for kubeconfig file: $kubeconfig_file"
