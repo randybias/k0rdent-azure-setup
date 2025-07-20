@@ -42,6 +42,7 @@ This file tracks future enhancements and improvements that are not currently pri
 | **LOW** | Minor Enhancements | Dependency Consolidation (jq to yq) | 🆕 NEW |
 | **LOW** | Minor Enhancements | Improve print_usage Function | 🆕 NEW |
 | **LOW** | Minor Enhancements | Reorganize Kubeconfig Storage Location | 🆕 NEW |
+| **LOW** | Bug Fixes | Bug 16: Fast reset doesn't clean up azure-resources and state directories | 🆕 NEW |
 | **LOW** | Minor Enhancements | Evaluate Nushell for Bash Script Rewrites | 🆕 NEW |
 | **LOW** | Minor Enhancements | direnv Integration | Optional |
 | **LOW** | Minor Enhancements | Azure VM Launch Manager with NATS | 🆕 NEW |
@@ -1244,6 +1245,42 @@ kubectl config current-context
 - Maintains useful history while removing ancient data
 
 **Impact**: Low priority as it doesn't affect functionality, but good housekeeping practice for long-term usage.
+
+#### Bug 16: Fast reset doesn't clean up azure-resources and state directories
+**Status**: 🆕 **NEW**
+**Priority**: Low
+
+**Description**: The fast reset option deletes the Azure resource group but fails to clean up local directories that should be removed for a complete reset.
+
+**Current Issues**:
+- `azure-resources/` directory containing SSH keys is not removed
+- `state/` directory is not removed
+- These directories persist after fast reset, requiring manual cleanup
+- Inconsistent with full reset behavior which properly cleans these up
+
+**Root Cause**:
+- Fast reset focuses on Azure resource deletion but misses local cleanup
+- The `setup-azure-network.sh reset` step (which removes azure-resources) is skipped in fast reset
+- State directory cleanup is missing from the fast reset path
+
+**Expected Behavior**:
+- Fast reset should clean up all local artifacts just like full reset
+- Both `azure-resources/` and `state/` directories should be removed
+- Complete cleanup for fresh deployment
+
+**Proposed Solution**:
+- Rethink the fast reset architecture and implementation
+- Consider what "fast" means - is it just about skipping k0rdent/k0s uninstall?
+- Ensure all local cleanup happens regardless of reset type
+- May need to restructure how cleanup is organized in the code
+
+**Benefits**:
+- Consistent reset behavior across fast and full modes
+- No manual cleanup required after fast reset
+- Better user experience with complete cleanup
+- Cleaner workspace for subsequent deployments
+
+**Impact**: Low priority but affects user experience when using fast reset for development iterations.
 
 =======
 >>>>>>> 3317731 (Add KOF regional cluster support and kubeconfig retrieval)
