@@ -2,8 +2,10 @@
 id: task-022
 title: Create k0rdent Architecture Overview
 status: To Do
-assignee: []
+assignee:
+  - rbias
 created_date: '2025-07-20'
+updated_date: '2025-07-20'
 labels:
   - documentation
   - architecture
