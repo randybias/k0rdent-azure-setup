@@ -1,7 +1,7 @@
 ---
 id: task-004
 title: State not updated during uninstall/reset operations
-status: To Do
+status: In Progress
 assignee:
   - rbias
 created_date: '2025-07-20'
@@ -25,6 +25,10 @@ State management is not properly updated when uninstalling k0rdent or k0s, or du
 - [ ] Add state rollback functions for phase transitions backwards
 - [ ] Add validation that state matches actual system status
 
+
+## Implementation Notes
+
+Partially implemented - k0rdent and k0s uninstall operations properly update state. Reset operations state handling needs verification. State rollback and validation functions not found.
 ## Technical Details
 
 ### Current Issues
