@@ -73,6 +73,12 @@ This HA setup provides controller redundancy across zones for high availability.
    ./deploy-k0rdent.sh deploy
    ```
 
+4. **Fast reset for development** (Azure-specific):
+   ```bash
+   # Quickly delete Azure resources and clean up local files
+   ./deploy-k0rdent.sh reset --fast -y
+   ```
+
 ### Prerequisites
 
 All prerequisites are automatically checked at the beginning of the deployment process. You can also verify them manually:
@@ -1034,12 +1040,37 @@ If you prefer to run installation steps manually:
 ./bin/install-k0rdent.sh deploy
 
 # Export kubeconfig for cluster access
-export KUBECONFIG=$PWD/k0sctl-config/<prefix>-kubeconfig
+export KUBECONFIG=$PWD/k0sctl-config/<cluster-id>-kubeconfig
 
 # Verify cluster is working
 kubectl get nodes
 kubectl get all -A
 ```
+
+## Recent Improvements
+
+### January 2025 Updates
+
+- **Unified Naming Convention**: All resource naming now uses a consistent `K0RDENT_CLUSTERID` pattern instead of mixed PREFIX/SUFFIX terminology
+- **State Archival**: Deployment state files are automatically archived to `old_deployments/` on reset with descriptive timestamps and reasons
+- **Fast Reset**: New `--fast` flag for quick Azure resource cleanup during development iterations (Azure-specific feature)
+- **Improved Help**: Enhanced `print_usage()` function with better formatting across all scripts
+- **VM Compatibility**: Default VM size changed to `Standard_D2ds_v4` for Gen2 image compatibility
+- **WireGuard Config**: Simplified config file naming pattern (`wgk0<suffix>.conf`) for better interface compatibility
+- **Monitoring Tools**: Fixed cluster ID detection in monitoring scripts for proper kubeconfig discovery
+
+### State Management Enhancements
+
+- **Archive on Reset**: State files are now archived only during reset operations, not on deployment start
+- **Reason Tracking**: Archive function tracks why archives were created (e.g., "fast-reset", "full-reset")
+- **Complete Cleanup**: Reset operations now properly clean up all local state files
+
+### Bug Fixes
+
+- Fixed WireGuard VPN disconnection before Azure resource deletion in fast reset
+- Fixed network validation for single-worker deployments
+- Fixed hardcoded controller names in k0rdent installation script
+- Fixed `populate_wg_ips_array()` to handle missing wireguard_peers gracefully
 
 ---
 
