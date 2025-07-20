@@ -1,7 +1,7 @@
 ---
 id: task-014
 title: Fast reset doesn't clean up azure-resources and state directories
-status: To Do
+status: Done
 assignee:
   - rbias
 created_date: '2025-07-20'
