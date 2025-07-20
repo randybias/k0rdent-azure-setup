@@ -1,7 +1,7 @@
 ---
 id: task-005
 title: Reset operations fail when components are broken
-status: To Do
+status: Done
 assignee:
   - rbias
 created_date: '2025-07-20'
@@ -25,6 +25,10 @@ Reset operations fail when VPN is disconnected, WireGuard interfaces are corrupt
 - [ ] Implement best-effort WireGuard cleanup for broken interfaces
 - [ ] Skip VPN connectivity requirements during forced reset operations
 
+
+## Implementation Notes
+
+Implemented as --fast flag instead of --force. Provides quick reset functionality that skips individual resource cleanup and deletes entire resource group.
 ## Technical Details
 
 ### Observed Failures
