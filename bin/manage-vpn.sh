@@ -81,20 +81,22 @@ show_comprehensive_status() {
     local interface_name=$(basename "$WG_CONFIG_FILE" .conf)
     local interface_active=false
     
+    # Check if interface is active using wg show
     if [[ "$(uname)" == "Darwin" ]]; then
-        # macOS: Check for active interface in /var/run/wireguard
-        local wg_run_dir="/var/run/wireguard"
-        local name_file="$wg_run_dir/${interface_name}.name"
-        
-        if [[ -f "$name_file" ]]; then
-            local utun_name=$(sudo cat "$name_file" 2>/dev/null)
-            if [[ -n "$utun_name" ]] && ifconfig "$utun_name" &>/dev/null; then
-                interface_active=true
+        # On macOS, check if any WireGuard interface exists with actual output
+        local wg_output=$(run_wg_command wg-show 2>/dev/null)
+        if [[ -n "$wg_output" ]]; then
+            interface_active=true
+            # Get the interface name from wg show
+            local utun_name=$(echo "$wg_output" | grep "interface:" | awk '{print $2}')
+            if [[ -n "$utun_name" ]]; then
                 print_success "WireGuard interface active: $interface_name ($utun_name)"
+            else
+                print_success "WireGuard interface active: $interface_name"
             fi
         fi
     else
-        # Linux: Check using wg show
+        # Linux: check specific interface
         if run_wg_command wg-show "$interface_name" &>/dev/null; then
             interface_active=true
             print_success "WireGuard interface active: $interface_name"
@@ -403,53 +405,61 @@ setup_wireguard_cli() {
     print_header "Setting up WireGuard CLI Connection"
     
     # Check if interface is already active
+    local interface_exists=false
     if [[ "$(uname)" == "Darwin" ]]; then
-        local wg_run_dir="/var/run/wireguard"
-        local name_file="$wg_run_dir/${interface_name}.name"
-        
-        if [[ -f "$name_file" ]]; then
-            print_warning "WireGuard interface '$interface_name' appears to be active"
-            if [[ "$SKIP_PROMPTS" == "false" ]]; then
-                read -p "Do you want to restart the connection? (yes/no): " -r
-                if [[ $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
-                    print_info "Shutting down existing connection..."
-                    shutdown_wireguard_interface "$WG_CONFIG_FILE"
-                else
-                    print_info "Keeping existing connection."
-                    return 0
-                fi
-            else
-                print_info "Restarting connection..."
-                shutdown_wireguard_interface "$WG_CONFIG_FILE"
-            fi
+        # On macOS, check if any WireGuard interface exists with actual output
+        local wg_output=$(run_wg_command wg-show 2>/dev/null)
+        if [[ -n "$wg_output" ]]; then
+            interface_exists=true
         fi
     else
+        # Linux: check specific interface
         if run_wg_command wg-show "$interface_name" &>/dev/null; then
-            print_warning "WireGuard interface '$interface_name' appears to be active"
-            if [[ "$SKIP_PROMPTS" == "false" ]]; then
-                read -p "Do you want to restart the connection? (yes/no): " -r
-                if [[ $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
-                    print_info "Shutting down existing connection..."
-                    shutdown_wireguard_interface "$interface_name"
-                else
-                    print_info "Keeping existing connection."
-                    return 0
-                fi
+            interface_exists=true
+        fi
+    fi
+    
+    if [[ "$interface_exists" == "true" ]]; then
+        print_warning "WireGuard interface '$interface_name' appears to be active"
+        if [[ "$SKIP_PROMPTS" == "false" ]]; then
+            read -p "Do you want to restart the connection? (yes/no): " -r
+            if [[ $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+                print_info "Shutting down existing connection..."
+                shutdown_wireguard_interface "$WG_CONFIG_FILE"
             else
-                print_info "Restarting connection..."
-                shutdown_wireguard_interface "$interface_name"
+                print_info "Keeping existing connection."
+                return 0
             fi
+        else
+            print_info "Restarting connection..."
+            shutdown_wireguard_interface "$WG_CONFIG_FILE"
         fi
     fi
     
     # Start WireGuard interface
     print_info "Starting WireGuard interface: $interface_name"
     
-    if run_wg_command wg-quick-up "$WG_CONFIG_FILE"; then
+    # Capture output to parse the utun interface name on macOS
+    local wg_output
+    if wg_output=$(run_wg_command wg-quick-up "$WG_CONFIG_FILE" 2>&1); then
+        echo "$wg_output"  # Show the output
+        
+        # On macOS, parse the utun interface from the output
+        if [[ "$(uname)" == "Darwin" ]]; then
+            local utun_name=$(echo "$wg_output" | grep -o "Interface for .* is utun[0-9]" | awk '{print $NF}')
+            if [[ -n "$utun_name" ]]; then
+                # Store the mapping for later use
+                export WG_MACOS_INTERFACE="$utun_name"
+                # Also store in state for persistence
+                update_state "wg_macos_interface" "$utun_name"
+            fi
+        fi
+        
         print_success "WireGuard interface started successfully!"
         update_state "wg_vpn_connected" "true"
         add_event "vpn_connected" "WireGuard VPN connected successfully"
     else
+        echo "$wg_output"  # Show error output
         print_error "Failed to start WireGuard interface"
         print_info "Check the configuration file and try again."
         return 1
@@ -474,29 +484,33 @@ verify_and_show_connection_info() {
     local interface_active=false
     
     if [[ "$(uname)" == "Darwin" ]]; then
-        local wg_run_dir="/var/run/wireguard"
-        local name_file="$wg_run_dir/${interface_name}.name"
+        # On macOS, use the stored interface name or check if any WireGuard interface exists
+        local utun_name="${WG_MACOS_INTERFACE:-}"
         
-        if [[ -f "$name_file" ]]; then
-            local utun_name=$(sudo cat "$name_file" 2>/dev/null)
-            
-            if [[ -n "$utun_name" ]] && ifconfig "$utun_name" &>/dev/null; then
-                interface_active=true
-                print_success "WireGuard interface is active: $interface_name ($utun_name)"
-                
-                # Show interface details
-                local laptop_ip=$(ifconfig "$utun_name" | grep "inet " | awk '{print $2}')
-                if [[ -n "$laptop_ip" ]]; then
-                    print_info "Laptop IP in VPN: $laptop_ip"
-                fi
+        # If not in environment, check state file
+        if [[ -z "$utun_name" ]]; then
+            utun_name=$(get_state "wg_macos_interface" || echo "")
+        fi
+        
+        # If we still don't have the stored name, check for any active WireGuard interface
+        if [[ -z "$utun_name" ]] && run_wg_command wg-show &>/dev/null; then
+            # Try to find the interface from wg show output
+            utun_name=$(run_wg_command wg-show 2>/dev/null | grep "interface:" | awk '{print $2}')
+        fi
+        
+        if [[ -n "$utun_name" ]] && ifconfig "$utun_name" &>/dev/null; then
+            interface_active=true
+            print_success "WireGuard interface is active: $interface_name ($utun_name)"
+            local laptop_ip=$(ifconfig "$utun_name" | grep "inet " | awk '{print $2}')
+            if [[ -n "$laptop_ip" ]]; then
+                print_info "Laptop IP in VPN: $laptop_ip"
             fi
         fi
     else
+        # Linux: interface name works directly
         if run_wg_command wg-show "$interface_name" &>/dev/null; then
             interface_active=true
             print_success "WireGuard interface is active: $interface_name"
-            
-            # Show interface details on Linux
             local laptop_ip=$(ip addr show "$interface_name" 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d'/' -f1)
             if [[ -n "$laptop_ip" ]]; then
                 print_info "Laptop IP in VPN: $laptop_ip"
@@ -642,13 +656,13 @@ disconnect_wireguard() {
     local interface_active=false
     
     if [[ "$(uname)" == "Darwin" ]]; then
-        local wg_run_dir="/var/run/wireguard"
-        local name_file="$wg_run_dir/${interface_name}.name"
-        
-        if [[ -f "$name_file" ]]; then
+        # On macOS, check if any WireGuard interface exists with actual output
+        local wg_output=$(run_wg_command wg-show 2>/dev/null)
+        if [[ -n "$wg_output" ]]; then
             interface_active=true
         fi
     else
+        # Linux: check specific interface
         if run_wg_command wg-show "$interface_name" &>/dev/null; then
             interface_active=true
         fi
@@ -666,6 +680,10 @@ disconnect_wireguard() {
     if shutdown_wireguard_interface "$WG_CONFIG_FILE"; then
         print_success "WireGuard VPN disconnected successfully!"
         update_state "wg_vpn_connected" "false"
+        # Clear the macOS interface mapping
+        if [[ "$(uname)" == "Darwin" ]]; then
+            update_state "wg_macos_interface" ""
+        fi
         add_event "vpn_disconnected" "WireGuard VPN disconnected"
     else
         print_error "Failed to disconnect WireGuard VPN"
@@ -693,23 +711,37 @@ cleanup_orphaned_interfaces() {
 reset_and_cleanup() {
     print_header "Resetting WireGuard Configuration"
     
+    # Determine interface name from config file or from the expected name
+    local interface_name=""
+    if [[ -f "$WG_CONFIG_FILE" ]]; then
+        interface_name=$(basename "$WG_CONFIG_FILE" .conf)
+    else
+        # Try to determine from the deployment ID
+        interface_name="wgk0${K0RDENT_CLUSTERID#k0rdent-}"
+    fi
+    
     # First disconnect if connected
     if [[ -f "$WG_CONFIG_FILE" ]]; then
-        local interface_name=$(basename "$WG_CONFIG_FILE" .conf)
-        
         # Check if interface is active and disconnect
+        local wg_output=$(run_wg_command wg-show 2>/dev/null)
+        if [[ -n "$wg_output" ]]; then
+            print_info "Disconnecting active WireGuard connection..."
+            shutdown_wireguard_interface "$WG_CONFIG_FILE"
+        fi
+    else
+        # No config file, but check if interface is still active using state
         if [[ "$(uname)" == "Darwin" ]]; then
-            local wg_run_dir="/var/run/wireguard"
-            local name_file="$wg_run_dir/${interface_name}.name"
-            
-            if [[ -f "$name_file" ]]; then
-                print_info "Disconnecting active WireGuard connection..."
-                shutdown_wireguard_interface "$WG_CONFIG_FILE"
-            fi
-        else
-            if run_wg_command wg-show "$interface_name" &>/dev/null; then
-                print_info "Disconnecting active WireGuard connection..."
-                shutdown_wireguard_interface "$interface_name"
+            local stored_utun=$(get_state "wg_macos_interface" || echo "")
+            if [[ -n "$stored_utun" ]] && ifconfig "$stored_utun" &>/dev/null; then
+                print_warning "Found active WireGuard interface without config file: $stored_utun"
+                print_info "Attempting to shut down orphaned interface..."
+                
+                # Try to shut it down using wg-quick with the interface name
+                if run_wg_command wg-quick-down "$interface_name" 2>/dev/null; then
+                    print_success "Orphaned interface shut down"
+                else
+                    print_warning "Could not shut down interface automatically"
+                fi
             fi
         fi
     fi
@@ -731,9 +763,48 @@ reset_and_cleanup() {
         # Update state
         update_state "wg_laptop_config_created" "false"
         update_state "wg_vpn_connected" "false"
+        # Clear the macOS interface mapping
+        if [[ "$(uname)" == "Darwin" ]]; then
+            update_state "wg_macos_interface" ""
+        fi
         add_event "vpn_config_reset" "WireGuard laptop configuration removed"
     else
         print_info "No WireGuard configuration directory found."
+    fi
+    
+    # The wg-quick down command should have cleaned up the runtime files
+    # If not, there's likely an issue with the WireGuard state
+    if [[ "$(uname)" == "Darwin" ]] && [[ -n "$interface_name" ]]; then
+        # Check if this specific interface's files still exist
+        if [[ -f "/var/run/wireguard/${interface_name}.name" ]]; then
+            print_warning "WireGuard runtime files still exist for $interface_name"
+            
+            # Try to clean up using the stored utun interface name
+            local stored_utun=$(get_state "wg_macos_interface" || echo "")
+            if [[ -n "$stored_utun" ]]; then
+                print_info "Cleaning up orphaned files for $interface_name (${stored_utun})"
+                
+                # Remove the socket file if it exists
+                if [[ -S "/var/run/wireguard/${stored_utun}.sock" ]]; then
+                    print_info "Removing orphaned socket: /var/run/wireguard/${stored_utun}.sock"
+                    # Use the wg-wrapper if available to avoid sudo
+                    if command -v ./bin/utils/wg-wrapper &>/dev/null && [[ -u ./bin/utils/wg-wrapper ]]; then
+                        # We'd need to add a cleanup command to wg-wrapper for this
+                        print_info "Manual cleanup required: sudo rm -f /var/run/wireguard/${stored_utun}.sock"
+                    else
+                        print_info "Manual cleanup required: sudo rm -f /var/run/wireguard/${stored_utun}.sock"
+                    fi
+                fi
+                
+                # Remove the name file
+                if [[ -f "/var/run/wireguard/${interface_name}.name" ]]; then
+                    print_info "Manual cleanup required: sudo rm -f /var/run/wireguard/${interface_name}.name"
+                fi
+            else
+                print_info "No stored utun interface found in state"
+                print_info "Manual cleanup may be required for /var/run/wireguard/ files"
+            fi
+        fi
     fi
     
     print_success "Reset complete."

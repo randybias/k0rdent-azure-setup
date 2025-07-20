@@ -168,8 +168,8 @@ run_deployment() {
     bash bin/prepare-deployment.sh deploy $DEPLOY_FLAGS
 
     # Record deployment flags in state (after state file is created)
-    update_state "deployment_flags_azure_children" "$WITH_AZURE_CHILDREN"
-    update_state "deployment_flags_kof" "$WITH_KOF"
+    update_state "deployment_flags.azure_children" "$WITH_AZURE_CHILDREN"
+    update_state "deployment_flags.kof" "$WITH_KOF"
     add_event "deployment_started" "Deployment started with flags: azure-children=$WITH_AZURE_CHILDREN, kof=$WITH_KOF"
 
     # Step 2: Setup Azure network
@@ -399,7 +399,7 @@ run_full_reset() {
     local KUBECONFIG_FILE="./k0sctl-config/${K0RDENT_CLUSTERID}-kubeconfig"
     
     # Check if KOF was deployed and handle regional clusters first
-    local kof_deployed=$(get_state "deployment_flags_kof" 2>/dev/null || echo "false")
+    local kof_deployed=$(get_state "deployment_flags.kof" 2>/dev/null || echo "false")
     local kof_mothership_installed=$(get_state "kof_mothership_installed" 2>/dev/null || echo "false")
     local kof_regional_installed=$(get_state "kof_regional_installed" 2>/dev/null || echo "false")
     
