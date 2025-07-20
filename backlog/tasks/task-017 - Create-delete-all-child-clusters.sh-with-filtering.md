@@ -2,10 +2,13 @@
 id: task-017
 title: Create delete-all-child-clusters.sh with filtering
 status: To Do
-assignee: []
+assignee:
+  - rbias
 created_date: '2025-07-20'
+updated_date: '2025-07-20'
 labels:
   - enhancement
+  - high-priority
   - automation
   - child-clusters
 dependencies: []
