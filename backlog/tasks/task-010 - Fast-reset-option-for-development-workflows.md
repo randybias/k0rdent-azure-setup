@@ -1,7 +1,7 @@
 ---
 id: task-010
 title: Fast reset option for development workflows
-status: To Do
+status: Done
 assignee:
   - rbias
 created_date: '2025-07-20'
@@ -25,6 +25,10 @@ Add fast reset option that skips k0rdent and k0s uninstall steps and jumps strai
 - [ ] Add safety checks for resource group naming
 - [ ] Test compatibility with existing state management
 
+
+## Implementation Notes
+
+Implemented --fast flag for deploy-k0rdent.sh reset command. run_fast_reset() function deletes entire resource group and skips individual cleanup steps for speed.
 ## Technical Details
 
 ### Current Reset Process
