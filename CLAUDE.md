@@ -93,6 +93,14 @@ source ./etc/state-management.sh     # State tracking
 source ./etc/kof-functions.sh        # Only KOF-specific additions
 ```
 
+## Naming Conventions
+
+### Cluster ID Pattern
+- All resources use a consistent `K0RDENT_CLUSTERID` pattern (e.g., `k0rdent-abc123de`)
+- The cluster ID is stored in `.clusterid` file
+- WireGuard config files use pattern `wgk0${suffix}.conf` where suffix is extracted from cluster ID
+- No more mixed PREFIX/SUFFIX terminology - everything is CLUSTERID now
+
 ## Troubleshooting Guidelines
 
 ### Troubleshooting Documentation
