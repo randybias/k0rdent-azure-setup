@@ -1,9 +1,9 @@
 ---
 id: task-028
 title: Reorganize Kubeconfig Storage Location
-status: To Do
+status: In Progress
 assignee:
-  - rbias
+  - '@claude'
 created_date: '2025-07-20'
 updated_date: '2025-07-20'
 labels:
