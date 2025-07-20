@@ -570,7 +570,7 @@ ERROR: K0S_WORKER_COUNT must be at least 1
 **Files Not Cleaned Up**:
 - `deployment-state.yaml`
 - `deployment-events.yaml` 
-- `.project-suffix` file
+- `.clusterid` file
 - Potentially other local state files
 
 **Current Behavior**: 
