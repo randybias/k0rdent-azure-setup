@@ -1,7 +1,7 @@
 ---
 id: task-006
 title: Incorrect validation requiring at least 1 worker node
-status: To Do
+status: Done
 assignee:
   - rbias
 created_date: '2025-07-20'
@@ -24,6 +24,10 @@ The validation in etc/config-internal.sh incorrectly requires at least 1 worker 
 - [ ] Ensure k0s configuration enables workload scheduling on controllers when worker count is 0
 - [ ] Test single controller node can run k0rdent and workloads
 
+
+## Implementation Notes
+
+Validation now allows worker count of 0 with appropriate warning. Controller workload scheduling support implemented when no workers are present.
 ## Technical Details
 
 ### Current Behavior
