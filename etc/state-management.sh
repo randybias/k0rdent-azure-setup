@@ -78,6 +78,9 @@ created_at: "$timestamp"
 last_updated: "$timestamp"
 phase: "preparation"
 status: "in_progress"
+deployment_flags:
+  azure_children: false
+  kof: false
 
 # Configuration snapshot
 config:
