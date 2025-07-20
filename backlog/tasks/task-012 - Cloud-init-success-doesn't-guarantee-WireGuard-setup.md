@@ -1,7 +1,7 @@
 ---
 id: task-012
 title: Cloud-init success doesn't guarantee WireGuard setup
-status: To Do
+status: Done
 assignee:
   - rbias
 created_date: '2025-07-20'
@@ -25,6 +25,10 @@ VMs can pass cloud-init status verification but still fail WireGuard configurati
 - [ ] VM verification includes WireGuard-specific validation
 - [ ] Deployment reliably establishes WireGuard connectivity on all VMs
 
+
+## Implementation Notes
+
+WireGuard validation implemented in create-azure-vms.sh using verify_wireguard_config() function. Validates WireGuard is properly configured after VM creation, addressing the cloud-init success issue.
 ## Technical Details
 
 ### Observed Behavior
