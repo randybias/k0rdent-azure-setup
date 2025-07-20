@@ -1,7 +1,7 @@
 ---
 id: task-007
 title: Inconsistent controller naming convention
-status: To Do
+status: Done
 assignee:
   - rbias
 created_date: '2025-07-20'
@@ -24,6 +24,10 @@ Controller naming is inconsistent compared to worker naming, creating confusion 
 - [ ] Update all scripts that reference controller names
 - [ ] Test VM creation with new naming convention
 
+
+## Implementation Notes
+
+Controllers now named k0s-controller-1, k0s-controller-2, etc. Fixed to use consistent numbering pattern matching worker naming convention.
 ## Technical Details
 
 ### Current Behavior
