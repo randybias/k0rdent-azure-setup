@@ -121,7 +121,7 @@ State Backup → old_deployments/
 - **Cloud-init Files**: `cloud-init-files/` directory
 - **k0sctl Config**: `./k0sctl-config/${K0RDENT_CLUSTERID}-k0sctl.yaml`
 - **Kubeconfig**: `./k0sctl-config/${K0RDENT_CLUSTERID}-kubeconfig`
-- **Laptop WireGuard Config**: `./wireguard/wgk0${RANDOM_SUFFIX}.conf`
+- **Laptop WireGuard Config**: `./wireguard/${K0RDENT_CLUSTERID}-wg.conf`
 
 ### 4. Function Libraries
 

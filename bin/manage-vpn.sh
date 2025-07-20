@@ -299,7 +299,7 @@ generate_laptop_config_internal() {
     cat > "$WG_CONFIG_FILE" << EOF
 # WireGuard configuration for laptop connection to k0rdent cluster
 # Generated: $(date)
-# Prefix: $K0RDENT_CLUSTERID
+# Cluster ID: $K0RDENT_CLUSTERID
 
 [Interface]
 PrivateKey = $LAPTOP_PRIVATE_KEY

@@ -29,7 +29,7 @@ source ./etc/config-internal.sh
 # Legacy CSV manifest support removed in favor of state management
 
 # WireGuard laptop configuration
-WG_CONFIG_FILE="$WG_DIR/wgk0${RANDOM_SUFFIX}.conf"
+WG_CONFIG_FILE="$WG_DIR/${K0RDENT_CLUSTERID}-wg.conf"
 
 
 echo "==> k0rdent configuration loaded (cluster ID: $K0RDENT_CLUSTERID, region: $AZURE_LOCATION)" 

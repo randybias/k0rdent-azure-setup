@@ -11,7 +11,7 @@ The k0rdent Azure setup uses a centralized state tracking system managed by `etc
 **Function**: `init_state`
 ```yaml
 deployment:
-  id: "k0rdent-SUFFIX"
+  id: "k0rdent-CLUSTERID"
   started_at: "2024-01-20T10:00:00Z"
 phases:
   prepare_deployment: false
@@ -50,11 +50,11 @@ phases:
 **Function**: `update_resource`
 ```yaml
 resources:
-  resource_group: "k0rdent-rg-SUFFIX"     # After RG creation
-  vnet: "k0rdent-vnet-SUFFIX"             # After VNet creation
-  subnet: "k0rdent-subnet-SUFFIX"         # After Subnet creation
-  nsg: "k0rdent-nsg-SUFFIX"               # After NSG creation
-  ssh_key: "k0rdent-ssh-key-SUFFIX"       # After SSH key import
+  resource_group: "k0rdent-rg-CLUSTERID"     # After RG creation
+  vnet: "k0rdent-vnet-CLUSTERID"             # After VNet creation
+  subnet: "k0rdent-subnet-CLUSTERID"         # After Subnet creation
+  nsg: "k0rdent-nsg-CLUSTERID"               # After NSG creation
+  ssh_key: "k0rdent-ssh-key-CLUSTERID"       # After SSH key import
 ```
 
 ### 5. Network Setup Complete
@@ -73,7 +73,7 @@ phases:
 ```yaml
 vms:
   k0rdent-vm1:
-    name: "k0rdent-vm1-SUFFIX"
+    name: "k0rdent-vm1-CLUSTERID"
     status: "creating"
 ```
 
@@ -81,7 +81,7 @@ vms:
 ```yaml
 vms:
   k0rdent-vm1:
-    name: "k0rdent-vm1-SUFFIX"
+    name: "k0rdent-vm1-CLUSTERID"
     public_ip: "20.x.x.x"
     private_ip: "10.0.1.11"
     wireguard_ip: "192.168.100.11"
@@ -232,13 +232,13 @@ kof_mothership_namespace: "kof"
 **Cluster creation tracking**:
 ```yaml
 kof_regional_deployed: true
-kof_regional_cluster_name: "kof-regional-SUFFIX-southeastasia"
+kof_regional_cluster_name: "kof-regional-CLUSTERID-southeastasia"
 kof_regional_domain: "regional.example.com"
 ```
 
 **Separate cluster state file**: `state/cluster-<cluster-name>-events.yaml`
 ```yaml
-cluster_name: "kof-regional-SUFFIX-southeastasia"
+cluster_name: "kof-regional-CLUSTERID-southeastasia"
 events:
   - timestamp: "2024-01-20T11:45:00Z"
     action: cluster_deployment_created
@@ -309,7 +309,7 @@ get_vm_ips() {
 | File | Purpose | Persistence |
 |------|---------|-------------|
 | `deployment-state.yaml` | Active deployment state | Current deployment |
-| `old_deployments/k0rdent-SUFFIX/` | Archived deployments | Historical record |
+| `old_deployments/k0rdent-CLUSTERID/` | Archived deployments | Historical record |
 | `wireguard-keys/` | WireGuard keys | Deployment lifetime |
 | `cloud-init-files/` | VM provisioning data | Deployment lifetime |
 
