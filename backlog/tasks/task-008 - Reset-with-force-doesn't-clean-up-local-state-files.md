@@ -1,7 +1,7 @@
 ---
 id: task-008
 title: Reset with --force doesn't clean up local state files
-status: To Do
+status: Done
 assignee:
   - rbias
 created_date: '2025-07-20'
