@@ -1,7 +1,7 @@
 ---
 id: task-049
 title: Local MacOS Desktop Notifier Plan
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2025-07-22'
@@ -37,6 +37,19 @@ But other options should be investigated.
 7. Plan testing approach for async notifications
 8. Document usage and requirements
 
+
+## Implementation Notes
+
+Created comprehensive implementation plan in backlog/docs/doc-005. Plan covers:
+- Research of 3 notification methods (osascript, terminal-notifier, hammerspoon)
+- Hybrid approach using terminal-notifier with osascript fallback
+- Event monitoring using fswatch with polling fallback
+- Full integration design with deploy-k0rdent.sh
+- Background process lifecycle management
+- Configuration options via environment variables
+- Complete testing and documentation plan
+
+The plan is ready for implementation as a new task.
 ## Acceptance Criteria
 
 - [ ] Comprehensive implementation plan created
