@@ -240,6 +240,7 @@ add_event() {
     if [[ -f "$DEPLOYMENT_STATE_FILE" ]]; then
         yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
     fi
+    
 }
 
 # Check if state file exists and is valid

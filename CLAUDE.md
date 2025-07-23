@@ -66,6 +66,29 @@ This ensures:
 - Standardized keybindings and commands
 - Better handling of shell script syntax and indentation
 
+## Desktop Notifications (macOS)
+
+### Overview
+Desktop notifications provide real-time deployment status updates on macOS using native notifications.
+
+### Usage
+```bash
+# Deploy with desktop notifications
+./deploy-k0rdent.sh deploy --with-desktop-notifications
+```
+
+### Features
+- **Real-time notifications**: Major deployment milestones trigger desktop alerts
+- **Multi-instance support**: Separate notifiers for k0rdent, KOF, and child clusters
+- **Grouped notifications**: Each deployment type has its own notification group
+- **Duration tracking**: Completion notification shows total deployment time
+
+### Architecture
+- **Notifier daemon**: `bin/utils/desktop-notifier.sh` monitors event files
+- **Event monitoring**: Polls YAML event files every 2 seconds
+- **Instance isolation**: Each notifier has its own PID, log, and state files
+- **Notification technology**: Uses `terminal-notifier` with `osascript` fallback
+
 ## KOF (K0rdent Operations Framework) Integration
 
 ### Overview

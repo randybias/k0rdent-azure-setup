@@ -215,6 +215,9 @@ The recommended approach using the orchestration script:
 
 # Deploy with all optional components
 ./deploy-k0rdent.sh deploy --with-azure-children --with-kof -y
+
+# Deploy with desktop notifications (macOS)
+./deploy-k0rdent.sh deploy --with-desktop-notifications
 ```
 
 #### Option 2: Manual Step-by-Step Deployment
@@ -255,12 +258,16 @@ All scripts support standardized arguments:
 
 - `-y, --yes` - Skip confirmation prompts for automated deployments
 - `--no-wait` - Skip waiting for resources (where applicable)
+- `--with-desktop-notifications` - Enable desktop notifications (macOS)
 - `-h, --help` - Show help message
 
 Examples:
 ```bash
 # Skip all confirmations
 ./deploy-k0rdent.sh deploy -y
+
+# Deploy with desktop notifications
+./deploy-k0rdent.sh deploy --with-desktop-notifications
 
 # Reset without confirmations
 ./deploy-k0rdent.sh reset --yes
