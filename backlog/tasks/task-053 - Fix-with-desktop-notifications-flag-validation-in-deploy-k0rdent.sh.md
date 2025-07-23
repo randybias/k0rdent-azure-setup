@@ -4,9 +4,11 @@ title: Fix --with-desktop-notifications flag validation in deploy-k0rdent.sh
 status: To Do
 assignee: []
 created_date: '2025-07-23'
+updated_date: '2025-07-23'
 labels:
   - bug
-dependencies: []
+dependencies:
+  - task-004
 ---
 
 ## Description
