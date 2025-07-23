@@ -36,7 +36,3 @@ Move kubeconfig files from k0sctl-config/ directory to a dedicated kubeconfig/ d
 6. Update documentation (README.md, CLAUDE.md, and any other docs)
 7. Test the changes with a deployment
 8. Create migration instructions for existing users
-
-## Implementation Notes
-
-Attempted implementation but decided to keep all state in state/ directory for simplicity. The k0sctl-config/ directory name is fine as-is and doesn't need to be changed.
