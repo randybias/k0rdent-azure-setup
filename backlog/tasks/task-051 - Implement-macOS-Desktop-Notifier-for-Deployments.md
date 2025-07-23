@@ -1,7 +1,7 @@
 ---
 id: task-051
 title: Implement macOS Desktop Notifier for Deployments
-status: To Do
+status: Done
 assignee: []
 created_date: '2025-07-22'
 updated_date: '2025-07-23'
@@ -43,4 +43,24 @@ Key design decisions:
 - JSON events file for efficient tail-based monitoring
 - Separate daemon process with PID tracking
 - Notification grouping to avoid spam
+- Graceful fallback when terminal-notifier not available
+
+Implemented desktop notifier for macOS with the following features:
+- Created bin/utils/desktop-notifier.sh - Main daemon that monitors deployment events
+- Created etc/notifier-functions.sh - Shared notification functions
+- Updated etc/state-management.sh to track events
+- Updated deploy-k0rdent.sh with --with-desktop-notifications flag
+- Added proper cleanup on deployment completion/failure
+- Uses terminal-notifier (preferred) with osascript fallback
+- Monitors state/deployment-events.yaml using polling
+- Created test script: scratch/test-notifier-integration.sh
+- Added multi-instance support for parallel notifiers
+- Notifications grouped by instance name
+- Shows deployment duration in completion notification
+
+Key design decisions:
+- YAML events file monitoring (not JSON)
+- Separate daemon process with PID tracking
+- Instance-aware for multiple deployments
+- Notification grouping to prevent replacement
 - Graceful fallback when terminal-notifier not available
