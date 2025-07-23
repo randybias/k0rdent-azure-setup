@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # General-purpose monitoring script with pre-condition checks
 # Usage: monitor-k0rdent.sh [mode] [cluster-name]
