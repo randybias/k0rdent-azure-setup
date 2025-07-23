@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Script to setup port forwarding for KOF regional Grafana
 # Usage: ./bin/utils/kof-proxy-regional-setup.sh [port]

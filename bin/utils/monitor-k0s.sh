@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 export KUBECONFIG=""
 
 # Function to find the kubeconfig file with project suffix

@@ -33,12 +33,29 @@ source ./etc/k0rdent-config.sh
 source ./etc/common-functions.sh
 source ./etc/state-management.sh
 
+# Function to stop desktop notifier
+stop_desktop_notifier() {
+    # Always try to stop notifier if the script exists, regardless of flag
+    # This ensures cleanup even if notifier was started manually
+    if [[ -f "./bin/utils/desktop-notifier.sh" ]]; then
+        # Check for any notifier PID files
+        if ls state/notifier-*.pid >/dev/null 2>&1; then
+            print_info "Stopping desktop notifier(s)..."
+            # Stop deployment notifier specifically
+            if [[ -f "state/notifier-deployment.pid" ]]; then
+                ./bin/utils/desktop-notifier.sh --stop || true
+            fi
+        fi
+    fi
+}
+
 # Default values
 SKIP_PROMPTS=false
 NO_WAIT=false
 WITH_AZURE_CHILDREN=false
 WITH_KOF=false
 FAST_RESET=false
+WITH_DESKTOP_NOTIFICATIONS=false
 DEPLOY_FLAGS=""
 
 # Custom argument parsing to handle our specific flags
@@ -63,6 +80,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --fast)
             FAST_RESET=true
+            shift
+            ;;
+        --with-desktop-notifications)
+            WITH_DESKTOP_NOTIFICATIONS=true
             shift
             ;;
         -h|--help)
@@ -148,6 +169,9 @@ show_config() {
 run_deployment() {
     print_header "Starting k0rdent Deployment"
     
+    # Set up cleanup trap
+    trap 'stop_desktop_notifier' EXIT
+    
     # Check prerequisites first
     print_info "Checking prerequisites..."
     if ! bash bin/check-prerequisites.sh; then
@@ -171,6 +195,25 @@ run_deployment() {
     update_state "deployment_flags.azure_children" "$WITH_AZURE_CHILDREN"
     update_state "deployment_flags.kof" "$WITH_KOF"
     add_event "deployment_started" "Deployment started with flags: azure-children=$WITH_AZURE_CHILDREN, kof=$WITH_KOF"
+    
+    # Start desktop notifier if requested
+    if [[ "$WITH_DESKTOP_NOTIFICATIONS" == "true" ]]; then
+        print_info "Starting desktop notifier..."
+        if [[ -f "./bin/utils/desktop-notifier.sh" ]]; then
+            # Ensure state directory exists
+            mkdir -p state
+            ./bin/utils/desktop-notifier.sh --daemon
+            # Check if it started successfully
+            if [[ -f "state/notifier-deployment.pid" ]]; then
+                local notifier_pid=$(cat state/notifier-deployment.pid)
+                print_success "Desktop notifier started (PID: $notifier_pid)"
+            else
+                print_warning "Desktop notifier failed to start"
+            fi
+        else
+            print_warning "Desktop notifier not found, continuing without notifications"
+        fi
+    fi
 
     # Step 2: Setup Azure network
     print_header "Step 2: Setting up Azure Network"
@@ -254,6 +297,9 @@ run_deployment() {
     update_state "deployment_start_time" "$DEPLOYMENT_START_DATE"
     update_state "deployment_end_time" "$DEPLOYMENT_END_DATE"
     update_state "deployment_duration_seconds" "$DEPLOYMENT_DURATION"
+    
+    # Send deployment completed event
+    add_event "deployment_completed" "k0rdent deployment completed successfully in ${DEPLOYMENT_DURATION} seconds"
 }
 
 show_next_steps() {
@@ -293,6 +339,9 @@ show_next_steps() {
 }
 
 run_fast_reset() {
+    # Stop desktop notifier first
+    stop_desktop_notifier
+    
     print_header "Fast k0rdent Deployment Reset (Azure-specific)"
     print_warning "FAST RESET MODE: This will disconnect VPN and delete the entire Azure resource group"
     print_warning "Resource group to be deleted: $RG"
@@ -387,6 +436,9 @@ run_fast_reset() {
 }
 
 run_full_reset() {
+    # Stop desktop notifier first
+    stop_desktop_notifier
+    
     # Check if fast reset was requested
     if [[ "$FAST_RESET" == "true" ]]; then
         run_fast_reset
@@ -645,6 +697,7 @@ case "${POSITIONAL_ARGS[0]:-deploy}" in
         echo "  --with-azure-children   Enable Azure child cluster deployment capability"
         echo "  --with-kof              Deploy KOF (mothership + regional cluster)"
         echo "  --fast                  Fast reset (skip cleanup, delete resource group)"
+        echo "  --with-desktop-notifications  Enable desktop notifications (macOS)"
         echo "  -h, --help              Show this help message"
         echo ""
         echo "Examples:"
