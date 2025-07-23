@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Build script for WireGuard setuid wrapper
 # This creates a setuid root binary that can run WireGuard commands without sudo
