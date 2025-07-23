@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Script to launch multiple test child clusters for testing purposes
 # Usage: ./bin/utils/launch-test-swarm.sh [iterations]
