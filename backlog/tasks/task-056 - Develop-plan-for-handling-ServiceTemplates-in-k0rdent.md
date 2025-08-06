@@ -4,11 +4,13 @@ title: Develop plan for handling ServiceTemplates in k0rdent
 status: To Do
 assignee: []
 created_date: '2025-08-06 12:23'
+updated_date: '2025-08-06 12:23'
 labels:
   - planning
   - k0rdent
   - services
 dependencies: []
+priority: medium
 ---
 
 ## Description
