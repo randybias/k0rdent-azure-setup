@@ -11,8 +11,7 @@ dependencies: []
 
 ## Description
 
-Add validation to ensure that the k0rdent configuration YAML doesn't deploy ARM images to x86 instances or vice versa. This validation should check the VM instance types against the container/OS images to prevent architecture mismatches that would cause deployment failures.
-
+Add validation to ensure that the k0rdent configuration YAML doesn't deploy incompatible images to instances. This validation should check: 1) ARM vs x86 architecture compatibility between VM instance types and container/OS images, 2) Gen1 vs Gen2 x86 image compatibility with instance types. Prevent architecture and generation mismatches that would cause deployment failures.
 ## Acceptance Criteria
 
 - [ ] Architecture validation logic implemented
