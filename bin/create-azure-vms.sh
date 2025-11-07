@@ -28,8 +28,8 @@ check_cloud_init_error() {
     local ssh_key="$3"
     local admin_user="$4"
     
-    local max_retries=5
-    local retry_delay=5
+    local max_retries=12
+    local retry_delay=10
     
     for ((attempt=1; attempt<=max_retries; attempt++)); do
         # Check for cloud-init completion file
@@ -134,6 +134,31 @@ delete_vm() {
     
     update_vm_state "$host" "" "" "Deleting"
     add_event "vm_deletion_started" "Started deletion of VM: $host"
+}
+
+validate_vm_state() {
+    if ! state_file_exists; then
+        return 1
+    fi
+
+    local expected=${#VM_HOSTS[@]}
+    local current_count
+    current_count=$(yq eval '.vm_states | length' "$DEPLOYMENT_STATE_FILE" 2>/dev/null || echo "0")
+    if [[ "$current_count" -lt "$expected" ]]; then
+        return 1
+    fi
+
+    if ! command -v az >/dev/null 2>&1; then
+        return 0
+    fi
+
+    for HOST in "${VM_HOSTS[@]}"; do
+        if ! check_azure_resource_exists "vm" "$HOST" "$RG"; then
+            return 1
+        fi
+    done
+
+    return 0
 }
 
 # Main VM deployment with monitoring loop
@@ -581,6 +606,18 @@ deploy_vms() {
         fi
     done
     
+    if state_file_exists && phase_is_completed "create_vms"; then
+        if validate_vm_state; then
+            print_success "Azure VMs already created. Skipping creation step."
+            verify_vm_connectivity
+            return 0
+        fi
+        print_warning "VM phase marked complete but validation failed. VMs will be recreated."
+        phase_reset_from "create_vms"
+    fi
+
+    phase_mark_in_progress "create_vms"
+
     # Check for existing VMs
     local existing_vms=()
     local vms_to_create=()
@@ -605,6 +642,7 @@ deploy_vms() {
         print_info "All VMs already exist. Proceeding to verification..."
         # Still perform verification steps
         verify_vm_connectivity
+        phase_mark_completed "create_vms"
         return
     fi
     
@@ -621,6 +659,7 @@ deploy_vms() {
     
     # Run final verification
     verify_vm_connectivity
+    phase_mark_completed "create_vms"
 }
 
 reset_vms() {
@@ -635,6 +674,8 @@ reset_vms() {
         print_info "No VMs to reset."
         return
     fi
+
+    phase_reset_from "create_vms"
     
     # Get list of all VMs in resource group in one API call
     print_info "Finding k0rdent VMs in resource group: $RG"

@@ -6,32 +6,11 @@
 
 set -euo pipefail
 
-# Check if configuration exists before loading
-CONFIG_YAML="./config/k0rdent.yaml"
-CONFIG_DEFAULT_YAML="./config/k0rdent-default.yaml"
+DEFAULT_CONFIG_YAML="./config/k0rdent.yaml"
+FALLBACK_CONFIG_YAML="./config/k0rdent-default.yaml"
 
-if [[ ! -f "$CONFIG_YAML" ]] && [[ ! -f "$CONFIG_DEFAULT_YAML" ]]; then
-    echo "ERROR: No configuration found!"
-    echo
-    echo "Please create a configuration first using one of these commands:"
-    echo
-    echo "  # Use minimal configuration (default):"
-    echo "  ./bin/configure.sh init"
-    echo
-    echo "  # Use a specific template:"
-    echo "  ./bin/configure.sh init --template development"
-    echo "  ./bin/configure.sh init --template production"
-    echo
-    echo "  # List available templates:"
-    echo "  ./bin/configure.sh templates"
-    echo
-    exit 1
-fi
-
-# Load central configuration and common functions
-source ./etc/k0rdent-config.sh
+# Load common functions early for logging helpers (used during arg parsing)
 source ./etc/common-functions.sh
-source ./etc/state-management.sh
 
 # Function to stop desktop notifier
 stop_desktop_notifier() {
@@ -60,6 +39,7 @@ DEPLOY_FLAGS=""
 
 # Custom argument parsing to handle our specific flags
 POSITIONAL_ARGS=()
+CONFIG_FILE=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -y|--yes)
@@ -86,6 +66,14 @@ while [[ $# -gt 0 ]]; do
             WITH_DESKTOP_NOTIFICATIONS=true
             shift
             ;;
+        --config)
+            if [[ $# -lt 2 ]]; then
+                echo "ERROR: --config requires a file path argument"
+                exit 1
+            fi
+            CONFIG_FILE="$2"
+            shift 2
+            ;;
         -h|--help)
             SHOW_HELP=true
             shift
@@ -102,6 +90,37 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Apply custom configuration file if provided
+if [[ -n "$CONFIG_FILE" ]]; then
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        print_error "Custom configuration file not found: $CONFIG_FILE"
+        exit 1
+    fi
+    export K0RDENT_CONFIG_FILE="$CONFIG_FILE"
+else
+    if [[ ! -f "$DEFAULT_CONFIG_YAML" ]] && [[ ! -f "$FALLBACK_CONFIG_YAML" ]]; then
+        print_error "ERROR: No configuration found!"
+        echo
+        echo "Please create a configuration first using one of these commands:"
+        echo
+        echo "  # Use minimal configuration (default):"
+        echo "  ./bin/configure.sh init"
+        echo
+        echo "  # Use a specific template:"
+        echo "  ./bin/configure.sh init --template development"
+        echo "  ./bin/configure.sh init --template production"
+        echo
+        echo "  # List available templates:"
+        echo "  ./bin/configure.sh templates"
+        echo
+        exit 1
+    fi
+fi
+
+# Load central configuration and state management helpers
+source ./etc/k0rdent-config.sh
+source ./etc/state-management.sh
+
 # Build flags to pass to child scripts
 if [[ "$SKIP_PROMPTS" == "true" ]]; then
     DEPLOY_FLAGS="$DEPLOY_FLAGS -y"
@@ -109,6 +128,189 @@ fi
 if [[ "$NO_WAIT" == "true" ]]; then
     DEPLOY_FLAGS="$DEPLOY_FLAGS --no-wait"
 fi
+
+azure_cli_ready() {
+    command -v az >/dev/null 2>&1
+}
+
+phase_display_name() {
+    case "$1" in
+        prepare_deployment) echo "Deployment preparation" ;;
+        setup_network) echo "Azure network setup" ;;
+        create_vms) echo "Azure VM creation" ;;
+        setup_vpn) echo "WireGuard VPN setup" ;;
+        connect_vpn) echo "WireGuard VPN connection" ;;
+        install_k0s) echo "k0s installation" ;;
+        install_k0rdent) echo "k0rdent installation" ;;
+        setup_azure_children) echo "Azure child cluster setup" ;;
+        install_azure_csi) echo "Azure CSI install" ;;
+        install_kof_mothership) echo "KOF mothership install" ;;
+        install_kof_regional) echo "KOF regional install" ;;
+        *) echo "$1" ;;
+    esac
+}
+
+ensure_state_structure() {
+    if state_file_exists; then
+        : # state_file_exists already runs migration logic
+    fi
+}
+
+validate_prepare_phase() {
+    ensure_state_structure || return 1
+    local keys_generated=$(get_state "wg_keys_generated" 2>/dev/null || echo "false")
+    if [[ "$keys_generated" != "true" ]]; then
+        return 1
+    fi
+    for host in "${VM_HOSTS[@]}"; do
+        if [[ ! -f "$CLOUD_INIT_DIR/${host}-cloud-init.yaml" ]]; then
+            return 1
+        fi
+    done
+    return 0
+}
+
+validate_network_phase() {
+    ensure_state_structure || return 1
+    if [[ "$(get_state "azure_rg_status" 2>/dev/null)" != "created" ]]; then
+        return 1
+    fi
+    if [[ "$(get_state "azure_network_status" 2>/dev/null)" != "created" ]]; then
+        return 1
+    fi
+    if [[ "$(get_state "azure_ssh_key_status" 2>/dev/null)" != "created" ]]; then
+        return 1
+    fi
+
+    if ! azure_cli_ready; then
+        return 0
+    fi
+
+    if ! check_azure_resource_exists "group" "$RG"; then
+        return 1
+    fi
+    if ! check_azure_resource_exists "vnet" "$VNET_NAME" "$RG"; then
+        return 1
+    fi
+    if ! check_azure_resource_exists "nsg" "$NSG_NAME" "$RG"; then
+        return 1
+    fi
+    if ! check_azure_resource_exists "sshkey" "$SSH_KEY_NAME" "$RG"; then
+        return 1
+    fi
+    return 0
+}
+
+validate_vm_phase() {
+    ensure_state_structure || return 1
+
+    local vm_total=${#VM_HOSTS[@]}
+    local state_count
+    state_count=$(yq eval '.vm_states | length' "$DEPLOYMENT_STATE_FILE" 2>/dev/null || echo "0")
+    if [[ "$state_count" -lt "$vm_total" ]]; then
+        return 1
+    fi
+
+    if ! azure_cli_ready; then
+        return 0
+    fi
+
+    for host in "${VM_HOSTS[@]}"; do
+        if ! check_azure_resource_exists "vm" "$host" "$RG"; then
+            return 1
+        fi
+    done
+    return 0
+}
+
+validate_vpn_setup_phase() {
+    ensure_state_structure || return 1
+    local setup_flag
+    setup_flag=$(get_state "wg_laptop_config_created" 2>/dev/null || echo "false")
+    if [[ "$setup_flag" != "true" ]]; then
+        return 1
+    fi
+    [[ -f "$WG_CONFIG_FILE" ]]
+}
+
+validate_vpn_connection_phase() {
+    ensure_state_structure || return 1
+    local connected=$(get_state "wg_vpn_connected" 2>/dev/null || echo "false")
+    if [[ "$connected" != "true" ]]; then
+        return 1
+    fi
+
+    # Quick check using wg show if available
+    if command -v wg >/dev/null 2>&1; then
+        if [[ "$(uname)" == "Darwin" ]]; then
+            if ! run_wg_command wg-show >/dev/null 2>&1; then
+                return 1
+            fi
+        else
+            local iface
+            iface=$(basename "$WG_CONFIG_FILE" .conf)
+            if ! run_wg_command wg-show "$iface" >/dev/null 2>&1; then
+                return 1
+            fi
+        fi
+    fi
+    return 0
+}
+
+validate_k0s_phase() {
+    ensure_state_structure || return 1
+    local deployed=$(get_state "k0s_cluster_deployed" 2>/dev/null || echo "false")
+    if [[ "$deployed" != "true" ]]; then
+        return 1
+    fi
+    [[ -f "./k0sctl-config/${K0RDENT_CLUSTERID}-kubeconfig" ]]
+}
+
+validate_k0rdent_phase() {
+    ensure_state_structure || return 1
+    local installed=$(get_state "k0rdent_installed" 2>/dev/null || echo "false")
+    [[ "$installed" == "true" ]]
+}
+
+handle_completed_phase() {
+    local phase="$1"
+    local validator="$2"
+    local label
+    label=$(phase_display_name "$phase")
+
+    if [[ -z "$validator" ]]; then
+        print_info "$label already completed. Skipping."
+        return 0
+    fi
+
+    if "$validator"; then
+        print_success "$label already completed. Skipping."
+        return 0
+    fi
+
+    print_warning "$label marked complete but validation failed. Re-running phase."
+    phase_reset_from "$phase"
+    return 1
+}
+
+should_run_phase() {
+    local phase="$1"
+    local validator="$2"
+
+    if ! state_file_exists; then
+        return 0
+    fi
+
+    if phase_needs_run "$phase"; then
+        return 0
+    fi
+
+    if handle_completed_phase "$phase" "$validator"; then
+        return 1
+    fi
+
+    return 0
+}
 
 
 show_config() {
@@ -188,8 +390,12 @@ run_deployment() {
     echo
 
     # Step 1: Prepare deployment (keys and cloud-init)
-    print_header "Step 1: Preparing Deployment (Keys & Cloud-Init)"
-    bash bin/prepare-deployment.sh deploy $DEPLOY_FLAGS
+    if should_run_phase "prepare_deployment" validate_prepare_phase; then
+        print_header "Step 1: Preparing Deployment (Keys & Cloud-Init)"
+        bash bin/prepare-deployment.sh deploy $DEPLOY_FLAGS
+    else
+        print_success "Step 1 skipped - deployment preparation already complete."
+    fi
 
     # Record deployment flags in state (after state file is created)
     update_state "deployment_flags.azure_children" "$WITH_AZURE_CHILDREN"
@@ -216,59 +422,96 @@ run_deployment() {
     fi
 
     # Step 2: Setup Azure network
-    print_header "Step 2: Setting up Azure Network"
-    local azure_rg_status=$(get_state "azure_rg_status" 2>/dev/null || echo "not_created")
-    local azure_network_status=$(get_state "azure_network_status" 2>/dev/null || echo "not_created")
-    local azure_ssh_key_status=$(get_state "azure_ssh_key_status" 2>/dev/null || echo "not_created")
-    
-    if [[ "$azure_rg_status" == "created" && "$azure_network_status" == "created" && "$azure_ssh_key_status" == "created" ]]; then
-        print_warning "Azure network setup already complete. Skipping network setup."
-    else
+    if should_run_phase "setup_network" validate_network_phase; then
+        print_header "Step 2: Setting up Azure Network"
         bash bin/setup-azure-network.sh deploy $DEPLOY_FLAGS
+    else
+        print_success "Step 2 skipped - Azure network already configured."
     fi
 
     # Step 3: Create Azure VMs
-    print_header "Step 3: Creating Azure VMs"
-    bash bin/create-azure-vms.sh deploy $DEPLOY_FLAGS
+    if should_run_phase "create_vms" validate_vm_phase; then
+        print_header "Step 3: Creating Azure VMs"
+        bash bin/create-azure-vms.sh deploy $DEPLOY_FLAGS
+    else
+        print_success "Step 3 skipped - Azure VMs already created."
+    fi
 
     # Step 4: Setup WireGuard VPN (one-time setup)
-    print_header "Step 4: Setting Up WireGuard VPN"
-    bash bin/manage-vpn.sh setup $DEPLOY_FLAGS
+    if should_run_phase "setup_vpn" validate_vpn_setup_phase; then
+        print_header "Step 4: Setting Up WireGuard VPN"
+        bash bin/manage-vpn.sh setup $DEPLOY_FLAGS
+    else
+        print_success "Step 4 skipped - WireGuard VPN already configured."
+    fi
 
     # Step 5: Connect to WireGuard VPN
-    print_header "Step 5: Connecting to WireGuard VPN"
-    bash bin/manage-vpn.sh connect $DEPLOY_FLAGS
+    if should_run_phase "connect_vpn" validate_vpn_connection_phase; then
+        print_header "Step 5: Connecting to WireGuard VPN"
+        bash bin/manage-vpn.sh connect $DEPLOY_FLAGS
+    else
+        print_success "Step 5 skipped - WireGuard VPN already connected."
+    fi
 
     # Step 6: Install k0s cluster
-    print_header "Step 6: Installing k0s Cluster"
-    bash bin/install-k0s.sh deploy $DEPLOY_FLAGS
+    if should_run_phase "install_k0s" validate_k0s_phase; then
+        print_header "Step 6: Installing k0s Cluster"
+        bash bin/install-k0s.sh deploy $DEPLOY_FLAGS
+    else
+        print_success "Step 6 skipped - k0s already deployed."
+    fi
 
     # Step 7: Install k0rdent on cluster
-    print_header "Step 7: Installing k0rdent on Cluster"
-    bash bin/install-k0rdent.sh deploy $DEPLOY_FLAGS
+    if should_run_phase "install_k0rdent" validate_k0rdent_phase; then
+        print_header "Step 7: Installing k0rdent on Cluster"
+        bash bin/install-k0rdent.sh deploy $DEPLOY_FLAGS
+    else
+        print_success "Step 7 skipped - k0rdent already installed."
+    fi
 
     # Step 8: Setup Azure child cluster deployment (if requested)
     if [[ "$WITH_AZURE_CHILDREN" == "true" ]]; then
-        print_header "Step 8: Setting up Azure Child Cluster Deployment"
-        bash bin/setup-azure-cluster-deployment.sh setup $DEPLOY_FLAGS
+        if should_run_phase "setup_azure_children" ""; then
+            print_header "Step 8: Setting up Azure Child Cluster Deployment"
+            bash bin/setup-azure-cluster-deployment.sh setup $DEPLOY_FLAGS
+        else
+            print_success "Step 8 skipped - Azure child cluster deployment already configured."
+        fi
     fi
 
     # Step 9: Install Azure CSI driver (if KOF requested)
     if [[ "$WITH_KOF" == "true" ]]; then
-        print_header "Step 9: Installing Azure Disk CSI Driver for KOF"
-        bash bin/install-k0s-azure-csi.sh deploy $DEPLOY_FLAGS
+        if should_run_phase "install_azure_csi" ""; then
+            print_header "Step 9: Installing Azure Disk CSI Driver for KOF"
+            bash bin/install-k0s-azure-csi.sh deploy $DEPLOY_FLAGS
+        else
+            print_success "Step 9 skipped - Azure Disk CSI driver already installed."
+        fi
     fi
 
     # Step 10: Install KOF mothership (if requested)
     if [[ "$WITH_KOF" == "true" ]]; then
-        print_header "Step 10: Installing KOF Mothership"
-        bash bin/install-kof-mothership.sh deploy $DEPLOY_FLAGS
+        if should_run_phase "install_kof_mothership" ""; then
+            print_header "Step 10: Installing KOF Mothership"
+            bash bin/install-kof-mothership.sh deploy $DEPLOY_FLAGS
+        else
+            print_success "Step 10 skipped - KOF mothership already installed."
+        fi
     fi
 
     # Step 11: Deploy KOF regional cluster (if requested)
     if [[ "$WITH_KOF" == "true" ]]; then
-        print_header "Step 11: Deploying KOF Regional Cluster"
-        bash bin/install-kof-regional.sh deploy $DEPLOY_FLAGS
+        if should_run_phase "install_kof_regional" ""; then
+            print_header "Step 11: Deploying KOF Regional Cluster"
+            bash bin/install-kof-regional.sh deploy $DEPLOY_FLAGS
+        else
+            print_success "Step 11 skipped - KOF regional cluster already deployed."
+        fi
+    else
+        # Clear any stale completion state so we do not emit warnings
+        if state_file_exists && phase_is_completed "install_kof_regional"; then
+            phase_reset_from "install_kof_regional"
+        fi
     fi
 
     # Calculate and display total deployment time
@@ -375,6 +618,9 @@ run_fast_reset() {
     else
         print_info "Step 2: No Azure resource group to delete"
     fi
+    
+    # Step 2.5: Clean up Azure credentials (Service Principal, secrets, etc.)
+    integrate_azure_cleanup_in_reset
     
     # Step 3: Clean up local files
     print_header "Step 3: Cleaning Up Local Files"
@@ -586,6 +832,9 @@ run_full_reset() {
         print_info "Step 5: No Azure resources to remove"
     fi
 
+    # Step 5.5: Clean up Azure credentials (Service Principal, secrets, etc.)
+    integrate_azure_cleanup_in_reset
+
     # Step 6: Reset deployment preparation (keys and cloud-init)
     if [[ -d "$CLOUD_INIT_DIR" ]] || [[ -d "$WG_DIR" ]]; then
         print_header "Step 6: Removing Deployment Preparation Files"
@@ -651,6 +900,82 @@ run_full_reset() {
     print_info "You can now run a fresh deployment with: $0 deploy"
 }
 
+# Azure credential cleanup integration for reset
+integrate_azure_cleanup_in_reset() {
+    print_header "Checking for Azure Credentials Cleanup"
+    
+    # Check local Azure state first
+    if [[ -f "$AZURE_STATE_FILE" ]]; then
+        local credentials_configured
+        credentials_configured=$(get_azure_state "azure_credentials_configured" 2>/dev/null || echo "false")
+        
+        if [[ "$credentials_configured" == "true" ]]; then
+            print_info "Azure credentials were configured - initiating cleanup..."
+            
+            # Set SKIP_CONFIRMATION to bypass manual prompts during reset
+            local old_skip_confirmation="${SKIP_CONFIRMATION:-}"
+            export SKIP_CONFIRMATION="true"
+            
+            # For fast reset, the Kubernetes cluster is being deleted, so skip cleanup
+            if [[ "$FAST_RESET" == "true" ]]; then
+                local cleanup_result
+                print_info "Fast reset detected - cleaning up Azure Service Principal only (cluster being deleted)"
+                if bash ./bin/setup-azure-cluster-deployment.sh cleanup --azure-only; then
+                    cleanup_result="success"
+                else
+                    cleanup_result="partial"
+                    print_warning "Azure Service Principal cleanup encountered issues"
+                    print_info "Manual cleanup may be required with: ./bin/setup-azure-cluster-deployment.sh cleanup --azure-only"
+                fi
+            else
+                # Full reset - clean up both Azure and Kubernetes resources
+                if bash ./bin/setup-azure-cluster-deployment.sh cleanup; then
+                    cleanup_result="success"
+                else
+                    cleanup_result="partial"
+                    print_warning "Azure credentials cleanup encountered issues"
+                    print_info "Manual cleanup may be required with: ./bin/setup-azure-cluster-deployment.sh cleanup"
+                fi
+            fi
+                print_success "Azure credentials cleaned up successfully"
+                add_event "azure_credentials_auto_cleanup" "Azure credentials automatically cleaned up during reset"
+            else
+                print_warning "Azure credentials cleanup encountered issues"
+                print_info "Manual cleanup may be required with: ./bin/setup-azure-cluster-deployment.sh cleanup"
+                add_event "azure_credentials_cleanup_partial" "Azure credentials cleanup partially failed during reset"
+            fi
+            
+            # Log cleanup results based on operation type and result
+            if [[ "$FAST_RESET" == "true" ]]; then
+                if [[ "$cleanup_result" == "success" ]]; then
+                    print_success "Azure Service Principal cleaned up successfully"
+                    add_event "azure_credentials_auto_cleanup" "Azure Service Principal automatically cleaned up during fast reset"
+                else
+                    add_event "azure_credentials_cleanup_partial" "Azure Service Principal cleanup partially failed during fast reset"
+                fi
+            else
+                if [[ "$cleanup_result" == "success" ]]; then
+                    print_success "Azure credentials cleaned up successfully"
+                    add_event "azure_credentials_auto_cleanup" "Azure credentials automatically cleaned up during reset"
+                else
+                    add_event "azure_credentials_cleanup_partial" "Azure credentials cleanup partially failed during reset"
+                fi
+            fi
+            
+            # Restore original SKIP_CONFIRMATION setting
+            if [[ -n "$old_skip_confirmation" ]]; then
+                export SKIP_CONFIRMATION="$old_skip_confirmation"
+            elif [[ "${SKIP_CONFIRMATION+x}" == "defined" ]]; then
+                unset SKIP_CONFIRMATION
+            fi
+        else
+            print_info "No Azure credentials to clean up"
+        fi
+    else
+        print_info "Azure state file not found - no credentials to clean up"
+    fi
+}
+
 # Main execution
 # Handle help flag
 if [[ "${SHOW_HELP:-false}" == "true" ]]; then
@@ -682,7 +1007,7 @@ case "${POSITIONAL_ARGS[0]:-deploy}" in
         bash bin/check-prerequisites.sh
         ;;
     "help"|"-h"|"--help")
-        echo "Usage: $0 [command] [options]"
+        echo "Usage: $0 [options] <command>"
         echo ""
         echo "Commands:"
         echo "  deploy    Run full deployment (default)"
@@ -698,6 +1023,7 @@ case "${POSITIONAL_ARGS[0]:-deploy}" in
         echo "  --with-kof              Deploy KOF (mothership + regional cluster)"
         echo "  --fast                  Fast reset (skip cleanup, delete resource group)"
         echo "  --with-desktop-notifications  Enable desktop notifications (macOS)"
+        echo "  --config <file>         Use alternate YAML configuration file"
         echo "  -h, --help              Show this help message"
         echo ""
         echo "Examples:"

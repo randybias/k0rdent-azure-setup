@@ -101,6 +101,35 @@ show_status() {
     fi
 }
 
+validate_network_state() {
+    local rg_status=$(get_state "azure_rg_status" 2>/dev/null || echo "not_created")
+    local net_status=$(get_state "azure_network_status" 2>/dev/null || echo "not_created")
+    local ssh_status=$(get_state "azure_ssh_key_status" 2>/dev/null || echo "not_created")
+
+    if [[ "$rg_status" != "created" ]] || [[ "$net_status" != "created" ]] || [[ "$ssh_status" != "created" ]]; then
+        return 1
+    fi
+
+    if ! command -v az >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if ! check_azure_resource_exists "group" "$RG"; then
+        return 1
+    fi
+    if ! check_azure_resource_exists "vnet" "$VNET_NAME" "$RG"; then
+        return 1
+    fi
+    if ! check_azure_resource_exists "nsg" "$NSG_NAME" "$RG"; then
+        return 1
+    fi
+    if ! check_azure_resource_exists "sshkey" "$SSH_KEY_NAME" "$RG"; then
+        return 1
+    fi
+
+    return 0
+}
+
 deploy_resources() {
     # Check script-specific prerequisites
     # Note: Azure CLI is checked in bin/check-prerequisites.sh
@@ -118,21 +147,17 @@ deploy_resources() {
     fi
     print_info "Using WireGuard port: $WIREGUARD_PORT"
     
-    # Check if network setup is already complete
-    if state_file_exists; then
-        local azure_rg_status=$(get_state "azure_rg_status" 2>/dev/null || echo "not_created")
-        local azure_network_status=$(get_state "azure_network_status" 2>/dev/null || echo "not_created")
-        local azure_ssh_key_status=$(get_state "azure_ssh_key_status" 2>/dev/null || echo "not_created")
-        
-        if [[ "$azure_rg_status" == "created" && "$azure_network_status" == "created" && "$azure_ssh_key_status" == "created" ]]; then
-            print_error "Azure network setup is already complete. Use 'reset' to clean up first."
-            exit 1
+    if state_file_exists && phase_is_completed "setup_network"; then
+        if validate_network_state; then
+            print_success "Azure network setup already complete. Nothing to do."
+            return 0
         fi
-        
-        if [[ "$azure_rg_status" == "created" ]] || [[ "$azure_network_status" == "created" ]] || [[ "$azure_ssh_key_status" == "created" ]]; then
-            print_warning "Partial Azure setup detected. Completing missing components..."
-        fi
+
+        print_warning "Azure network state is inconsistent with recorded data. Recreating resources."
+        phase_reset_from "setup_network"
     fi
+
+    phase_mark_in_progress "setup_network"
     
     # Create resource group (if not already created)
     if [[ "$(get_state "azure_rg_status" 2>/dev/null)" != "created" ]]; then
@@ -253,9 +278,16 @@ deploy_resources() {
         handle_error ${LINENO} "az network vnet subnet update"
     fi
     
-    # Update state to mark Azure setup complete
-    update_state "phase" "azure_ready"
     add_event "azure_setup_completed" "Azure network infrastructure deployment completed"
+
+    if [[ -f "$SSH_PRIVATE_KEY" ]]; then
+        record_artifact "azure_ssh_private_key" "$SSH_PRIVATE_KEY"
+    fi
+    if [[ -f "$SSH_PUBLIC_KEY" ]]; then
+        record_artifact "azure_ssh_public_key" "$SSH_PUBLIC_KEY"
+    fi
+
+    phase_mark_completed "setup_network"
     
     if [[ "$QUIET_MODE" != "true" ]]; then
         echo

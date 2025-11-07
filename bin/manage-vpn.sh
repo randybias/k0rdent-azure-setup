@@ -122,6 +122,37 @@ show_comprehensive_status() {
     return 0
 }
 
+validate_vpn_setup_state() {
+    local setup_flag=$(get_state "wg_laptop_config_created" 2>/dev/null || echo "false")
+    if [[ "$setup_flag" != "true" ]]; then
+        return 1
+    fi
+
+    [[ -f "$WG_CONFIG_FILE" ]]
+}
+
+validate_vpn_connection_state() {
+    local connected=$(get_state "wg_vpn_connected" 2>/dev/null || echo "false")
+    if [[ "$connected" != "true" ]]; then
+        return 1
+    fi
+
+    if command -v wg >/dev/null 2>&1; then
+        if [[ "$(uname)" == "Darwin" ]]; then
+            if ! run_wg_command wg-show >/dev/null 2>&1; then
+                return 1
+            fi
+        else
+            local iface=$(basename "$WG_CONFIG_FILE" .conf)
+            if ! run_wg_command wg-show "$iface" >/dev/null 2>&1; then
+                return 1
+            fi
+        fi
+    fi
+
+    return 0
+}
+
 # Check if setup is complete
 check_setup_complete() {
     local setup_status=$(get_state "wg_laptop_config_created" 2>/dev/null || echo "false")
@@ -152,9 +183,19 @@ validate_full_prerequisites() {
 # One-time VPN setup (combines config generation and setup)
 setup_vpn() {
     print_header "Setting Up WireGuard VPN (One-Time Setup)"
-    
-    # Check if already set up
+
+    if state_file_exists && phase_is_completed "setup_vpn"; then
+        if validate_vpn_setup_state; then
+            print_success "WireGuard VPN setup already complete. Nothing to do."
+            return 0
+        fi
+        print_warning "VPN setup recorded as complete but validation failed. Regenerating configuration."
+        phase_reset_from "setup_vpn"
+    fi
+
+    local existing_setup=false
     if check_setup_complete; then
+        existing_setup=true
         local method=$(get_setup_method)
         print_info "VPN setup already complete using method: $method"
         print_info "Configuration file: $WG_CONFIG_FILE"
@@ -163,10 +204,13 @@ setup_vpn() {
             read -p "Do you want to regenerate the setup? (yes/no): " -r
             if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
                 print_info "Setup unchanged. Use '$0 connect' to connect."
+                phase_mark_completed "setup_vpn"
                 return 0
             fi
         fi
     fi
+    
+    phase_mark_in_progress "setup_vpn"
     
     # Generate configuration first
     generate_laptop_config_internal
@@ -208,6 +252,11 @@ setup_vpn() {
             esac
         done
     fi
+
+    if [[ -f "$WG_CONFIG_FILE" ]]; then
+        record_artifact "wireguard_laptop_config" "$WG_CONFIG_FILE"
+    fi
+    phase_mark_completed "setup_vpn"
     
     return 0
 }
@@ -604,6 +653,15 @@ test_wireguard_connectivity() {
 # Main connection function (fast, for repeat connections)
 connect_wireguard() {
     print_header "Connecting to WireGuard VPN"
+
+    if state_file_exists && phase_is_completed "connect_vpn"; then
+        if validate_vpn_connection_state; then
+            print_success "WireGuard VPN already connected."
+            return 0
+        fi
+        print_warning "VPN connection recorded as active but validation failed. Reconnecting."
+        phase_reset_from "connect_vpn"
+    fi
     
     # Check if setup is complete
     if ! check_setup_complete; then
@@ -620,14 +678,23 @@ connect_wireguard() {
         print_info "VPN was set up for GUI use."
         print_info "Please activate the tunnel in your WireGuard application."
         print_info "Or run '$0 setup' to switch to CLI mode."
+        phase_mark_pending "connect_vpn"
         return 0
     fi
+    
+    phase_mark_in_progress "connect_vpn"
     
     # CLI connection (fast path)
     print_info "Connecting via CLI (fast connection)..."
     if setup_wireguard_cli; then
-        verify_and_show_connection_info
+        if verify_and_show_connection_info; then
+            phase_mark_completed "connect_vpn"
+        else
+            phase_reset_from "connect_vpn"
+            return 1
+        fi
     else
+        phase_reset_from "connect_vpn"
         return 1
     fi
     
@@ -685,11 +752,12 @@ disconnect_wireguard() {
             update_state "wg_macos_interface" ""
         fi
         add_event "vpn_disconnected" "WireGuard VPN disconnected"
+        phase_mark_pending "connect_vpn"
     else
         print_error "Failed to disconnect WireGuard VPN"
         return 1
     fi
-    
+
     return 0
 }
 
@@ -710,6 +778,10 @@ cleanup_orphaned_interfaces() {
 # Reset configuration and disconnect
 reset_and_cleanup() {
     print_header "Resetting WireGuard Configuration"
+
+    if state_file_exists; then
+        phase_reset_from "setup_vpn"
+    fi
     
     # Determine interface name from config file or from the expected name
     local interface_name=""

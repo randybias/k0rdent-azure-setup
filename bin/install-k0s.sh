@@ -17,6 +17,15 @@ K0SCTL_DIR="./k0sctl-config"
 K0SCTL_FILE="$K0SCTL_DIR/${K0RDENT_CLUSTERID}-k0sctl.yaml"
 KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_CLUSTERID}-kubeconfig"
 
+validate_k0s_install_state() {
+    local deployed=$(get_state "k0s_cluster_deployed" 2>/dev/null || echo "false")
+    if [[ "$deployed" != "true" ]]; then
+        return 1
+    fi
+
+    [[ -f "$KUBECONFIG_FILE" ]]
+}
+
 # Script-specific functions
 show_usage() {
     print_usage "$0" \
@@ -55,6 +64,7 @@ uninstall_k0s() {
         update_state "k0rdent_installed" "false"
         update_state "phase" "vms_ready"
         add_event "k0s_cluster_uninstalled" "k0s cluster successfully reset and uninstalled"
+        phase_reset_from "install_k0s"
     else
         print_warning "No k0sctl config found, skipping cluster reset"
     fi
@@ -70,6 +80,7 @@ reset_k0s() {
     # Update state
     update_state "k0s_config_generated" "false"
     add_event "k0s_config_reset" "k0sctl configuration and kubeconfig files removed"
+    phase_reset_from "install_k0s"
 }
 
 generate_k0s_config() {
@@ -209,6 +220,7 @@ EOF
     # Update state
     update_state "k0s_config_generated" "true"
     add_event "k0s_config_generated" "k0sctl configuration file generated successfully"
+    record_artifact "k0sctl_config" "$K0SCTL_FILE"
 
     # Display summary
     print_header "Configuration Summary"
@@ -236,6 +248,17 @@ EOF
 }
 
 deploy_k0s() {
+    if state_file_exists && phase_is_completed "install_k0s"; then
+        if validate_k0s_install_state; then
+            print_success "k0s cluster already deployed. Skipping installation."
+            return 0
+        fi
+        print_warning "k0s phase recorded as complete but validation failed. Re-running deployment."
+        phase_reset_from "install_k0s"
+    fi
+
+    phase_mark_in_progress "install_k0s"
+
     # First generate the config
     generate_k0s_config
 
@@ -306,9 +329,10 @@ deploy_k0s() {
                     mv kubeconfig.tmp "$KUBECONFIG_FILE"
                     print_success "Kubeconfig saved to: $KUBECONFIG_FILE"
                     KUBECONFIG_SUCCESS=true
-                    
+
                     # Update state
                     add_event "kubeconfig_retrieved" "Kubeconfig successfully retrieved and saved"
+                    record_artifact "kubeconfig_file" "$KUBECONFIG_FILE"
                     break
                 else
                     print_warning "Kubeconfig incomplete (missing contexts), retrying in 30 seconds..."
@@ -349,12 +373,14 @@ deploy_k0s() {
             print_info "The cluster network is not functioning correctly."
             print_info "Please check the cluster logs and network configuration."
             print_info "You can re-run validation with: ./bin/validate-pod-network.sh validate"
-            
+
             # Update state to indicate network issues
             update_state "network_validation_failed" "true"
             add_event "network_validation_failed" "Pod-to-pod network connectivity tests failed"
             exit 1
         fi
+
+        phase_mark_completed "install_k0s"
     else
         print_error "k0s cluster deployment failed"
         exit 1
