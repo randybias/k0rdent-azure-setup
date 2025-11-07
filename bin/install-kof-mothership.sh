@@ -81,6 +81,16 @@ deploy_kof_mothership() {
     if ! check_prerequisites; then
         return 1
     fi
+
+    if state_file_exists && phase_is_completed "install_kof_mothership"; then
+        if [[ "$(get_state "kof_mothership_installed" 2>/dev/null || echo "false")" == "true" ]]; then
+            print_success "KOF mothership already installed. Skipping deployment."
+            return 0
+        fi
+        print_warning "KOF mothership phase recorded as complete but validation failed. Redeploying."
+        phase_reset_from "install_kof_mothership"
+    fi
+    phase_mark_in_progress "install_kof_mothership"
     
     # Get configuration values
     local kof_version=$(get_kof_config "version" "1.1.0")
@@ -172,6 +182,7 @@ deploy_kof_mothership() {
     
     print_success "KOF mothership deployment completed!"
     print_info "You can now proceed to install KOF on regional clusters"
+    phase_mark_completed "install_kof_mothership"
 }
 
 uninstall_kof_mothership() {
@@ -252,6 +263,7 @@ uninstall_kof_mothership() {
     remove_state_key "kof_mothership_version"
     remove_state_key "kof_mothership_namespace"
     add_event "kof_mothership_uninstall_completed" "KOF mothership uninstall completed"
+    phase_reset_from "install_kof_mothership"
     
     print_success "KOF mothership uninstall completed!"
 }

@@ -28,12 +28,14 @@ show_usage() {
     print_usage "$0" \
         "  setup      Configure k0rdent with Azure credentials
   cleanup    Remove Azure credential configuration
+  cleanup    --azure-only  Remove only Azure Service Principal (skip Kubernetes)
   status     Show Azure credential status
   help       Show this help message" \
         "  -y, --yes        Skip confirmation prompts" \
         "  $0 setup         # Configure Azure credentials
   $0 status        # Check credential status
-  $0 cleanup       # Remove Azure credentials"
+  $0 cleanup       # Remove Azure credentials
+  $0 cleanup --azure-only  # Remove only Azure Service Principal"
 }
 
 check_prerequisites() {
@@ -146,6 +148,16 @@ verify_azure_credentials() {
 
 setup_azure_credentials() {
     print_header "Setting up Azure Credentials for k0rdent"
+
+    if state_file_exists && phase_is_completed "setup_azure_children"; then
+        if [[ "$(get_azure_state "azure_credentials_configured")" == "true" ]]; then
+            print_success "Azure credentials already configured for child deployments."
+            return 0
+        fi
+        print_warning "Azure credential phase recorded as complete but validation failed. Reconfiguring credentials."
+        phase_reset_from "setup_azure_children"
+    fi
+    phase_mark_in_progress "setup_azure_children"
     
     # Check prerequisites
     if ! check_prerequisites; then
@@ -382,10 +394,27 @@ EOF
     add_azure_event "azure_credentials_configured" "Azure credentials configured for cluster deployment"
     
     print_success "Azure credentials configured successfully!"
+    phase_mark_completed "setup_azure_children"
 }
 
 cleanup_azure_credentials() {
-    print_header "Cleaning up Azure Credentials"
+    local azure_only=false
+    # Check for --azure-only flag in remaining arguments
+    for arg in "${ORIGINAL_ARGS[@]:}"; do
+        case "$arg" in
+            --azure-only)
+                azure_only=true
+                break
+                ;;
+        esac
+    done
+    
+    if [[ "$azure_only" == "true" ]]; then
+        print_header "Cleaning up Azure Service Principal (Azure-only mode)"
+        print_info "Skipping Kubernetes resource cleanup (cluster not available)"
+    else
+        print_header "Cleaning up Azure Credentials"
+    fi
     
     # Check if configured
     if [[ "$(get_azure_state "azure_credentials_configured")" != "true" ]]; then
@@ -402,24 +431,43 @@ cleanup_azure_credentials() {
         fi
     fi
     
-    export KUBECONFIG="$KUBECONFIG_FILE"
-    
-    # Remove KCM Credential
-    kubectl delete credential "$KCM_CREDENTIAL_NAME" -n "$KCM_NAMESPACE" --ignore-not-found
-    
-    # Remove AzureClusterIdentity
-    kubectl delete azureclusteridentity "$AZURE_IDENTITY_NAME" -n "$KCM_NAMESPACE" --ignore-not-found
-    
-    # Remove Kubernetes secret
-    kubectl delete secret "$AZURE_SECRET_NAME" -n "$KCM_NAMESPACE" --ignore-not-found
-    
-    # Remove Azure Resource Template ConfigMap
-    kubectl delete configmap azure-cluster-identity-resource-template -n "$KCM_NAMESPACE" --ignore-not-found
+    # Skip Kubernetes resource cleanup in azure-only mode
+    if [[ "$azure_only" != "true" ]]; then
+        export KUBECONFIG="$KUBECONFIG_FILE"
+        
+        # Remove KCM Credential
+        kubectl delete credential "$KCM_CREDENTIAL_NAME" -n "$KCM_NAMESPACE" --ignore-not-found
+        
+        # Remove AzureClusterIdentity
+        kubectl delete azureclusteridentity "$AZURE_IDENTITY_NAME" -n "$KCM_NAMESPACE" --ignore-not-found
+        
+        # Remove Kubernetes secret
+        kubectl delete secret "$AZURE_SECRET_NAME" -n "$KCM_NAMESPACE" --ignore-not-found
+        
+        # Remove Azure Resource Template ConfigMap
+        kubectl delete configmap azure-cluster-identity-resource-template -n "$KCM_NAMESPACE" --ignore-not-found
+    else
+        print_info "Skipping Kubernetes resource cleanup (cluster being deleted in fast reset)"
+    fi
     
     # Remove Service Principal
     local client_id=$(get_azure_state "azure_client_id")
     if [[ -n "$client_id" ]]; then
-        az ad sp delete --id "$client_id" || true
+        # Check if we're authenticated as the Service Principal itself
+        local current_user=$(az account show --query user.type -o tsv 2>/dev/null || echo "unknown")
+        if [[ "$current_user" == "servicePrincipal" ]]; then
+            print_warning "Cannot delete Service Principal - authenticated as Service Principal"
+            print_info "To delete the Service Principal manually:"
+            print_info "  1. Re-authenticate as another user: az login"
+            print_info "  2. Delete with: az ad sp delete --id $client_id"
+        else
+            if az ad sp delete --id "$client_id" 2>/dev/null; then
+                print_success "Removed Azure Service Principal"
+            else
+                print_warning "Failed to remove Azure Service Principal (permission issue?)"
+                print_info "Manual deletion may be required: az ad sp delete --id $client_id"
+            fi
+        fi
     fi
     
     # Remove local credentials file
@@ -433,9 +481,14 @@ cleanup_azure_credentials() {
     remove_azure_state_key "azure_subscription_id"
     remove_azure_state_key "azure_tenant_id"
     remove_azure_state_key "azure_client_id"
-    add_azure_event "azure_credentials_cleanup" "Azure credentials cleanup completed"
+    add_azure_event "azure_credentials_cleanup" "Azure credentials cleanup completed (auto-mode: $([ "$SKIP_CONFIRMATION" = "true" ] && echo "yes" || echo "no"))"
+    phase_reset_from "setup_azure_children"
     
-    print_success "Azure credentials cleanup completed!"
+    if [[ "$azure_only" == "true" ]]; then
+        print_success "Azure Service Principal cleanup completed!"
+    else
+        print_success "Azure credentials cleanup completed!"
+    fi
 }
 
 show_azure_credential_status() {

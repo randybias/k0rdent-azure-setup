@@ -16,6 +16,11 @@ source ./etc/state-management.sh
 K0SCTL_DIR="./k0sctl-config"
 KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_CLUSTERID}-kubeconfig"
 
+validate_k0rdent_install_state() {
+    local installed=$(get_state "k0rdent_installed" 2>/dev/null || echo "false")
+    [[ "$installed" == "true" ]]
+}
+
 # Script-specific functions
 show_usage() {
     print_usage "$0" \
@@ -44,16 +49,35 @@ uninstall_k0rdent() {
     SSH_KEY_PATH=$(find ./azure-resources -name "${K0RDENT_CLUSTERID}-ssh-key" -type f 2>/dev/null | head -1)
     
     if [[ -n "$SSH_KEY_PATH" ]]; then
-        # Get the first controller IP
-        CONTROLLER_IP="${WG_IPS[k0s-controller]}"
+        # Get the first controller host and WireGuard IP from state
+        local controller_name=""
+        for host in "${VM_HOSTS[@]}"; do
+            if [[ "${VM_TYPE_MAP[$host]}" == "controller" ]]; then
+                controller_name="$host"
+                break
+            fi
+        done
+
+        if [[ -z "$controller_name" ]]; then
+            print_warning "No controller node found in configuration; skipping k0rdent uninstall"
+            return 0
+        fi
+
+        local controller_ip
+        controller_ip=$(get_wireguard_ip "$controller_name")
+        if [[ -z "$controller_ip" || "$controller_ip" == "null" ]]; then
+            print_warning "WireGuard IP for $controller_name not found; skipping k0rdent uninstall"
+            return 0
+        fi
         
         print_info "Uninstalling k0rdent using Helm..."
-        if execute_remote_command "$CONTROLLER_IP" "helm uninstall kcm -n kcm-system" "Uninstall k0rdent" 30 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null; then
+        if execute_remote_command "$controller_ip" "helm uninstall kcm -n kcm-system" "Uninstall k0rdent" 30 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null; then
             print_success "k0rdent uninstalled successfully"
             # Update state
             update_state "k0rdent_installed" "false"
             update_state "phase" "k0s_deployed"
             add_event "k0rdent_uninstalled" "k0rdent successfully uninstalled from cluster"
+            phase_reset_from "install_k0rdent"
         else
             print_warning "Failed to uninstall k0rdent (it may not be installed)"
         fi
@@ -89,6 +113,17 @@ print_success "Prerequisites validated"
 
 # Deploy k0rdent if requested
 if [[ "$COMMAND" == "deploy" ]]; then
+    if state_file_exists && phase_is_completed "install_k0rdent"; then
+        if validate_k0rdent_install_state; then
+            print_success "k0rdent already installed. Skipping install."
+            return 0
+        fi
+        print_warning "k0rdent phase recorded as complete but validation failed. Re-running installation."
+        phase_reset_from "install_k0rdent"
+    fi
+
+    phase_mark_in_progress "install_k0rdent"
+
     print_header "Installing k0rdent on Cluster"
     
     # Update state phase
@@ -110,21 +145,26 @@ if [[ "$COMMAND" == "deploy" ]]; then
         exit 1
     fi
     
-    CONTROLLER_IP="${WG_IPS[$controller_name]}"
+    local controller_ip
+    controller_ip=$(get_wireguard_ip "$controller_name")
+    if [[ -z "$controller_ip" || "$controller_ip" == "null" ]]; then
+        print_error "WireGuard IP for $controller_name not found in state"
+        exit 1
+    fi
     
     print_info "Testing SSH connectivity to controller node $controller_name..."
-    if ! execute_remote_command "$CONTROLLER_IP" "echo 'SSH OK'" "Test SSH to controller" 10 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null; then
+    if ! execute_remote_command "$controller_ip" "echo 'SSH OK'" "Test SSH to controller" 10 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null; then
         print_error "Cannot connect to controller node. Ensure WireGuard VPN is connected."
         exit 1
     fi
     
     print_info "Installing Helm on controller node $controller_name..."
-    if execute_remote_command "$CONTROLLER_IP" "command -v helm" "Check if Helm is installed" 10 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null; then
+    if execute_remote_command "$controller_ip" "command -v helm" "Check if Helm is installed" 10 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null; then
         print_success "Helm already installed"
     else
         print_info "Installing Helm..."
-        execute_remote_command "$CONTROLLER_IP" "curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash" "Install Helm" 60 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null
-        if execute_remote_command "$CONTROLLER_IP" "command -v helm" "Verify Helm installation" 10 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null; then
+        execute_remote_command "$controller_ip" "curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash" "Install Helm" 60 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null
+        if execute_remote_command "$controller_ip" "command -v helm" "Verify Helm installation" 10 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null; then
             print_success "Helm installed successfully"
         else
             print_error "Failed to install Helm"
@@ -133,7 +173,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
     fi
     
     print_info "Setting up kubeconfig on controller node..."
-    execute_remote_command "$CONTROLLER_IP" "mkdir -p ~/.kube && sudo k0s kubeconfig admin > ~/.kube/config" "Setup kubeconfig" 30 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null
+    execute_remote_command "$controller_ip" "mkdir -p ~/.kube && sudo k0s kubeconfig admin > ~/.kube/config" "Setup kubeconfig" 30 "$SSH_KEY_PATH" "$SSH_USERNAME" &>/dev/null
     
     print_info "Installing k0rdent v$K0RDENT_VERSION using Helm..."
     
@@ -141,7 +181,7 @@ if [[ "$COMMAND" == "deploy" ]]; then
     local helm_log="./logs/k0rdent-helm-install-$(date +%Y%m%d_%H%M%S).log"
     ensure_directory "./logs"
     
-    if execute_remote_command "$CONTROLLER_IP" "helm install kcm oci://ghcr.io/k0rdent/kcm/charts/kcm --version $K0RDENT_VERSION -n kcm-system --create-namespace --debug --timeout ${K0RDENT_INSTALL_WAIT}s" "Install k0rdent" "$K0RDENT_INSTALL_WAIT" "$SSH_KEY_PATH" "$SSH_USERNAME" > "$helm_log" 2>&1; then
+    if execute_remote_command "$controller_ip" "helm install kcm oci://ghcr.io/k0rdent/kcm/charts/kcm --version $K0RDENT_VERSION -n kcm-system --create-namespace --debug --timeout ${K0RDENT_INSTALL_WAIT}s" "Install k0rdent" "$K0RDENT_INSTALL_WAIT" "$SSH_KEY_PATH" "$SSH_USERNAME" > "$helm_log" 2>&1; then
         print_success "k0rdent installed successfully!"
         print_info "Installation log saved to: $helm_log"
         
@@ -154,11 +194,11 @@ if [[ "$COMMAND" == "deploy" ]]; then
         sleep 30
         
         print_info "Checking k0rdent pod status..."
-        execute_remote_command "$CONTROLLER_IP" "sudo k0s kubectl get pods -n kcm-system" "Check k0rdent pods" 30 "$SSH_KEY_PATH" "$SSH_USERNAME"
+        execute_remote_command "$controller_ip" "sudo k0s kubectl get pods -n kcm-system" "Check k0rdent pods" 30 "$SSH_KEY_PATH" "$SSH_USERNAME"
         
         # Check if all pods are ready
         print_info "Verifying all k0rdent components are ready..."
-        local ready_check=$(execute_remote_command "$CONTROLLER_IP" "sudo k0s kubectl get pods -n kcm-system --no-headers | grep -v '1/1' | wc -l" "Check ready status" 10 "$SSH_KEY_PATH" "$SSH_USERNAME" 2>&1)
+        local ready_check=$(execute_remote_command "$controller_ip" "sudo k0s kubectl get pods -n kcm-system --no-headers | grep -v '1/1' | wc -l" "Check ready status" 10 "$SSH_KEY_PATH" "$SSH_USERNAME" 2>&1)
         
         if [[ "$ready_check" =~ ^[0-9]+$ ]] && [[ "$ready_check" -eq 0 ]]; then
             print_success "All k0rdent components are ready!"
@@ -171,9 +211,10 @@ if [[ "$COMMAND" == "deploy" ]]; then
             update_state "k0rdent_ready_partial" "true"
             add_event "k0rdent_ready_partial" "k0rdent installed but some components may still be starting"
         fi
-        
+
         print_success "k0rdent installation completed!"
-        
+        phase_mark_completed "install_k0rdent"
+
         # Mark deployment as completed and backup state
         complete_deployment "k0rdent_deployed"
     else

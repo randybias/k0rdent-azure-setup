@@ -720,6 +720,16 @@ EOF
 
 deploy_azure_csi() {
     print_header "Installing Azure Disk CSI Driver"
+
+    if state_file_exists && phase_is_completed "install_azure_csi"; then
+        if [[ "$(get_state "azure_csi_installed" 2>/dev/null || echo "false")" == "true" ]]; then
+            print_success "Azure Disk CSI Driver already installed. Skipping installation."
+            return 0
+        fi
+        print_warning "Azure CSI phase recorded as complete but validation failed. Re-installing."
+        phase_reset_from "install_azure_csi"
+    fi
+    phase_mark_in_progress "install_azure_csi"
     
     # Check prerequisites
     if ! check_prerequisites; then
@@ -773,6 +783,7 @@ EOF
     add_event "azure_csi_installed" "Azure Disk CSI Driver installed successfully"
     
     print_success "Azure Disk CSI Driver installation completed!"
+    phase_mark_completed "install_azure_csi"
     
     # Show status
     show_status
@@ -817,6 +828,7 @@ uninstall_azure_csi() {
     # Update state
     update_state "azure_csi_installed" "false"
     add_event "azure_csi_uninstalled" "Azure Disk CSI Driver uninstalled"
+    phase_reset_from "install_azure_csi"
     
     print_success "Azure Disk CSI Driver uninstalled successfully"
 }

@@ -154,7 +154,17 @@ deploy_kof_regional() {
     if ! check_prerequisites; then
         return 1
     fi
-    
+
+    if state_file_exists && phase_is_completed "install_kof_regional"; then
+        if [[ "$(get_state "kof_regional_installed" 2>/dev/null || echo "false")" == "true" ]]; then
+            print_success "KOF regional cluster already deployed. Skipping installation."
+            return 0
+        fi
+        print_warning "KOF regional phase recorded as complete but validation failed. Redeploying."
+        phase_reset_from "install_kof_regional"
+    fi
+    phase_mark_in_progress "install_kof_regional"
+
     # Get configuration values
     local kof_version=$(get_kof_config "version" "1.1.0")
     local location=$(get_kof_config "regional.location" "eastus")
@@ -254,6 +264,7 @@ deploy_kof_regional() {
     print_info "Domain: $regional_domain"
     print_info "Kubeconfig: $kubeconfig_file"
     print_info "Monitor with: kubectl get clusterdeployment $regional_cluster_name -n kcm-system -w"
+    phase_mark_completed "install_kof_regional"
 }
 
 uninstall_kof_regional() {
@@ -313,6 +324,7 @@ uninstall_kof_regional() {
     remove_state_key "kof_regional_namespace"
     remove_state_key "kof_regional_cluster_label"
     add_event "kof_regional_uninstall_completed" "KOF regional uninstall completed"
+    phase_reset_from "install_kof_regional"
     
     print_success "KOF regional uninstall completed!"
 }

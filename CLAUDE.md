@@ -1,3 +1,22 @@
+<!-- OPENSPEC:START -->
+# OpenSpec Instructions
+
+These instructions are for AI assistants working in this project.
+
+Always open `@/openspec/AGENTS.md` when the request:
+- Mentions planning or proposals (words like proposal, spec, change, plan)
+- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
+- Sounds ambiguous and you need the authoritative spec before coding
+
+Use `@/openspec/AGENTS.md` to learn:
+- How to create and apply change proposals
+- Spec format and conventions
+- Project structure and guidelines
+
+Keep this managed block so 'openspec update' can refresh the instructions.
+
+<!-- OPENSPEC:END -->
+
 # CLAUDE.md - Development Guidelines
 
 This file documents the established patterns, conventions, and best practices for the k0rdent Azure setup project. Use this as a reference when making changes or extending functionality.
@@ -168,3 +187,48 @@ source ./etc/kof-functions.sh        # Only KOF-specific additions
 - **Technical References**: Create docs in `backlog/docs/` with type: reference
 - **Architecture Decisions**: Create ADRs in `backlog/decisions/`
 - **DEPRECATED**: The notebooks/ directory has been removed
+
+## Azure Credential Cleanup and Reset Operations
+
+### Azure Credentials Cleanup
+The Azure credential cleanup system automatically detects and removes Service Principals during both full and fast reset operations:
+
+```bash
+# Automatic cleanup during deployment reset
+./deploy-k0rdent.sh reset              # Cleans up SP + Kubernetes resources
+./deploy-k0rdent.sh reset --fast          # Cleans up only Service Principal (no clusters to delete)
+```
+
+### Fast Reset Optimization
+When using `--fast` reset, the cleanup system:
+- ✅ **Skips Kubernetes operations** (cluster deleted with resource group)
+- ✅ **Only cleans Azure Service Principal** (the only orphaned Azure resource)
+- ✅ **Eliminates connection timeouts** (no "Unable to connect to server" errors)
+- ✅ **Provides clear messaging** about what's being cleaned up
+
+### Azure-Only Manual Cleanup
+For troubleshooting specific Azure credential issues:
+
+```bash
+# Clean up only Azure Service Principal (skip Kubernetes)
+./bin/setup-azure-cluster-deployment.sh cleanup --azure-only
+```
+
+### Service Principal Authentication Issues
+If Service Principal authentication fails due to Azure propagation delays:
+
+```bash
+# Current implementation (5s wait, single attempt)
+./bin/setup-azure-cluster-deployment.sh setup
+# May fail: "Service Principal may need more time to propagate"
+
+# Future improvement (retry logic - see OpenSpec proposal)
+# Will retry with exponential backoff for up to 5 minutes
+```
+
+### Reset Integration
+Both `deploy-k0rdent.sh reset` and `deploy-k0rdent.sh reset --fast` automatically integrate Azure credential cleanup:
+- Detects when Azure credentials were configured
+- Calls appropriate cleanup strategy based on reset type
+- Provides clear status reporting and error handling
+- Continues even if cleanup encounters issues

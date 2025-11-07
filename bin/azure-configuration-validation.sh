@@ -9,10 +9,17 @@ set -euo pipefail
 source ./etc/common-functions.sh
 
 # Load config directly without state management
+
 CONFIG_YAML="./config/k0rdent.yaml"
 CONFIG_DEFAULT_YAML="./config/k0rdent-default.yaml"
 
-if [[ -f "$CONFIG_YAML" ]]; then
+if [[ -n "${K0RDENT_CONFIG_FILE:-}" ]]; then
+    if [[ ! -f "$K0RDENT_CONFIG_FILE" ]]; then
+        print_error "Custom configuration file not found: $K0RDENT_CONFIG_FILE"
+        exit 1
+    fi
+    config_file="$K0RDENT_CONFIG_FILE"
+elif [[ -f "$CONFIG_YAML" ]]; then
     config_file="$CONFIG_YAML"
 elif [[ -f "$CONFIG_DEFAULT_YAML" ]]; then
     config_file="$CONFIG_DEFAULT_YAML"

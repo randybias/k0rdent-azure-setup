@@ -111,6 +111,21 @@ show_status() {
     check_global_prerequisites
 }
 
+validate_preparation_state() {
+    local keys_generated=$(get_state "wg_keys_generated" 2>/dev/null || echo "false")
+    if [[ "$keys_generated" != "true" ]]; then
+        return 1
+    fi
+
+    for HOST in "${VM_HOSTS[@]}"; do
+        if [[ ! -f "$CLOUD_INIT_DIR/${HOST}-cloud-init.yaml" ]]; then
+            return 1
+        fi
+    done
+
+    return 0
+}
+
 generate_wireguard_keys() {
     print_header "Generating WireGuard Keys"
     
@@ -296,8 +311,17 @@ deploy_preparation() {
         add_event "preparation_started" "Beginning deployment preparation"
     else
         print_info "Using existing deployment state"
-        update_state "phase" "preparation"
+        if phase_is_completed "prepare_deployment"; then
+            if validate_preparation_state; then
+                print_success "Deployment preparation already complete. Nothing to do."
+                return 0
+            fi
+            print_warning "Preparation phase marked complete but validation failed. Regenerating artifacts."
+            phase_reset_from "prepare_deployment"
+        fi
     fi
+
+    phase_mark_in_progress "prepare_deployment"
     
     # Validate Azure configuration before proceeding
     print_info "Validating Azure VM configuration..."
@@ -324,6 +348,14 @@ deploy_preparation() {
         exit 1
     fi
     add_event "cloud_init_generated" "Cloud-init files generated successfully"
+    if [[ -d "$CLOUD_INIT_DIR" ]]; then
+        record_artifact "cloud_init_directory" "$CLOUD_INIT_DIR"
+    fi
+    if [[ -d "$WG_DIR" ]]; then
+        record_artifact "wireguard_keys_directory" "$WG_DIR"
+    fi
+
+    phase_mark_completed "prepare_deployment"
     
     if [[ "$QUIET_MODE" != "true" ]]; then
         echo

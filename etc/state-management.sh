@@ -14,6 +14,21 @@ KOF_EVENTS_FILE="$STATE_DIR/kof-events.yaml"
 AZURE_STATE_FILE="$STATE_DIR/azure-state.yaml"
 AZURE_EVENTS_FILE="$STATE_DIR/azure-events.yaml"
 
+# Deployment phase order (must remain in execution order)
+PHASE_SEQUENCE=(
+    "prepare_deployment"
+    "setup_network"
+    "create_vms"
+    "setup_vpn"
+    "connect_vpn"
+    "install_k0s"
+    "install_k0rdent"
+    "setup_azure_children"
+    "install_azure_csi"
+    "install_kof_mothership"
+    "install_kof_regional"
+)
+
 # Archive existing state files to old_deployments
 archive_existing_state() {
     local reason="${1:-deployment}"  # Default reason is "deployment"
@@ -58,6 +73,47 @@ archive_existing_state() {
     done
     
     print_success "State files archived to $archive_dir/"
+}
+
+ensure_phases_block_initialized() {
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]]; then
+        return 1
+    fi
+
+    # Create phases map if it doesn't exist
+    if [[ "$(yq eval '.phases' "$DEPLOYMENT_STATE_FILE" 2>/dev/null)" == "null" ]]; then
+        yq eval '.phases = {}' -i "$DEPLOYMENT_STATE_FILE"
+    fi
+
+    for phase in "${PHASE_SEQUENCE[@]}"; do
+        local status
+        status=$(yq eval ".phases.${phase}.status" "$DEPLOYMENT_STATE_FILE" 2>/dev/null)
+        if [[ "$status" == "null" ]]; then
+            yq eval ".phases.${phase}.status = \"pending\"" -i "$DEPLOYMENT_STATE_FILE"
+            yq eval ".phases.${phase}.updated_at = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+        fi
+    done
+
+    # Ensure artifacts registry exists
+    if [[ "$(yq eval '.artifacts' "$DEPLOYMENT_STATE_FILE" 2>/dev/null)" == "null" ]]; then
+        yq eval '.artifacts = {}' -i "$DEPLOYMENT_STATE_FILE"
+    fi
+}
+
+migrate_state_file_structure() {
+    if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]]; then
+        return 0
+    fi
+
+    # Ensure new sections exist for older state files
+    ensure_phases_block_initialized
+
+    # Older states may be missing deployment_flags
+    if [[ "$(yq eval '.deployment_flags' "$DEPLOYMENT_STATE_FILE" 2>/dev/null)" == "null" ]]; then
+        yq eval '.deployment_flags = {"azure_children": false, "kof": false}' -i "$DEPLOYMENT_STATE_FILE"
+    fi
 }
 
 # Initialize new deployment state file
@@ -108,6 +164,23 @@ wg_vpn_connected: false
 k0s_config_generated: false
 k0s_cluster_deployed: false
 k0rdent_installed: false
+
+# Deployment phase tracking
+phases:
+EOF
+
+    for phase in "${PHASE_SEQUENCE[@]}"; do
+        cat >> "$DEPLOYMENT_STATE_FILE" << EOF
+  ${phase}:
+    status: "pending"
+    updated_at: "$timestamp"
+EOF
+    done
+
+    cat >> "$DEPLOYMENT_STATE_FILE" << EOF
+
+# Artifact registry (generated files/scripts)
+artifacts: {}
 EOF
     
     # Create separate events file
@@ -128,6 +201,166 @@ EOF
     
     print_info "Initialized deployment state: $DEPLOYMENT_STATE_FILE"
     print_info "Initialized deployment events: $DEPLOYMENT_EVENTS_FILE"
+}
+
+# Phase helpers --------------------------------------------------------------
+
+normalize_phase_name() {
+    local phase="$1"
+    # Normalize with underscores
+    phase="${phase//-/_}"
+    echo "$phase"
+}
+
+phase_index() {
+    local target
+    target=$(normalize_phase_name "$1")
+    local idx=0
+    for phase in "${PHASE_SEQUENCE[@]}"; do
+        if [[ "$phase" == "$target" ]]; then
+            echo "$idx"
+            return 0
+        fi
+        ((idx++))
+    done
+    return 1
+}
+
+phase_status() {
+    local phase
+    phase=$(normalize_phase_name "$1")
+    
+    if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]]; then
+        echo "pending"
+        return 0
+    fi
+
+    ensure_phases_block_initialized
+
+    local status
+    status=$(yq eval ".phases.${phase}.status" "$DEPLOYMENT_STATE_FILE" 2>/dev/null)
+    if [[ "$status" == "null" ]]; then
+        echo "pending"
+    else
+        echo "$status"
+    fi
+}
+
+phase_is_completed() {
+    local status
+    status=$(phase_status "$1")
+    [[ "$status" == "completed" ]]
+}
+
+phase_mark_status() {
+    local phase
+    phase=$(normalize_phase_name "$1")
+    local status="$2"
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]]; then
+        return 1
+    fi
+
+    ensure_phases_block_initialized
+
+    yq eval ".phases.${phase}.status = \"${status}\"" -i "$DEPLOYMENT_STATE_FILE"
+    yq eval ".phases.${phase}.updated_at = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+    yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+}
+
+phase_mark_in_progress() {
+    local phase="$1"
+    phase_mark_status "$phase" "in_progress"
+    update_state "phase" "$(normalize_phase_name "$phase")"
+}
+
+phase_mark_completed() {
+    local phase="$1"
+    phase_mark_status "$phase" "completed"
+    update_state "phase" "$(normalize_phase_name "$phase")"
+    add_event "phase_completed" "Phase completed: $(normalize_phase_name "$phase")"
+}
+
+phase_mark_pending() {
+    phase_mark_status "$1" "pending"
+}
+
+phase_reset_from() {
+    local phase
+    phase=$(normalize_phase_name "$1")
+    local index
+    if ! index=$(phase_index "$phase"); then
+        return 1
+    fi
+
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    local total=${#PHASE_SEQUENCE[@]}
+
+    for ((i=index; i<total; i++)); do
+        local target="${PHASE_SEQUENCE[$i]}"
+        yq eval ".phases.${target}.status = \"pending\"" -i "$DEPLOYMENT_STATE_FILE"
+        yq eval ".phases.${target}.updated_at = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+    done
+
+    yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+    update_state "phase" "$phase"
+    add_event "phase_reset" "Phase reset invoked from: $phase"
+}
+
+phase_needs_run() {
+    local status
+    status=$(phase_status "$1")
+    [[ "$status" != "completed" ]]
+}
+
+# Artifact helpers -----------------------------------------------------------
+
+record_artifact() {
+    local name="$1"
+    local path="$2"
+    local metadata="${3:-}"
+
+    if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]]; then
+        return 1
+    fi
+
+    ensure_phases_block_initialized
+
+    local timestamp
+    timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    yq eval ".artifacts.${name}.path = \"${path}\"" -i "$DEPLOYMENT_STATE_FILE"
+    yq eval ".artifacts.${name}.updated_at = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+    if [[ -n "$metadata" ]]; then
+        yq eval ".artifacts.${name}.metadata = \"${metadata}\"" -i "$DEPLOYMENT_STATE_FILE"
+    fi
+    yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+}
+
+artifact_exists() {
+    local name="$1"
+    if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]]; then
+        return 1
+    fi
+
+    local path
+    path=$(yq eval ".artifacts.${name}.path" "$DEPLOYMENT_STATE_FILE" 2>/dev/null)
+    if [[ -z "$path" || "$path" == "null" ]]; then
+        return 1
+    fi
+
+    [[ -e "$path" ]]
+}
+
+clear_artifact() {
+    local name="$1"
+    if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]]; then
+        return 0
+    fi
+
+    ensure_phases_block_initialized
+    yq eval "del(.artifacts.${name})" -i "$DEPLOYMENT_STATE_FILE"
 }
 
 # Update a simple key-value in state
@@ -245,7 +478,11 @@ add_event() {
 
 # Check if state file exists and is valid
 state_file_exists() {
-    [[ -f "$DEPLOYMENT_STATE_FILE" ]] && yq eval '.deployment_id' "$DEPLOYMENT_STATE_FILE" &>/dev/null
+    if [[ -f "$DEPLOYMENT_STATE_FILE" ]] && yq eval '.deployment_id' "$DEPLOYMENT_STATE_FILE" &>/dev/null; then
+        migrate_state_file_structure
+        return 0
+    fi
+    return 1
 }
 
 # Show simple state summary
