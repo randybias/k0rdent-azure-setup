@@ -937,13 +937,6 @@ integrate_azure_cleanup_in_reset() {
                     print_info "Manual cleanup may be required with: ./bin/setup-azure-cluster-deployment.sh cleanup"
                 fi
             fi
-                print_success "Azure credentials cleaned up successfully"
-                add_event "azure_credentials_auto_cleanup" "Azure credentials automatically cleaned up during reset"
-            else
-                print_warning "Azure credentials cleanup encountered issues"
-                print_info "Manual cleanup may be required with: ./bin/setup-azure-cluster-deployment.sh cleanup"
-                add_event "azure_credentials_cleanup_partial" "Azure credentials cleanup partially failed during reset"
-            fi
             
             # Log cleanup results based on operation type and result
             if [[ "$FAST_RESET" == "true" ]]; then
