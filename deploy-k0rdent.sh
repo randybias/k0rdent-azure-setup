@@ -965,7 +965,7 @@ integrate_azure_cleanup_in_reset() {
             # Restore original SKIP_CONFIRMATION setting
             if [[ -n "$old_skip_confirmation" ]]; then
                 export SKIP_CONFIRMATION="$old_skip_confirmation"
-            elif [[ "${SKIP_CONFIRMATION+x}" == "defined" ]]; then
+            elif [[ -n "${SKIP_CONFIRMATION+x}" ]]; then
                 unset SKIP_CONFIRMATION
             fi
         else
