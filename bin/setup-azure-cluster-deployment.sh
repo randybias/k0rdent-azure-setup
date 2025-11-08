@@ -12,6 +12,9 @@ source ./etc/k0rdent-config.sh      # Loads CONFIG_YAML automatically
 source ./etc/common-functions.sh     # All common functionality
 source ./etc/state-management.sh     # State tracking
 
+# Report configuration source (enhanced with state-based loading from OpenSpec change)
+echo "==> Configuration source: ${K0RDENT_CONFIG_SOURCE:-default}"
+
 # Output directory and file (reuse from k0rdent)
 K0SCTL_DIR="./k0sctl-config"
 KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_CLUSTERID}-kubeconfig"

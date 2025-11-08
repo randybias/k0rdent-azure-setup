@@ -138,6 +138,9 @@ deployment_flags:
   azure_children: false
   kof: false
 
+# Source configuration file (for proper variable expansion)
+source_config_file: "${CONFIG_YAML:-}"
+
 # Configuration snapshot
 config:
   azure_location: "$AZURE_LOCATION"

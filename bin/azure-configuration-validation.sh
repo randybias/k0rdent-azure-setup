@@ -9,6 +9,8 @@ set -euo pipefail
 source ./etc/common-functions.sh
 
 # Load config directly without state management
+# Note: This script uses direct YAML loading for validation purposes
+# Configuration resolution will be enhanced via state-based loading (OpenSpec change)
 
 CONFIG_YAML="./config/k0rdent.yaml"
 CONFIG_DEFAULT_YAML="./config/k0rdent-default.yaml"
@@ -19,14 +21,20 @@ if [[ -n "${K0RDENT_CONFIG_FILE:-}" ]]; then
         exit 1
     fi
     config_file="$K0RDENT_CONFIG_FILE"
+    config_source="explicit-override"
 elif [[ -f "$CONFIG_YAML" ]]; then
     config_file="$CONFIG_YAML"
+    config_source="default"
 elif [[ -f "$CONFIG_DEFAULT_YAML" ]]; then
     config_file="$CONFIG_DEFAULT_YAML"
+    config_source="template-fallback"
 else
     print_error "No configuration found. Run: ./bin/configure.sh init"
     exit 1
 fi
+
+# Report configuration source
+echo "==> Configuration source: ${config_source}"
 
 # Extract values directly from YAML using yq
 AZURE_LOCATION=$(yq '.azure.location' "$config_file")
