@@ -28,7 +28,6 @@ When k0rdent creates managed clusters, it stores their kubeconfigs as Secrets in
 ```bash
 kubectl get secret <cluster-name>-kubeconfig -n kcm-system -o jsonpath='{.data.value}' | base64 -d > ./k0sctl-config/<cluster-name>-kubeconfig
 ```
-See `backlog/docs/doc-004 - Kubeconfig-Retrieval.md` for detailed documentation.
 
 ### macOS WireGuard Interface Naming
 On macOS, WireGuard interfaces are always named utun0 through utun9 (dynamically assigned), not by the configuration name. When using `wg show` on macOS, you must use the actual utun interface name, not the configuration name like "wgk0r5jkseel". The configuration name is only used by wg-quick to track which utun interface belongs to which configuration.
@@ -39,26 +38,74 @@ On macOS, WireGuard interfaces are always named utun0 through utun9 (dynamically
 - Ask before using git commit -A as frequently in this directory there are transient files we do NOT want to commit
 - When planning infrastructure, follow the pets vs cattle methodology and consider most cloud instances as cattle who can be easily replaced and that is the better solution than trying to spending excessive amounts of time troubleshooting transient problems
 
-## Task Management Transition (2025-07-20)
-
-**IMPORTANT**: We have fully migrated to using Backlog.md (https://github.com/MrLesk/Backlog.md) for all task management and documentation.
-
-- **Old System**: Previously used `notebooks/BACKLOG.md` and various subdirectories
-- **New System**: Now using the `backlog` CLI tool with structured directories:
-  - `backlog/tasks/` - All project tasks (48 migrated)
-  - `backlog/docs/` - Design specs, troubleshooting guides, references
-  - `backlog/decisions/` - Architecture Decision Records (ADRs)
-  - `backlog/completed/` - Historical implementation plans
-- **Migration Date**: 2025-07-20
-- **Usage**: Use `backlog` CLI commands for all task management (see guidelines below)
-
-### Task Numbering Convention
-- Tasks use **3-digit zero-padded integers** (e.g., task-001, task-056, task-100)
-- Do NOT use decimal numbering (e.g., task-1.01) - this is reserved for subtasks
-- When creating a new task without specifying `-p` (parent), it gets the next available integer
-- Only use the `-p` flag when creating actual subtasks of an existing parent task
-
 ## Development Environment
+
+### Unbound Variable Prevention (CRITICAL)
+
+**THIS IS NON-NEGOTIABLE: Follow these patterns to prevent unbound variable errors forever.**
+
+#### The Problem
+Scripts fail with "unbound variable" errors when using `set -u` or when variables are not initialized. This happens repeatedly across the codebase and MUST BE PREVENTED.
+
+#### The Standard Pattern
+
+**1. ALWAYS Use Safe Variable Access**
+```bash
+# WRONG - will fail if VAR is unset
+if [[ $VAR -eq 1 ]]; then
+
+# CORRECT - safe with default value
+if [[ ${VAR:-1} -eq 1 ]]; then
+
+# CORRECT - initialize first
+VAR=${VAR:-1}
+if [[ ${VAR} -eq 1 ]]; then
+```
+
+**2. ALWAYS Filter Null Values from YAML**
+```bash
+# WRONG - exports null as literal string
+eval "$(yq eval '.config | to_entries | .[] | "export " + (.key | upcase) + "=" + .value' file.yaml)"
+
+# CORRECT - filters out null values
+eval "$(yq eval '.config | to_entries | .[] | select(.value != null) | "export " + (.key | upcase) + "=" + .value' file.yaml)"
+```
+
+**3. ALWAYS Use Helper Functions for YAML Export**
+See `bin/configure.sh` for `safe_export()` and `safe_export_num()` helpers that automatically filter null values.
+
+**4. ALWAYS Initialize Variables with Defaults**
+```bash
+# At the top of any script using configuration variables:
+K0S_CONTROLLER_COUNT=${K0S_CONTROLLER_COUNT:-1}
+K0S_WORKER_COUNT=${K0S_WORKER_COUNT:-1}
+CONTROLLER_ZONES=("${CONTROLLER_ZONES[@]:-1}")
+WORKER_ZONES=("${WORKER_ZONES[@]:-1}")
+```
+
+**5. NEVER Access Variables Directly in Conditionals**
+```bash
+# WRONG
+if [[ $COUNT -gt 0 ]]; then
+
+# CORRECT
+COUNT=${COUNT:-0}
+if [[ ${COUNT} -gt 0 ]]; then
+```
+
+#### Reference Implementations
+- **etc/config-internal.sh**: All variables initialized with defaults before use
+- **bin/configure.sh**: `safe_export()` and `safe_export_num()` helpers
+- **etc/k0rdent-config.sh**: Null filtering in YAML loading
+
+#### Testing Requirement
+Before claiming any implementation is complete:
+1. Test with `set -u` enabled
+2. Test with missing/null YAML values
+3. Test with deployment state loading
+4. Verify no "unbound variable" errors in ANY scenario
+
+**If you encounter an unbound variable error, FIX THE PATTERN EVERYWHERE, not just the one location.**
 
 ### Script Execution Timeouts
 
@@ -164,29 +211,140 @@ source ./etc/kof-functions.sh        # Only KOF-specific additions
 - WireGuard config files use pattern `wgk0${suffix}.conf` where suffix is extracted from cluster ID
 - No more mixed PREFIX/SUFFIX terminology - everything is CLUSTERID now
 
-## Documentation and Decision Management
+## Configuration Management
 
-### Documentation (backlog/docs/)
-- **Design Documents**: Store all design documents and architectural plans in `backlog/docs/`
-- **Troubleshooting Guides**: Create troubleshooting documents with type: troubleshooting
-- **Technical References**: API documentation, integration guides, etc.
-- **Format**: Use `doc-XXX - Title.md` naming convention
-- **Types**: design, troubleshooting, reference, guide, other
+### State-Based Configuration Resolution
 
-### Decisions (backlog/decisions/)
-- **Architectural Decisions**: Record all key architectural decisions as ADRs (Architecture Decision Records)
-- **Format**: Use `decision-XXX - Title.md` naming convention
-- **Structure**: Context, Decision, Consequences
-- **Status**: proposed, accepted, rejected, superseded
-- **Purpose**: Maintain a history of why certain technical choices were made
+All k0rdent scripts use a consistent, priority-based configuration resolution system that ensures configuration consistency across the entire deployment lifecycle.
 
-### Directory Usage Guidelines
-- **Tasks**: Use `backlog task create` for all new tasks and features
-- **Troubleshooting**: Create docs in `backlog/docs/` with type: troubleshooting
-- **Design Documents**: Create docs in `backlog/docs/` with type: design
-- **Technical References**: Create docs in `backlog/docs/` with type: reference
-- **Architecture Decisions**: Create ADRs in `backlog/decisions/`
-- **DEPRECATED**: The notebooks/ directory has been removed
+#### Configuration Priority Order
+
+Scripts resolve configuration in the following priority (highest to lowest):
+
+1. **Explicit Override**: `K0RDENT_CONFIG_FILE` environment variable
+   - For manual overrides and debugging
+   - Example: `export K0RDENT_CONFIG_FILE="./config/test-config.yaml"`
+
+2. **State-Based**: Configuration from `./state/deployment-state.yaml`
+   - Canonical source of truth for deployed systems
+   - Automatically used when available
+   - Guarantees consistency with actual deployment
+
+3. **Default Search**: `./config/k0rdent.yaml`
+   - Fallback for backward compatibility
+   - Used when state-based config is not available
+
+4. **Template Fallback**: `./config/k0rdent-default.yaml`
+   - Ultimate fallback for first-time setup
+
+#### Configuration Transparency
+
+Every script reports which configuration source is being used:
+
+```bash
+./bin/setup-azure-cluster-deployment.sh status
+# Output: ==> Configuration source: deployment-state
+```
+
+Possible values:
+- `deployment-state`: Using canonical state (recommended)
+- `override`: Using K0RDENT_CONFIG_FILE override
+- `default`: Using fallback config file
+- `template`: Using template fallback
+
+#### Configuration Tracking Variables
+
+When configuration is loaded, these environment variables are set:
+
+- `K0RDENT_CONFIG_SOURCE`: Which configuration source is being used
+- `K0RDENT_CONFIG_FILE`: Path to the configuration file
+- `K0RDENT_CONFIG_TIMESTAMP`: When configuration was last updated
+
+#### When State-Based Config is Used
+
+**Automatically Used**:
+- All post-deployment scripts (setup, create-child, sync-state, etc.)
+- When deployment state file exists with config section
+- Ensures all operations use the same config as original deployment
+
+**Not Used (Falls Back)**:
+- Old deployments without config in state
+- When deployment state file is missing or corrupted
+- When K0RDENT_DEVELOPMENT_MODE is enabled
+
+#### Development Mode
+
+For development and testing workflows:
+
+```bash
+# Disable state-based configuration (use defaults)
+export K0RDENT_DEVELOPMENT_MODE=true
+./bin/setup-azure-cluster-deployment.sh status
+# Uses default config files instead of state
+
+# Force specific state file
+export K0RDENT_DEVELOPMENT_STATE="./state/test-deployment-state.yaml"
+./bin/setup-azure-cluster-deployment.sh status
+# Uses specified state file
+
+# Clear development overrides
+unset K0RDENT_DEVELOPMENT_MODE
+unset K0RDENT_DEVELOPMENT_STATE
+```
+
+#### Troubleshooting Configuration Issues
+
+**Check Configuration Source**:
+```bash
+# Any script will report its configuration source
+./bin/setup-azure-cluster-deployment.sh status | grep "Configuration source"
+
+# Check deployment state config
+yq eval '.config' ./state/deployment-state.yaml
+
+# Verify configuration consistency
+source ./etc/k0rdent-config.sh
+echo "Source: $K0RDENT_CONFIG_SOURCE"
+echo "Location: $AZURE_LOCATION"
+```
+
+**Common Issues**:
+
+1. **Wrong Azure Region**: Check if script is using state-based config
+   - Solution: Verify state file exists and has config section
+
+2. **VM Size Mismatch**: Scripts using different sizes than deployment
+   - Solution: Verify scripts report "deployment-state" as config source
+
+3. **Feature Flag Issues**: Scripts assume features are enabled/disabled incorrectly
+   - Solution: Check deployment_flags in state file
+
+**Force Configuration Override** (Advanced):
+```bash
+# Temporarily override configuration for debugging
+export K0RDENT_CONFIG_FILE="./config/correct-config.yaml"
+./bin/setup-azure-cluster-deployment.sh setup
+unset K0RDENT_CONFIG_FILE
+```
+
+#### Migration to State-Based Configuration
+
+**New Deployments**: State-based configuration is automatically enabled
+
+**Existing Deployments**: Continue working with default configuration (backward compatible)
+
+Key points:
+- 100% backward compatible with existing deployments
+- New deployments automatically use state-based config
+- No breaking changes to existing workflows
+- Scripts gracefully fall back if state is not available
+
+#### Related Documentation
+
+- **OpenSpec Change**: `openspec/changes/canonical-config-from-state/`
+  - Complete design documentation
+  - Implementation tasks and status
+  - Technical architecture details
 
 ## Azure Credential Cleanup and Reset Operations
 
