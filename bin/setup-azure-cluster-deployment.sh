@@ -201,27 +201,43 @@ setup_azure_credentials() {
     
     print_success "Service Principal created: $client_id"
     
-    # Verify the Service Principal credentials work
-    print_info "Verifying Service Principal credentials..."
-    
-    # Wait a moment for SP to propagate
-    sleep 5
-    
-    # Test SP authentication
-    if az login --service-principal \
-        --username "$client_id" \
-        --password "$client_secret" \
-        --tenant "$tenant_id" &>/dev/null; then
-        print_success "Service Principal authentication verified"
-        # Switch back to original authentication
-        az account show &>/dev/null || az login &>/dev/null
-    else
-        print_error "Failed to authenticate with the new Service Principal"
+    # Verify the Service Principal propagated successfully
+    print_info "Verifying Service Principal propagation..."
+
+    local max_wait_seconds=300  # 5 minutes total timeout
+    local check_interval=10      # Check every 10 seconds
+    local elapsed=0
+    local sp_verified=false
+
+    while [[ $elapsed -lt $max_wait_seconds ]]; do
+        # Verify SP exists and is accessible without switching authentication
+        if az ad sp show --id "$client_id" &>/dev/null; then
+            print_success "Service Principal verified and propagated"
+            sp_verified=true
+            break
+        fi
+
+        # Show progress every 30 seconds
+        if [[ $((elapsed % 30)) -eq 0 ]] && [[ $elapsed -gt 0 ]]; then
+            print_info "Still waiting for Service Principal propagation... (${elapsed}s elapsed)"
+        fi
+
+        sleep "$check_interval"
+        elapsed=$((elapsed + check_interval))
+    done
+
+    if [[ "$sp_verified" != "true" ]]; then
+        print_error "Service Principal verification timed out after ${max_wait_seconds}s"
         print_error "The Service Principal may need more time to propagate, or there may be a permissions issue"
+        print_info "Manual verification: az ad sp show --id $client_id"
         # Clean up the failed SP
         az ad sp delete --id "$client_id" 2>/dev/null || true
         return 1
     fi
+
+    # Additional wait for Azure RBAC propagation
+    print_info "Waiting 10 seconds for Azure RBAC propagation..."
+    sleep 10
     
     # Save credentials to local file
     print_info "Saving Azure credentials to config/azure-credentials.yaml..."
@@ -400,7 +416,7 @@ EOF
 cleanup_azure_credentials() {
     local azure_only=false
     # Check for --azure-only flag in remaining arguments
-    for arg in "${ORIGINAL_ARGS[@]:}"; do
+    for arg in "${ORIGINAL_ARGS[@]}"; do
         case "$arg" in
             --azure-only)
                 azure_only=true
@@ -423,7 +439,7 @@ cleanup_azure_credentials() {
     fi
     
     # Confirm cleanup
-    if [[ "$SKIP_CONFIRMATION" != "true" ]]; then
+    if [[ "${SKIP_CONFIRMATION:-false}" != "true" ]]; then
         print_warning "This will remove Azure credentials and Service Principal"
         if ! confirm_action "Proceed with cleanup?"; then
             print_info "Cleanup cancelled"
@@ -481,7 +497,7 @@ cleanup_azure_credentials() {
     remove_azure_state_key "azure_subscription_id"
     remove_azure_state_key "azure_tenant_id"
     remove_azure_state_key "azure_client_id"
-    add_azure_event "azure_credentials_cleanup" "Azure credentials cleanup completed (auto-mode: $([ "$SKIP_CONFIRMATION" = "true" ] && echo "yes" || echo "no"))"
+    add_azure_event "azure_credentials_cleanup" "Azure credentials cleanup completed (auto-mode: $([ "${SKIP_CONFIRMATION:-false}" = "true" ] && echo "yes" || echo "no"))"
     phase_reset_from "setup_azure_children"
     
     if [[ "$azure_only" == "true" ]]; then
