@@ -53,62 +53,85 @@ check_yq() {
     fi
 }
 
+# Helper: Safe export that skips null values
+# Usage: safe_export VAR_NAME "value"
+safe_export() {
+    local var_name="$1"
+    local value="$2"
+
+    # Skip if value is null or empty
+    if [[ "$value" != "null" ]] && [[ -n "$value" ]]; then
+        echo "export ${var_name}='${value}'"
+    fi
+}
+
+# Helper: Safe export for numeric values (no quotes)
+safe_export_num() {
+    local var_name="$1"
+    local value="$2"
+
+    # Skip if value is null or empty
+    if [[ "$value" != "null" ]] && [[ -n "$value" ]]; then
+        echo "export ${var_name}=${value}"
+    fi
+}
+
 # Convert YAML configuration to shell variable exports
 yaml_to_shell_vars() {
     local yaml_file="$1"
-    
+
     if [[ ! -f "$yaml_file" ]]; then
         print_error "YAML configuration file not found: $yaml_file"
         exit 1
     fi
-    
+
     # Export Azure settings
-    echo "export AZURE_LOCATION='$(yq '.azure.location' "$yaml_file")'"
-    echo "export AZURE_VM_IMAGE='$(yq '.azure.vm_image' "$yaml_file")'"
-    echo "export AZURE_VM_PRIORITY='$(yq '.azure.vm_priority' "$yaml_file")'"
-    echo "export AZURE_EVICTION_POLICY='$(yq '.azure.eviction_policy' "$yaml_file")'"
-    
+    safe_export AZURE_LOCATION "$(yq '.azure.location' "$yaml_file")"
+    safe_export AZURE_VM_IMAGE "$(yq '.azure.vm_image' "$yaml_file")"
+    safe_export AZURE_VM_PRIORITY "$(yq '.azure.vm_priority' "$yaml_file")"
+    safe_export AZURE_EVICTION_POLICY "$(yq '.azure.eviction_policy' "$yaml_file")"
+
     # Export VM sizing
-    echo "export AZURE_CONTROLLER_VM_SIZE='$(yq '.vm_sizing.controller.size' "$yaml_file")'"
-    echo "export AZURE_WORKER_VM_SIZE='$(yq '.vm_sizing.worker.size' "$yaml_file")'"
-    
+    safe_export AZURE_CONTROLLER_VM_SIZE "$(yq '.vm_sizing.controller.size' "$yaml_file")"
+    safe_export AZURE_WORKER_VM_SIZE "$(yq '.vm_sizing.worker.size' "$yaml_file")"
+
     # Export cluster topology
-    echo "export K0S_CONTROLLER_COUNT=$(yq '.cluster.controllers.count' "$yaml_file")"
-    echo "export K0S_WORKER_COUNT=$(yq '.cluster.workers.count' "$yaml_file")"
-    
+    safe_export_num K0S_CONTROLLER_COUNT "$(yq '.cluster.controllers.count' "$yaml_file")"
+    safe_export_num K0S_WORKER_COUNT "$(yq '.cluster.workers.count' "$yaml_file")"
+
     # Export zone arrays
     local controller_zones=($(yq '.cluster.controllers.zones[]' "$yaml_file"))
     local worker_zones=($(yq '.cluster.workers.zones[]' "$yaml_file"))
     echo "export CONTROLLER_ZONES=(${controller_zones[*]})"
     echo "export WORKER_ZONES=(${worker_zones[*]})"
-    
+
     # Export SSH settings
-    echo "export SSH_USERNAME='$(yq '.ssh.username' "$yaml_file")'"
-    echo "export SSH_KEY_COMMENT='$(yq '.ssh.key_comment' "$yaml_file")'"
-    
+    safe_export SSH_USERNAME "$(yq '.ssh.username' "$yaml_file")"
+    safe_export SSH_KEY_COMMENT "$(yq '.ssh.key_comment' "$yaml_file")"
+
     # Export software versions
-    echo "export K0S_VERSION='$(yq '.software.k0s.version' "$yaml_file")'"
-    echo "export K0RDENT_VERSION='$(yq '.software.k0rdent.version' "$yaml_file")'"
-    echo "export K0RDENT_OCI_REGISTRY='$(yq '.software.k0rdent.registry' "$yaml_file")'"
-    echo "export K0RDENT_NAMESPACE='$(yq '.software.k0rdent.namespace' "$yaml_file")'"
-    
+    safe_export K0S_VERSION "$(yq '.software.k0s.version' "$yaml_file")"
+    safe_export K0RDENT_VERSION "$(yq '.software.k0rdent.version' "$yaml_file")"
+    safe_export K0RDENT_OCI_REGISTRY "$(yq '.software.k0rdent.registry' "$yaml_file")"
+    safe_export K0RDENT_NAMESPACE "$(yq '.software.k0rdent.namespace' "$yaml_file")"
+
     # Export network configuration
-    echo "export VNET_PREFIX='$(yq '.network.vnet_prefix' "$yaml_file")'"
-    echo "export SUBNET_PREFIX='$(yq '.network.subnet_prefix' "$yaml_file")'"
-    echo "export WG_NETWORK='$(yq '.network.wireguard_network' "$yaml_file")'"
-    
-    # Export timeouts
-    echo "export SSH_CONNECT_TIMEOUT=$(yq '.timeouts.ssh_connect' "$yaml_file")"
-    echo "export SSH_COMMAND_TIMEOUT=$(yq '.timeouts.ssh_command' "$yaml_file")"
-    echo "export K0S_INSTALL_WAIT=$(yq '.timeouts.k0s_install_wait' "$yaml_file")"
-    echo "export K0RDENT_INSTALL_WAIT=$(yq '.timeouts.k0rdent_install_wait' "$yaml_file")"
-    echo "export WIREGUARD_CONNECT_WAIT=$(yq '.timeouts.wireguard_connect_wait' "$yaml_file")"
-    echo "export VM_CREATION_TIMEOUT_MINUTES=$(yq '.timeouts.vm_creation_minutes' "$yaml_file")"
-    echo "export VM_WAIT_CHECK_INTERVAL=$(yq '.timeouts.vm_wait_check_interval' "$yaml_file")"
-    echo "export CLOUD_INIT_TIMEOUT=$(yq '.timeouts.cloud_init_timeout' "$yaml_file")"
-    echo "export CLOUD_INIT_CHECK_INTERVAL=$(yq '.timeouts.cloud_init_check_interval' "$yaml_file")"
-    echo "export VERIFICATION_RETRIES=$(yq '.timeouts.verification_retries' "$yaml_file")"
-    echo "export VERIFICATION_RETRY_DELAY=$(yq '.timeouts.verification_retry_delay' "$yaml_file")"
+    safe_export VNET_PREFIX "$(yq '.network.vnet_prefix' "$yaml_file")"
+    safe_export SUBNET_PREFIX "$(yq '.network.subnet_prefix' "$yaml_file")"
+    safe_export WG_NETWORK "$(yq '.network.wireguard_network' "$yaml_file")"
+
+    # Export timeouts (only if not null)
+    safe_export_num SSH_CONNECT_TIMEOUT "$(yq '.timeouts.ssh_connect' "$yaml_file")"
+    safe_export_num SSH_COMMAND_TIMEOUT "$(yq '.timeouts.ssh_command' "$yaml_file")"
+    safe_export_num K0S_INSTALL_WAIT "$(yq '.timeouts.k0s_install_wait' "$yaml_file")"
+    safe_export_num K0RDENT_INSTALL_WAIT "$(yq '.timeouts.k0rdent_install_wait' "$yaml_file")"
+    safe_export_num WIREGUARD_CONNECT_WAIT "$(yq '.timeouts.wireguard_connect_wait' "$yaml_file")"
+    safe_export_num VM_CREATION_TIMEOUT_MINUTES "$(yq '.timeouts.vm_creation_minutes' "$yaml_file")"
+    safe_export_num VM_WAIT_CHECK_INTERVAL "$(yq '.timeouts.vm_wait_check_interval' "$yaml_file")"
+    safe_export_num CLOUD_INIT_TIMEOUT "$(yq '.timeouts.cloud_init_timeout' "$yaml_file")"
+    safe_export_num CLOUD_INIT_CHECK_INTERVAL "$(yq '.timeouts.cloud_init_check_interval' "$yaml_file")"
+    safe_export_num VERIFICATION_RETRIES "$(yq '.timeouts.verification_retries' "$yaml_file")"
+    safe_export_num VERIFICATION_RETRY_DELAY "$(yq '.timeouts.verification_retry_delay' "$yaml_file")"
 }
 
 # Initialize configuration from template

@@ -5,31 +5,37 @@
 # Shell-based config-user.sh is no longer used
 
 # ---- Validation ----
+# IMPORTANT: Always use ${VAR:-default} syntax to avoid unbound variable errors
+# Never access variables directly with $VAR in conditionals
+
 # Ensure minimum node counts
-if [[ $K0S_CONTROLLER_COUNT -lt 1 ]]; then
+K0S_CONTROLLER_COUNT=${K0S_CONTROLLER_COUNT:-1}
+K0S_WORKER_COUNT=${K0S_WORKER_COUNT:-1}
+
+if [[ ${K0S_CONTROLLER_COUNT} -lt 1 ]]; then
     echo "ERROR: K0S_CONTROLLER_COUNT must be at least 1"
     exit 1
 fi
 
-if [[ $K0S_WORKER_COUNT -lt 0 ]]; then
+if [[ ${K0S_WORKER_COUNT} -lt 0 ]]; then
     echo "ERROR: K0S_WORKER_COUNT must be 0 or greater"
     exit 1
 fi
 
 # If no workers, ensure at least one controller (for workload scheduling)
-if [[ $K0S_WORKER_COUNT -eq 0 ]] && [[ $K0S_CONTROLLER_COUNT -lt 1 ]]; then
+if [[ ${K0S_WORKER_COUNT} -eq 0 ]] && [[ ${K0S_CONTROLLER_COUNT} -lt 1 ]]; then
     echo "ERROR: When K0S_WORKER_COUNT is 0, at least 1 controller is required"
     exit 1
 fi
 
 # Warn about worker count of 0
-if [[ $K0S_WORKER_COUNT -eq 0 ]]; then
+if [[ ${K0S_WORKER_COUNT} -eq 0 ]]; then
     echo "WARNING: No dedicated worker nodes configured. Controller(s) must be configured to schedule workloads."
 fi
 
 # Warn about even number of controllers (not recommended for HA)
-if [[ $K0S_CONTROLLER_COUNT -gt 1 ]] && [[ $((K0S_CONTROLLER_COUNT % 2)) -eq 0 ]]; then
-    echo "WARNING: Even number of controllers ($K0S_CONTROLLER_COUNT) is not recommended for HA. Use 1, 3, 5, etc."
+if [[ ${K0S_CONTROLLER_COUNT} -gt 1 ]] && [[ $((K0S_CONTROLLER_COUNT % 2)) -eq 0 ]]; then
+    echo "WARNING: Even number of controllers (${K0S_CONTROLLER_COUNT}) is not recommended for HA. Use 1, 3, 5, etc."
 fi
 
 # ---- Computed Variables ----
@@ -63,32 +69,38 @@ VM_ZONES=()
 VM_TYPES=()  # New array to track if VM is controller or worker
 VM_SIZES=()  # New array to track VM size
 
+# Ensure zone arrays are set with defaults if needed
+CONTROLLER_ZONES=("${CONTROLLER_ZONES[@]:-1}")
+WORKER_ZONES=("${WORKER_ZONES[@]:-1}")
+AZURE_CONTROLLER_VM_SIZE=${AZURE_CONTROLLER_VM_SIZE:-Standard_D2s_v5}
+AZURE_WORKER_VM_SIZE=${AZURE_WORKER_VM_SIZE:-Standard_D2s_v5}
+
 # Generate controller definitions
-for (( i=0; i<$K0S_CONTROLLER_COUNT; i++ )); do
+for (( i=0; i<${K0S_CONTROLLER_COUNT}; i++ )); do
     hostname="k0s-controller-$((i+1))"
-    
+
     # Determine zone (cycle through available zones)
     zone_index=$((i % ${#CONTROLLER_ZONES[@]}))
     zone="${CONTROLLER_ZONES[$zone_index]}"
-    
+
     VM_HOSTS+=("$hostname")
     VM_ZONES+=("$zone")
     VM_TYPES+=("controller")
-    VM_SIZES+=("$AZURE_CONTROLLER_VM_SIZE")
+    VM_SIZES+=("${AZURE_CONTROLLER_VM_SIZE}")
 done
 
 # Generate worker definitions
-for (( i=0; i<$K0S_WORKER_COUNT; i++ )); do
+for (( i=0; i<${K0S_WORKER_COUNT}; i++ )); do
     hostname="k0s-worker-$((i+1))"
-    
+
     # Determine zone (cycle through available zones)
     zone_index=$((i % ${#WORKER_ZONES[@]}))
     zone="${WORKER_ZONES[$zone_index]}"
-    
+
     VM_HOSTS+=("$hostname")
     VM_ZONES+=("$zone")
     VM_TYPES+=("worker")
-    VM_SIZES+=("$AZURE_WORKER_VM_SIZE")
+    VM_SIZES+=("${AZURE_WORKER_VM_SIZE}")
 done
 
 # ---- WireGuard IP Mapping ----

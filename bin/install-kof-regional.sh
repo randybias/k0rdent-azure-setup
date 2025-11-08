@@ -14,6 +14,9 @@ source ./etc/state-management.sh     # State tracking
 source ./etc/kof-functions.sh        # ONLY KOF-specific additions
 source ./etc/azure-cluster-functions.sh  # Azure cluster deployment with retry logic
 
+# Report configuration source (enhanced with state-based loading from OpenSpec change)
+echo "==> Configuration source: ${K0RDENT_CONFIG_SOURCE:-default}"
+
 # Output directory and file (reuse from k0rdent)
 K0SCTL_DIR="./k0sctl-config"
 KUBECONFIG_FILE="$K0SCTL_DIR/${K0RDENT_CLUSTERID}-kubeconfig"
