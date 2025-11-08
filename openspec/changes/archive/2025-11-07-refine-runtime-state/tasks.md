@@ -1,0 +1,5 @@
+- [ ] Introduce new runtime state schema (`state/runtime.yaml` + `state/runs/<run-id>.yaml`) and migration script for existing files.
+- [ ] Update `etc/state-management.sh` helpers to operate on run-scoped data and remove optional phase noise.
+- [ ] Add CLI support (e.g., `deploy-k0rdent.sh runs` / enhanced status) to inspect run history.
+- [ ] Implement pre-run reconciliation that clears optional phase remnants and validates required infrastructure inputs before proceeding.
+- [ ] Update documentation to explain the new state layout, migration expectations, and how to view run history.

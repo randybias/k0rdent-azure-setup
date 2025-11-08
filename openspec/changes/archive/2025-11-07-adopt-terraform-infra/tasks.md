@@ -1,0 +1,5 @@
+- [ ] Scaffold Terraform root and submodules mirroring the current Azure CLI provisioning (RG, VNet, NSG, controller/worker VMs with cloud-init).
+- [ ] Add helper (script or documentation) to translate `config/k0rdent.yaml` into Terraform variables / tfvars.
+- [ ] Update `deploy-k0rdent.sh` (or add a new subcommand) to consume Terraform outputs instead of running Azure CLI when requested.
+- [ ] Document the new workflow (init/apply, bootstrap) and how to configure remote state/locking.
+- [ ] Validate end-to-end: `terraform apply` followed by the bootstrap command successfully installs k0rdent on Azure (update tests/docs accordingly).
