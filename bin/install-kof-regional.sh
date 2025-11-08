@@ -290,7 +290,7 @@ uninstall_kof_regional() {
     local cluster_label=$(get_kof_config "regional.cluster_label" "k0rdent.mirantis.com/istio-role=child")
     
     # Confirm uninstall
-    if [[ "$SKIP_CONFIRMATION" != "true" ]]; then
+    if [[ "${SKIP_CONFIRMATION:-false}" != "true" ]]; then
         print_warning "This will remove KOF regional configuration from the cluster"
         if ! confirm_action "Proceed with uninstall?"; then
             print_info "Uninstall cancelled"
