@@ -207,7 +207,7 @@ uninstall_kof_mothership() {
     local kof_namespace=$(get_kof_config "mothership.namespace" "kof")
     
     # Confirm uninstall
-    if [[ "$SKIP_CONFIRMATION" != "true" ]]; then
+    if [[ "${SKIP_CONFIRMATION:-false}" != "true" ]]; then
         print_warning "This will remove KOF mothership from the cluster"
         if ! confirm_action "Proceed with uninstall?"; then
             print_info "Uninstall cancelled"
@@ -235,7 +235,7 @@ uninstall_kof_mothership() {
     
     # Step 3: Optionally uninstall Istio
     if check_istio_installed; then
-        if [[ "$SKIP_CONFIRMATION" != "true" ]]; then
+        if [[ "${SKIP_CONFIRMATION:-false}" != "true" ]]; then
             print_warning "Istio is currently installed"
             if confirm_action "Also uninstall Istio?"; then
                 print_info "Uninstalling Istio..."
