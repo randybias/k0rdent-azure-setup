@@ -331,12 +331,9 @@ unset K0RDENT_CONFIG_FILE
 
 **New Deployments**: State-based configuration is automatically enabled
 
-**Existing Deployments**: Continue working with default configuration (backward compatible)
+**Existing Deployments**: Continue working with default configuration
 
 Key points:
-- 100% backward compatible with existing deployments
-- New deployments automatically use state-based config
-- No breaking changes to existing workflows
 - Scripts gracefully fall back if state is not available
 
 #### Related Documentation
