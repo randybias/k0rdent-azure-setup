@@ -278,6 +278,24 @@ Examples:
 
 ## Post-Deployment Operations
 
+### Checking Deployment Status
+
+View comprehensive deployment status at any time:
+
+```bash
+# Check deployment status
+./deploy-k0rdent.sh status
+```
+
+The status command displays:
+- Overall deployment state (DEPLOYED, IN PROGRESS, or NOT DEPLOYED)
+- Cluster configuration (region, nodes, versions)
+- Network information (VPN status, network ranges)
+- Deployment timeline (start/completion times, duration)
+- Deployment phases with visual indicators (✓ completed, ⏳ in progress, ○ pending)
+- Resource locations (kubeconfig, state files)
+- Quick command suggestions based on current state
+
 ### Accessing the Cluster
 
 After successful deployment:

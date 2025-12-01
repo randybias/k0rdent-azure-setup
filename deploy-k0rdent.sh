@@ -969,6 +969,241 @@ integrate_azure_cleanup_in_reset() {
     fi
 }
 
+# Show comprehensive deployment status
+show_deployment_status() {
+    print_header "k0rdent Deployment Status"
+
+    # Check if deployment state exists
+    if ! state_file_exists; then
+        echo ""
+        print_info "Deployment State: NOT DEPLOYED"
+        echo ""
+        echo "No deployment state found at: $DEPLOYMENT_STATE_FILE"
+        echo ""
+        echo "To create a new deployment:"
+        echo "  $0 deploy"
+        echo ""
+        return 0
+    fi
+
+    # Read deployment state
+    local deployment_id=$(get_state "deployment_id" 2>/dev/null || echo "unknown")
+    local phase=$(get_state "phase" 2>/dev/null || echo "unknown")
+    local status=$(get_state "status" 2>/dev/null || echo "unknown")
+
+    # Determine overall deployment state
+    local deployment_state="UNKNOWN"
+    if [[ "$status" == "completed" ]] && [[ "$phase" == "install_kof_regional" || "$phase" == "install_k0rdent" ]]; then
+        deployment_state="DEPLOYED"
+    elif [[ "$status" == "in_progress" ]]; then
+        deployment_state="IN PROGRESS"
+    elif [[ "$status" == "pending" ]]; then
+        deployment_state="NOT STARTED"
+    fi
+
+    echo ""
+    if [[ "$deployment_state" == "DEPLOYED" ]]; then
+        print_success "Deployment State: $deployment_state"
+    elif [[ "$deployment_state" == "IN PROGRESS" ]]; then
+        print_info "Deployment State: $deployment_state"
+    else
+        print_warning "Deployment State: $deployment_state"
+    fi
+
+    echo "Cluster ID: $deployment_id"
+
+    # Show configuration source
+    echo "Configuration source: ${K0RDENT_CONFIG_SOURCE:-default}"
+
+    # Display cluster configuration
+    echo ""
+    echo "Cluster Configuration:"
+    local region=$(get_state "config.azure_location" 2>/dev/null || echo "$AZURE_LOCATION")
+    local controller_count=$(get_state "config.controller_count" 2>/dev/null || echo "$K0S_CONTROLLER_COUNT")
+    local worker_count=$(get_state "config.worker_count" 2>/dev/null || echo "$K0S_WORKER_COUNT")
+
+    echo "  Region: $region"
+    echo "  Controllers: $controller_count ($AZURE_CONTROLLER_VM_SIZE)"
+    echo "  Workers: $worker_count ($AZURE_WORKER_VM_SIZE)"
+    echo "  k0s Version: $K0S_VERSION"
+    echo "  k0rdent Version: $K0RDENT_VERSION"
+
+    # Display network information
+    echo ""
+    echo "Network:"
+    local wg_network=$(get_state "config.wireguard_network" 2>/dev/null || echo "$WG_NETWORK")
+    local vpn_connected=$(get_state "wg_vpn_connected" 2>/dev/null || echo "false")
+    local wg_interface=$(get_state "wg_macos_interface" 2>/dev/null || echo "")
+
+    echo "  VPN Network: $wg_network"
+    if [[ "$vpn_connected" == "true" ]]; then
+        if [[ -n "$wg_interface" ]]; then
+            print_success "  VPN Status: Connected ($wg_interface)"
+        else
+            print_success "  VPN Status: Connected"
+        fi
+    else
+        print_warning "  VPN Status: Disconnected"
+    fi
+
+    # Display deployment timeline if available
+    local start_time=$(get_state "deployment_start_time" 2>/dev/null || echo "")
+    local end_time=$(get_state "deployment_end_time" 2>/dev/null || echo "")
+    local duration=$(get_state "deployment_duration_seconds" 2>/dev/null || echo "")
+
+    if [[ -n "$start_time" ]]; then
+        echo ""
+        echo "Deployment Timeline:"
+        echo "  Started: $start_time"
+
+        if [[ -n "$end_time" ]]; then
+            echo "  Completed: $end_time"
+
+            if [[ -n "$duration" ]] && [[ "$duration" =~ ^[0-9]+$ ]]; then
+                local hours=$((duration / 3600))
+                local minutes=$(((duration % 3600) / 60))
+                local seconds=$((duration % 60))
+
+                echo -n "  Duration: "
+                if [[ $hours -gt 0 ]]; then
+                    echo "${hours} hours ${minutes} minutes ${seconds} seconds"
+                elif [[ $minutes -gt 0 ]]; then
+                    echo "${minutes} minutes ${seconds} seconds"
+                else
+                    echo "${seconds} seconds"
+                fi
+            fi
+        else
+            echo "  Status: In Progress"
+
+            # Calculate elapsed time if start time is parseable
+            if command -v date >/dev/null 2>&1; then
+                local current_time=$(date +%s)
+                # Try to parse start time (format: "2025-12-01 10:59:57 PST")
+                local start_epoch=$(date -j -f "%Y-%m-%d %H:%M:%S %Z" "$start_time" +%s 2>/dev/null || echo "")
+                if [[ -n "$start_epoch" ]]; then
+                    local elapsed=$((current_time - start_epoch))
+                    local hours=$((elapsed / 3600))
+                    local minutes=$(((elapsed % 3600) / 60))
+                    local seconds=$((elapsed % 60))
+
+                    echo -n "  Elapsed: "
+                    if [[ $hours -gt 0 ]]; then
+                        echo "${hours} hours ${minutes} minutes ${seconds} seconds"
+                    elif [[ $minutes -gt 0 ]]; then
+                        echo "${minutes} minutes ${seconds} seconds"
+                    else
+                        echo "${seconds} seconds"
+                    fi
+                fi
+            fi
+        fi
+    fi
+
+    # Display deployment flags
+    local azure_children=$(get_state "deployment_flags.azure_children" 2>/dev/null || echo "false")
+    local kof=$(get_state "deployment_flags.kof" 2>/dev/null || echo "false")
+
+    echo ""
+    echo "Deployment Flags:"
+    if [[ "$azure_children" == "true" ]]; then
+        echo "  Azure Children: Enabled"
+    else
+        echo "  Azure Children: Disabled"
+    fi
+    if [[ "$kof" == "true" ]]; then
+        echo "  KOF: Enabled"
+    else
+        echo "  KOF: Disabled"
+    fi
+
+    # Display deployment phases
+    echo ""
+    echo "Deployment Phases:"
+
+    # Standard phases
+    local phases=(
+        "prepare_deployment:Prepare deployment"
+        "setup_network:Setup network"
+        "create_vms:Create VMs"
+        "setup_vpn:Setup VPN"
+        "connect_vpn:Connect VPN"
+        "install_k0s:Install k0s"
+        "install_k0rdent:Install k0rdent"
+    )
+
+    # Add optional phases based on deployment flags
+    if [[ "$azure_children" == "true" ]]; then
+        phases+=("setup_azure_children:Setup Azure children")
+    fi
+    if [[ "$kof" == "true" ]]; then
+        phases+=("install_azure_csi:Install Azure CSI")
+        phases+=("install_kof_mothership:Install KOF mothership")
+        phases+=("install_kof_regional:Install KOF regional")
+    fi
+
+    # Display each phase with status
+    for phase_entry in "${phases[@]}"; do
+        local phase_key="${phase_entry%%:*}"
+        local phase_name="${phase_entry#*:}"
+        local phase_status=$(get_state "phases.${phase_key}.status" 2>/dev/null || echo "pending")
+
+        local symbol=""
+        case "$phase_status" in
+            "completed")
+                symbol="✓"
+                ;;
+            "in_progress")
+                symbol="⏳"
+                ;;
+            "pending")
+                symbol="○"
+                ;;
+            "failed")
+                symbol="✗"
+                ;;
+            *)
+                symbol="○"
+                ;;
+        esac
+
+        echo "  $symbol $phase_name"
+    done
+
+    # Display resource locations
+    echo ""
+    echo "Resource Locations:"
+
+    local kubeconfig_path="./k0sctl-config/${deployment_id}-kubeconfig"
+    if [[ -f "$kubeconfig_path" ]]; then
+        echo "  Kubeconfig: $kubeconfig_path"
+    else
+        echo "  Kubeconfig: Not yet created"
+    fi
+
+    echo "  State File: $DEPLOYMENT_STATE_FILE"
+
+    # Show next steps based on deployment state
+    if [[ "$deployment_state" == "DEPLOYED" ]]; then
+        echo ""
+        echo "Quick Commands:"
+        echo "  Connect to cluster: export KUBECONFIG=\$PWD/k0sctl-config/${deployment_id}-kubeconfig"
+        echo "  Check nodes: kubectl get nodes"
+        echo "  View resources: kubectl get all -A"
+        if [[ "$vpn_connected" != "true" ]]; then
+            echo "  Connect VPN: ./bin/manage-vpn.sh connect"
+        fi
+    elif [[ "$deployment_state" == "IN PROGRESS" ]]; then
+        echo ""
+        echo "Deployment is currently in progress at phase: $phase"
+    else
+        echo ""
+        echo "To start deployment: $0 deploy"
+    fi
+
+    echo ""
+}
+
 # Main execution
 # Handle help flag
 if [[ "${SHOW_HELP:-false}" == "true" ]]; then
@@ -996,6 +1231,9 @@ case "${POSITIONAL_ARGS[0]:-deploy}" in
     "config")
         show_config
         ;;
+    "status")
+        show_deployment_status
+        ;;
     "check")
         bash bin/check-prerequisites.sh
         ;;
@@ -1006,6 +1244,7 @@ case "${POSITIONAL_ARGS[0]:-deploy}" in
         echo "  deploy    Run full deployment (default)"
         echo "  reset     Remove all k0rdent resources"
         echo "  config    Show configuration"
+        echo "  status    Show deployment status"
         echo "  check     Check prerequisites only"
         echo "  help      Show this help"
         echo ""
@@ -1020,6 +1259,7 @@ case "${POSITIONAL_ARGS[0]:-deploy}" in
         echo "  -h, --help              Show this help message"
         echo ""
         echo "Examples:"
+        echo "  $0 status                        # Check deployment status"
         echo "  $0 deploy                        # Basic k0rdent deployment"
         echo "  $0 deploy --with-azure-children  # Deploy with Azure child cluster support"
         echo "  $0 deploy --with-kof             # Deploy with KOF components"
