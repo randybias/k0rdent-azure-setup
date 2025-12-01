@@ -919,14 +919,9 @@ resolve_canonical_config() {
         local original_state="${DEPLOYMENT_STATE_FILE:-}"
         export DEPLOYMENT_STATE_FILE="$development_state"
 
-        # Try to load from the development state
-        if load_config_from_deployment_state; then
-            export K0RDENT_CONFIG_SOURCE="development-state"
-            if command -v print_info &>/dev/null; then
-                print_info "Successfully loaded development state: ${development_state##*/}"
-            fi
-            return 0
-        else
+        # Development state file specified - use default config resolution
+        # (State-based config loading was removed in refactor-codebase-cleanup)
+        if true; then
             # Restore original state file setting
             if [[ -n "$original_state" ]]; then
                 export DEPLOYMENT_STATE_FILE="$original_state"
@@ -958,9 +953,8 @@ resolve_canonical_config() {
     fi
 
     # Priority 2: Deployment state (production behavior)
-    if load_config_from_deployment_state; then
-        return 0
-    fi
+    # Note: State-based config loading was removed in refactor-codebase-cleanup
+    # Fall through to default configuration
 
     # Priority 3: Default search (backward compatibility)
     export K0RDENT_CONFIG_SOURCE="default"
