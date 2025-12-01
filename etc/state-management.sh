@@ -87,12 +87,12 @@ ensure_phases_block_initialized() {
         yq eval '.phases = {}' -i "$DEPLOYMENT_STATE_FILE"
     fi
 
-    for phase in "${PHASE_SEQUENCE[@]}"; do
-        local status
-        status=$(yq eval ".phases.${phase}.status" "$DEPLOYMENT_STATE_FILE" 2>/dev/null)
-        if [[ "$status" == "null" ]]; then
-            yq eval ".phases.${phase}.status = \"pending\"" -i "$DEPLOYMENT_STATE_FILE"
-            yq eval ".phases.${phase}.updated_at = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+    for p in "${PHASE_SEQUENCE[@]}"; do
+        local phase_status
+        phase_status=$(yq eval ".phases.${p}.status" "$DEPLOYMENT_STATE_FILE" 2>/dev/null)
+        if [[ "$phase_status" == "null" ]]; then
+            yq eval ".phases.${p}.status = \"pending\"" -i "$DEPLOYMENT_STATE_FILE"
+            yq eval ".phases.${p}.updated_at = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
         fi
     done
 
@@ -240,25 +240,25 @@ phase_status() {
 
     ensure_phases_block_initialized
 
-    local status
-    status=$(yq eval ".phases.${phase}.status" "$DEPLOYMENT_STATE_FILE" 2>/dev/null)
-    if [[ "$status" == "null" ]]; then
+    local phase_status
+    phase_status=$(yq eval ".phases.${phase}.status" "$DEPLOYMENT_STATE_FILE" 2>/dev/null)
+    if [[ "$phase_status" == "null" ]]; then
         echo "pending"
     else
-        echo "$status"
+        echo "$phase_status"
     fi
 }
 
 phase_is_completed() {
-    local status
-    status=$(phase_status "$1")
-    [[ "$status" == "completed" ]]
+    local current_status
+    current_status=$(phase_status "$1")
+    [[ "$current_status" == "completed" ]]
 }
 
 phase_mark_status() {
     local phase
     phase=$(normalize_phase_name "$1")
-    local status="$2"
+    local phase_status="$2"
     local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
     if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]]; then
@@ -267,7 +267,7 @@ phase_mark_status() {
 
     ensure_phases_block_initialized
 
-    yq eval ".phases.${phase}.status = \"${status}\"" -i "$DEPLOYMENT_STATE_FILE"
+    yq eval ".phases.${phase}.status = \"${phase_status}\"" -i "$DEPLOYMENT_STATE_FILE"
     yq eval ".phases.${phase}.updated_at = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
     yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
 }
@@ -312,9 +312,9 @@ phase_reset_from() {
 }
 
 phase_needs_run() {
-    local status
-    status=$(phase_status "$1")
-    [[ "$status" != "completed" ]]
+    local current_status
+    current_status=$(phase_status "$1")
+    [[ "$current_status" != "completed" ]]
 }
 
 # Artifact helpers -----------------------------------------------------------
@@ -497,14 +497,14 @@ show_state_summary() {
     
     local deployment_id=$(get_state "deployment_id")
     local phase=$(get_state "phase")
-    local status=$(get_state "status")
+    local deployment_status=$(get_state "status")
     local created=$(get_state "created_at")
-    
+
     echo
     print_info "=== Deployment State Summary ==="
     echo "  Deployment ID: $deployment_id"
     echo "  Phase: $phase"
-    echo "  Status: $status"
+    echo "  Status: $deployment_status"
     echo "  Created: $created"
     echo
     

@@ -384,8 +384,9 @@ run_deployment() {
 
     # Record start time
     DEPLOYMENT_START_TIME=$(date +%s)
+    DEPLOYMENT_START_DATE_UTC=$(date -u "+%Y-%m-%dT%H:%M:%SZ")
     DEPLOYMENT_START_DATE=$(date "+%Y-%m-%d %H:%M:%S %Z")
-    
+
     print_info "Deployment started at: $DEPLOYMENT_START_DATE"
     echo
 
@@ -393,6 +394,7 @@ run_deployment() {
     if should_run_phase "prepare_deployment" validate_prepare_phase; then
         print_header "Step 1: Preparing Deployment (Keys & Cloud-Init)"
         bash bin/prepare-deployment.sh deploy $DEPLOY_FLAGS
+        phase_mark_completed "prepare_deployment"
     else
         print_success "Step 1 skipped - deployment preparation already complete."
     fi
@@ -400,6 +402,7 @@ run_deployment() {
     # Record deployment flags in state (after state file is created)
     update_state "deployment_flags.azure_children" "$WITH_AZURE_CHILDREN"
     update_state "deployment_flags.kof" "$WITH_KOF"
+    update_state "deployment_start_time" "$DEPLOYMENT_START_DATE_UTC"
     add_event "deployment_started" "Deployment started with flags: azure-children=$WITH_AZURE_CHILDREN, kof=$WITH_KOF"
     
     # Start desktop notifier if requested
@@ -425,6 +428,7 @@ run_deployment() {
     if should_run_phase "setup_network" validate_network_phase; then
         print_header "Step 2: Setting up Azure Network"
         bash bin/setup-azure-network.sh deploy $DEPLOY_FLAGS
+        phase_mark_completed "setup_network"
     else
         print_success "Step 2 skipped - Azure network already configured."
     fi
@@ -433,6 +437,7 @@ run_deployment() {
     if should_run_phase "create_vms" validate_vm_phase; then
         print_header "Step 3: Creating Azure VMs"
         bash bin/create-azure-vms.sh deploy $DEPLOY_FLAGS
+        phase_mark_completed "create_vms"
     else
         print_success "Step 3 skipped - Azure VMs already created."
     fi
@@ -441,6 +446,7 @@ run_deployment() {
     if should_run_phase "setup_vpn" validate_vpn_setup_phase; then
         print_header "Step 4: Setting Up WireGuard VPN"
         bash bin/manage-vpn.sh setup $DEPLOY_FLAGS
+        phase_mark_completed "setup_vpn"
     else
         print_success "Step 4 skipped - WireGuard VPN already configured."
     fi
@@ -449,6 +455,7 @@ run_deployment() {
     if should_run_phase "connect_vpn" validate_vpn_connection_phase; then
         print_header "Step 5: Connecting to WireGuard VPN"
         bash bin/manage-vpn.sh connect $DEPLOY_FLAGS
+        phase_mark_completed "connect_vpn"
     else
         print_success "Step 5 skipped - WireGuard VPN already connected."
     fi
@@ -457,6 +464,7 @@ run_deployment() {
     if should_run_phase "install_k0s" validate_k0s_phase; then
         print_header "Step 6: Installing k0s Cluster"
         bash bin/install-k0s.sh deploy $DEPLOY_FLAGS
+        phase_mark_completed "install_k0s"
     else
         print_success "Step 6 skipped - k0s already deployed."
     fi
@@ -465,6 +473,7 @@ run_deployment() {
     if should_run_phase "install_k0rdent" validate_k0rdent_phase; then
         print_header "Step 7: Installing k0rdent on Cluster"
         bash bin/install-k0rdent.sh deploy $DEPLOY_FLAGS
+        phase_mark_completed "install_k0rdent"
     else
         print_success "Step 7 skipped - k0rdent already installed."
     fi
@@ -474,6 +483,7 @@ run_deployment() {
         if should_run_phase "setup_azure_children" ""; then
             print_header "Step 8: Setting up Azure Child Cluster Deployment"
             bash bin/setup-azure-cluster-deployment.sh setup $DEPLOY_FLAGS
+            phase_mark_completed "setup_azure_children"
         else
             print_success "Step 8 skipped - Azure child cluster deployment already configured."
         fi
@@ -484,6 +494,7 @@ run_deployment() {
         if should_run_phase "install_azure_csi" ""; then
             print_header "Step 9: Installing Azure Disk CSI Driver for KOF"
             bash bin/install-k0s-azure-csi.sh deploy $DEPLOY_FLAGS
+            phase_mark_completed "install_azure_csi"
         else
             print_success "Step 9 skipped - Azure Disk CSI driver already installed."
         fi
@@ -494,6 +505,7 @@ run_deployment() {
         if should_run_phase "install_kof_mothership" ""; then
             print_header "Step 10: Installing KOF Mothership"
             bash bin/install-kof-mothership.sh deploy $DEPLOY_FLAGS
+            phase_mark_completed "install_kof_mothership"
         else
             print_success "Step 10 skipped - KOF mothership already installed."
         fi
@@ -504,6 +516,7 @@ run_deployment() {
         if should_run_phase "install_kof_regional" ""; then
             print_header "Step 11: Deploying KOF Regional Cluster"
             bash bin/install-kof-regional.sh deploy $DEPLOY_FLAGS
+            phase_mark_completed "install_kof_regional"
         else
             print_success "Step 11 skipped - KOF regional cluster already deployed."
         fi
@@ -535,9 +548,8 @@ run_deployment() {
     else
         echo "${DEPLOYMENT_SECONDS} seconds"
     fi
-    
+
     # Update state with timing information
-    update_state "deployment_start_time" "$DEPLOYMENT_START_DATE"
     update_state "deployment_end_time" "$DEPLOYMENT_END_DATE"
     update_state "deployment_duration_seconds" "$DEPLOYMENT_DURATION"
     
@@ -969,6 +981,78 @@ integrate_azure_cleanup_in_reset() {
     fi
 }
 
+# Convert UTC timestamp to local timezone for display
+# Input: ISO 8601 UTC timestamp (e.g., "2025-12-01T08:56:05Z")
+# Output: Local time with timezone indicator (e.g., "2025-12-01 00:56:05 PST")
+convert_utc_to_local() {
+    local utc_time="$1"
+
+    # Return empty if input is empty
+    if [[ -z "$utc_time" ]]; then
+        echo ""
+        return 1
+    fi
+
+    # Detect OS and use appropriate date command
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS: parse UTC time to epoch, then convert to local
+        local epoch
+        epoch=$(TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%SZ" "$utc_time" "+%s" 2>/dev/null)
+        if [[ -n "$epoch" ]]; then
+            date -r "$epoch" "+%Y-%m-%d %H:%M:%S %Z" 2>/dev/null || echo "$utc_time (UTC)"
+        else
+            echo "$utc_time (UTC)"
+        fi
+    else
+        # Linux: use -d flag
+        date -d "$utc_time" "+%Y-%m-%d %H:%M:%S %Z" 2>/dev/null || echo "$utc_time (UTC)"
+    fi
+}
+
+# Calculate current runtime from start time to now
+# Input: ISO 8601 UTC timestamp for start time
+# Output: Formatted duration string (e.g., "15 minutes 32 seconds")
+calculate_current_runtime() {
+    local start_time="$1"
+
+    # Return empty if input is empty
+    if [[ -z "$start_time" ]]; then
+        echo ""
+        return 1
+    fi
+
+    # Parse start time to epoch
+    local start_epoch
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        start_epoch=$(TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%SZ" "$start_time" +%s 2>/dev/null)
+    else
+        start_epoch=$(date -d "$start_time" +%s 2>/dev/null)
+    fi
+
+    # Return if parsing failed
+    if [[ -z "$start_epoch" ]]; then
+        echo ""
+        return 1
+    fi
+
+    # Calculate elapsed time
+    local current_epoch=$(date +%s)
+    local elapsed=$((current_epoch - start_epoch))
+
+    # Format as duration
+    local hours=$((elapsed / 3600))
+    local minutes=$(((elapsed % 3600) / 60))
+    local seconds=$((elapsed % 60))
+
+    if [[ $hours -gt 0 ]]; then
+        echo "${hours} hours ${minutes} minutes ${seconds} seconds"
+    elif [[ $minutes -gt 0 ]]; then
+        echo "${minutes} minutes ${seconds} seconds"
+    else
+        echo "${seconds} seconds"
+    fi
+}
+
 # Show comprehensive deployment status
 show_deployment_status() {
     print_header "k0rdent Deployment Status"
@@ -1048,15 +1132,25 @@ show_deployment_status() {
 
     # Display deployment timeline if available
     local start_time=$(get_state "deployment_start_time" 2>/dev/null || echo "")
+
+    # Fall back to created_at if deployment_start_time is missing or null
+    if [[ -z "$start_time" ]] || [[ "$start_time" == "null" ]]; then
+        start_time=$(get_state "created_at" 2>/dev/null || echo "")
+    fi
+
     local end_time=$(get_state "deployment_end_time" 2>/dev/null || echo "")
     local duration=$(get_state "deployment_duration_seconds" 2>/dev/null || echo "")
 
     if [[ -n "$start_time" ]]; then
         echo ""
         echo "Deployment Timeline:"
-        echo "  Started: $start_time"
 
-        if [[ -n "$end_time" ]]; then
+        # Convert UTC start time to local timezone for display
+        local start_time_local=$(convert_utc_to_local "$start_time")
+        echo "  Started: $start_time_local"
+
+        if [[ -n "$end_time" ]] && [[ "$end_time" != "null" ]]; then
+            # Deployment completed - show completion time and duration
             echo "  Completed: $end_time"
 
             if [[ -n "$duration" ]] && [[ "$duration" =~ ^[0-9]+$ ]]; then
@@ -1074,29 +1168,12 @@ show_deployment_status() {
                 fi
             fi
         else
-            echo "  Status: In Progress"
-
-            # Calculate elapsed time if start time is parseable
-            if command -v date >/dev/null 2>&1; then
-                local current_time=$(date +%s)
-                # Try to parse start time (format: "2025-12-01 10:59:57 PST")
-                local start_epoch=$(date -j -f "%Y-%m-%d %H:%M:%S %Z" "$start_time" +%s 2>/dev/null || echo "")
-                if [[ -n "$start_epoch" ]]; then
-                    local elapsed=$((current_time - start_epoch))
-                    local hours=$((elapsed / 3600))
-                    local minutes=$(((elapsed % 3600) / 60))
-                    local seconds=$((elapsed % 60))
-
-                    echo -n "  Elapsed: "
-                    if [[ $hours -gt 0 ]]; then
-                        echo "${hours} hours ${minutes} minutes ${seconds} seconds"
-                    elif [[ $minutes -gt 0 ]]; then
-                        echo "${minutes} minutes ${seconds} seconds"
-                    else
-                        echo "${seconds} seconds"
-                    fi
-                fi
+            # Deployment in progress - show current runtime
+            local current_runtime=$(calculate_current_runtime "$start_time")
+            if [[ -n "$current_runtime" ]]; then
+                echo "  Current Run Time: $current_runtime"
             fi
+            echo "  Status: In Progress"
         fi
     fi
 
