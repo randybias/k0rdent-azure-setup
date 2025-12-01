@@ -75,46 +75,6 @@ archive_existing_state() {
     print_success "State files archived to $archive_dir/"
 }
 
-ensure_phases_block_initialized() {
-    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-
-    if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]]; then
-        return 1
-    fi
-
-    # Create phases map if it doesn't exist
-    if [[ "$(yq eval '.phases' "$DEPLOYMENT_STATE_FILE" 2>/dev/null)" == "null" ]]; then
-        yq eval '.phases = {}' -i "$DEPLOYMENT_STATE_FILE"
-    fi
-
-    for p in "${PHASE_SEQUENCE[@]}"; do
-        local phase_status
-        phase_status=$(yq eval ".phases.${p}.status" "$DEPLOYMENT_STATE_FILE" 2>/dev/null)
-        if [[ "$phase_status" == "null" ]]; then
-            yq eval ".phases.${p}.status = \"pending\"" -i "$DEPLOYMENT_STATE_FILE"
-            yq eval ".phases.${p}.updated_at = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
-        fi
-    done
-
-    # Ensure artifacts registry exists
-    if [[ "$(yq eval '.artifacts' "$DEPLOYMENT_STATE_FILE" 2>/dev/null)" == "null" ]]; then
-        yq eval '.artifacts = {}' -i "$DEPLOYMENT_STATE_FILE"
-    fi
-}
-
-migrate_state_file_structure() {
-    if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]]; then
-        return 0
-    fi
-
-    # Ensure new sections exist for older state files
-    ensure_phases_block_initialized
-
-    # Older states may be missing deployment_flags
-    if [[ "$(yq eval '.deployment_flags' "$DEPLOYMENT_STATE_FILE" 2>/dev/null)" == "null" ]]; then
-        yq eval '.deployment_flags = {"azure_children": false, "kof": false}' -i "$DEPLOYMENT_STATE_FILE"
-    fi
-}
 
 # Initialize new deployment state file
 init_deployment_state() {
@@ -208,37 +168,13 @@ EOF
 
 # Phase helpers --------------------------------------------------------------
 
-normalize_phase_name() {
-    local phase="$1"
-    # Normalize with underscores
-    phase="${phase//-/_}"
-    echo "$phase"
-}
-
-phase_index() {
-    local target
-    target=$(normalize_phase_name "$1")
-    local idx=0
-    for phase in "${PHASE_SEQUENCE[@]}"; do
-        if [[ "$phase" == "$target" ]]; then
-            echo "$idx"
-            return 0
-        fi
-        ((idx++))
-    done
-    return 1
-}
-
 phase_status() {
-    local phase
-    phase=$(normalize_phase_name "$1")
-    
+    local phase="${1//-/_}"
+
     if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]]; then
         echo "pending"
         return 0
     fi
-
-    ensure_phases_block_initialized
 
     local phase_status
     phase_status=$(yq eval ".phases.${phase}.status" "$DEPLOYMENT_STATE_FILE" 2>/dev/null)
@@ -255,45 +191,60 @@ phase_is_completed() {
     [[ "$current_status" == "completed" ]]
 }
 
-phase_mark_status() {
-    local phase
-    phase=$(normalize_phase_name "$1")
-    local phase_status="$2"
-    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-
-    if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]]; then
-        return 1
-    fi
-
-    ensure_phases_block_initialized
-
-    yq eval ".phases.${phase}.status = \"${phase_status}\"" -i "$DEPLOYMENT_STATE_FILE"
-    yq eval ".phases.${phase}.updated_at = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
-    yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
-}
-
 phase_mark_in_progress() {
     local phase="$1"
-    phase_mark_status "$phase" "in_progress"
-    update_state "phase" "$(normalize_phase_name "$phase")"
+    local phase_normalized="${phase//-/_}"
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    if [[ -f "$DEPLOYMENT_STATE_FILE" ]]; then
+        yq eval ".phases.${phase_normalized}.status = \"in_progress\"" -i "$DEPLOYMENT_STATE_FILE"
+        yq eval ".phases.${phase_normalized}.updated_at = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+        yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+    fi
+    update_state "phase" "$phase_normalized"
 }
 
 phase_mark_completed() {
     local phase="$1"
-    phase_mark_status "$phase" "completed"
-    update_state "phase" "$(normalize_phase_name "$phase")"
-    add_event "phase_completed" "Phase completed: $(normalize_phase_name "$phase")"
+    local phase_normalized="${phase//-/_}"
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    if [[ -f "$DEPLOYMENT_STATE_FILE" ]]; then
+        yq eval ".phases.${phase_normalized}.status = \"completed\"" -i "$DEPLOYMENT_STATE_FILE"
+        yq eval ".phases.${phase_normalized}.updated_at = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+        yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+    fi
+    update_state "phase" "$phase_normalized"
+    add_event "phase_completed" "Phase completed: $phase_normalized"
 }
 
 phase_mark_pending() {
-    phase_mark_status "$1" "pending"
+    local phase="$1"
+    local phase_normalized="${phase//-/_}"
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    if [[ -f "$DEPLOYMENT_STATE_FILE" ]]; then
+        yq eval ".phases.${phase_normalized}.status = \"pending\"" -i "$DEPLOYMENT_STATE_FILE"
+        yq eval ".phases.${phase_normalized}.updated_at = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+        yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+    fi
 }
 
 phase_reset_from() {
-    local phase
-    phase=$(normalize_phase_name "$1")
-    local index
-    if ! index=$(phase_index "$phase"); then
+    local phase="${1//-/_}"
+    local index=0
+    local found=0
+
+    # Find index of phase in sequence
+    for p in "${PHASE_SEQUENCE[@]}"; do
+        if [[ "$p" == "$phase" ]]; then
+            found=1
+            break
+        fi
+        ((index++))
+    done
+
+    if [[ $found -eq 0 ]]; then
         return 1
     fi
 
@@ -317,6 +268,16 @@ phase_needs_run() {
     [[ "$current_status" != "completed" ]]
 }
 
+# Check if a phase is completed
+# Args: $1 - phase name
+# Returns: 0 if completed, 1 if not
+check_phase_completion() {
+    local phase_name="$1"
+    local status
+    status=$(phase_status "${phase_name}")
+    [[ "${status}" == "completed" ]]
+}
+
 # Artifact helpers -----------------------------------------------------------
 
 record_artifact() {
@@ -327,8 +288,6 @@ record_artifact() {
     if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]]; then
         return 1
     fi
-
-    ensure_phases_block_initialized
 
     local timestamp
     timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -354,16 +313,6 @@ artifact_exists() {
     fi
 
     [[ -e "$path" ]]
-}
-
-clear_artifact() {
-    local name="$1"
-    if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]]; then
-        return 0
-    fi
-
-    ensure_phases_block_initialized
-    yq eval "del(.artifacts.${name})" -i "$DEPLOYMENT_STATE_FILE"
 }
 
 # Update a simple key-value in state
@@ -482,7 +431,10 @@ add_event() {
 # Check if state file exists and is valid
 state_file_exists() {
     if [[ -f "$DEPLOYMENT_STATE_FILE" ]] && yq eval '.deployment_id' "$DEPLOYMENT_STATE_FILE" &>/dev/null; then
-        migrate_state_file_structure
+        # Ensure deployment_flags exist for older state files
+        if [[ "$(yq eval '.deployment_flags' "$DEPLOYMENT_STATE_FILE" 2>/dev/null)" == "null" ]]; then
+            yq eval '.deployment_flags = {"azure_children": false, "kof": false}' -i "$DEPLOYMENT_STATE_FILE"
+        fi
         return 0
     fi
     return 1
@@ -519,79 +471,38 @@ show_state_summary() {
     fi
 }
 
-# Check if we need prerequisites before using yq
-check_yq_available() {
-    if ! command -v yq &> /dev/null; then
-        print_error "yq is required for state management but not installed"
-        echo "Install with: brew install yq (macOS) or see https://github.com/mikefarah/yq#install"
-        return 1
-    fi
-}
 
-# Backup completed deployment to old_deployments directory
-backup_completed_deployment() {
-    local reason="${1:-completed}"
-    
-    if [[ ! -f "$DEPLOYMENT_STATE_FILE" ]]; then
-        print_warning "No deployment state file to backup"
-        return 0
-    fi
-    
-    local deployment_id=$(get_state "deployment_id")
-    local timestamp=$(date +%Y%m%d_%H%M%S)
-    local backup_dir="old_deployments"
-    
-    # Ensure backup directory exists
-    mkdir -p "$backup_dir"
-    
-    # Backup state file
-    cp "$DEPLOYMENT_STATE_FILE" "${backup_dir}/${deployment_id}_${timestamp}_${reason}.yaml"
-    print_info "Backed up deployment state: ${backup_dir}/${deployment_id}_${timestamp}_${reason}.yaml"
-    
-    # Backup events file if it exists
-    if [[ -f "$DEPLOYMENT_EVENTS_FILE" ]]; then
-        cp "$DEPLOYMENT_EVENTS_FILE" "${backup_dir}/${deployment_id}_${timestamp}_${reason}_events.yaml"
-        print_info "Backed up deployment events: ${backup_dir}/${deployment_id}_${timestamp}_${reason}_events.yaml"
-    fi
-}
-
-# Mark deployment as completed and backup
+# Mark deployment as completed
 complete_deployment() {
     local final_phase="${1:-completed}"
-    
+
     # Update final state
     update_state "status" "completed"
     update_state "phase" "$final_phase"
     add_event "deployment_completed" "Full k0rdent deployment completed successfully"
-    
-    # Backup the completed deployment
-    backup_completed_deployment "completed"
 }
 
-# Clean up deployment state files (backup first)
+# Clean up deployment state files
 cleanup_deployment_state() {
     local reason="${1:-cleanup}"
-    
-    # Backup before cleanup
-    backup_completed_deployment "$reason"
-    
+
     # Remove state files
     if [[ -f "$DEPLOYMENT_STATE_FILE" ]]; then
         rm -f "$DEPLOYMENT_STATE_FILE"
         print_info "Removed deployment state file"
     fi
-    
+
     if [[ -f "$DEPLOYMENT_EVENTS_FILE" ]]; then
-        rm -f "$DEPLOYMENT_EVENTS_FILE" 
+        rm -f "$DEPLOYMENT_EVENTS_FILE"
         print_info "Removed deployment events file"
     fi
-    
+
     # Remove state directory if empty
     if [[ -d "$STATE_DIR" ]] && [[ -z "$(ls -A "$STATE_DIR" 2>/dev/null)" ]]; then
         rmdir "$STATE_DIR"
         print_info "Removed empty state directory"
     fi
-    
+
     print_success "Deployment state cleanup completed"
 }
 
@@ -712,151 +623,8 @@ get_wireguard_public_key() {
 
 # ---- KOF State Management ----
 
-# Initialize KOF state file
-init_kof_state() {
-    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    
-    # Ensure state directory exists
-    mkdir -p "$STATE_DIR"
-    
-    cat > "$KOF_STATE_FILE" << EOF
-# KOF (K0rdent Operations Framework) State
-# Auto-generated on $timestamp
-
-# Basic KOF info
-created_at: "$timestamp"
-last_updated: "$timestamp"
-kof_enabled: false
-
-# KOF components
-kof_mothership_installed: false
-kof_regional_installed: false
-kof_child_installed: false
-EOF
-    
-    # Create KOF events file
-    cat > "$KOF_EVENTS_FILE" << EOF
-# KOF Events Log
-# Auto-generated on $timestamp
-
-created_at: "$timestamp"
-last_updated: "$timestamp"
-
-# Events log
-events:
-  - timestamp: "$timestamp"
-    action: kof_state_initialized
-    message: KOF state tracking initialized
-EOF
-    
-    print_info "Initialized KOF state: $KOF_STATE_FILE"
-    print_info "Initialized KOF events: $KOF_EVENTS_FILE"
-}
-
-# Update KOF state
-update_kof_state() {
-    local key="$1"
-    local value="$2"
-    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    
-    # Initialize if doesn't exist
-    if [[ ! -f "$KOF_STATE_FILE" ]]; then
-        init_kof_state
-    fi
-    
-    # Handle boolean values properly
-    if [[ "$value" == "true" ]] || [[ "$value" == "false" ]]; then
-        yq eval ".${key} = ${value}" -i "$KOF_STATE_FILE"
-    else
-        yq eval ".${key} = \"${value}\"" -i "$KOF_STATE_FILE"
-    fi
-    
-    yq eval ".last_updated = \"${timestamp}\"" -i "$KOF_STATE_FILE"
-}
-
-# Get KOF state
-get_kof_state() {
-    local key="$1"
-    
-    if [[ ! -f "$KOF_STATE_FILE" ]]; then
-        echo "null"
-        return
-    fi
-    
-    yq eval ".${key}" "$KOF_STATE_FILE" 2>/dev/null || echo "null"
-}
-
-# Add KOF event
-add_kof_event() {
-    local action="$1"
-    local message="$2"
-    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    
-    # Initialize if doesn't exist
-    if [[ ! -f "$KOF_EVENTS_FILE" ]]; then
-        init_kof_state
-    fi
-    
-    # Add event to events array
-    yq eval ".events += [{\"timestamp\": \"${timestamp}\", \"action\": \"${action}\", \"message\": \"${message}\"}]" -i "$KOF_EVENTS_FILE"
-    yq eval ".last_updated = \"${timestamp}\"" -i "$KOF_EVENTS_FILE"
-    
-    # Update timestamp in main KOF state file
-    if [[ -f "$KOF_STATE_FILE" ]]; then
-        yq eval ".last_updated = \"${timestamp}\"" -i "$KOF_STATE_FILE"
-    fi
-}
-
-# Remove KOF state key
-remove_kof_state_key() {
-    local key="$1"
-    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    
-    if [[ -f "$KOF_STATE_FILE" ]]; then
-        yq eval "del(.${key})" -i "$KOF_STATE_FILE"
-        yq eval ".last_updated = \"${timestamp}\"" -i "$KOF_STATE_FILE"
-    fi
-}
 
 # ---- Azure State Management ----
-
-# Initialize Azure state file
-init_azure_state() {
-    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    
-    # Ensure state directory exists
-    mkdir -p "$STATE_DIR"
-    
-    cat > "$AZURE_STATE_FILE" << EOF
-# Azure Infrastructure State
-# Auto-generated on $timestamp
-
-# Basic Azure info
-created_at: "$timestamp"
-last_updated: "$timestamp"
-
-# Azure credentials
-azure_credentials_configured: false
-EOF
-    
-    # Create Azure events file
-    cat > "$AZURE_EVENTS_FILE" << EOF
-# Azure Events Log
-# Auto-generated on $timestamp
-
-created_at: "$timestamp"
-last_updated: "$timestamp"
-
-# Events log
-events:
-  - timestamp: "$timestamp"
-    action: azure_state_initialized
-    message: Azure state tracking initialized
-EOF
-    
-    print_info "Initialized Azure state: $AZURE_STATE_FILE"
-    print_info "Initialized Azure events: $AZURE_EVENTS_FILE"
-}
 
 # Update Azure state
 update_azure_state() {
@@ -964,36 +732,6 @@ events:
 EOF
     
     print_info "Initialized cluster events: $cluster_events_file"
-}
-
-# Deprecated: use init_cluster_events instead
-init_cluster_state() {
-    local cluster_name="$1"
-    print_warning "init_cluster_state is deprecated - using init_cluster_events (k0rdent is source of truth)"
-    init_cluster_events "$cluster_name"
-}
-
-# Deprecated: Local state tracking removed - k0rdent is source of truth
-update_cluster_state() {
-    local cluster_name="$1"
-    local key="$2"
-    local value="$3"
-    
-    print_warning "update_cluster_state is deprecated - k0rdent is the source of truth for cluster state"
-    print_info "Use add_cluster_event to track local operations instead"
-    
-    # Add an event instead of updating state
-    add_cluster_event "$cluster_name" "state_update_attempted" "Attempted to set $key=$value (deprecated - use k0rdent for state)"
-}
-
-# Deprecated: Query k0rdent directly for cluster state
-get_cluster_state() {
-    local cluster_name="$1"
-    local key="$2"
-    
-    print_warning "get_cluster_state is deprecated - query k0rdent directly for cluster state"
-    print_info "Use: kubectl get clusterdeployment $cluster_name -n kcm-system"
-    echo "null"
 }
 
 # Add cluster event

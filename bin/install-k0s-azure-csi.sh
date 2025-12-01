@@ -797,33 +797,33 @@ uninstall_azure_csi() {
     fi
     
     print_info "Removing Azure Disk CSI Driver..."
-    
+
     # Delete StorageClass
-    kubectl delete storageclass managed-csi --ignore-not-found
-    
+    kubectl_delete_resources storageclass managed-csi
+
     # Delete CSI driver components
-    kubectl delete deployment csi-azuredisk-controller -n kube-system --ignore-not-found
-    kubectl delete daemonset csi-azuredisk-node -n kube-system --ignore-not-found
-    kubectl delete csidriver disk.csi.azure.com --ignore-not-found
-    
+    kubectl_delete_resources deployment csi-azuredisk-controller -n kube-system
+    kubectl_delete_resources daemonset csi-azuredisk-node -n kube-system
+    kubectl_delete_resources csidriver disk.csi.azure.com
+
     # Delete RBAC resources
-    kubectl delete clusterrolebinding azuredisk-csi-provisioner-binding --ignore-not-found
-    kubectl delete clusterrole azuredisk-external-provisioner-role --ignore-not-found
-    kubectl delete clusterrolebinding azuredisk-csi-attacher-binding --ignore-not-found
-    kubectl delete clusterrole azuredisk-external-attacher-role --ignore-not-found
-    kubectl delete clusterrolebinding azuredisk-csi-snapshotter-binding --ignore-not-found
-    kubectl delete clusterrole azuredisk-external-snapshotter-role --ignore-not-found
-    kubectl delete clusterrolebinding azuredisk-csi-resizer-role --ignore-not-found
-    kubectl delete clusterrole azuredisk-external-resizer-role --ignore-not-found
-    kubectl delete clusterrolebinding csi-azuredisk-controller-secret-binding --ignore-not-found
-    kubectl delete clusterrole csi-azuredisk-controller-secret-role --ignore-not-found
-    kubectl delete clusterrolebinding csi-azuredisk-node-secret-binding --ignore-not-found
-    kubectl delete clusterrole csi-azuredisk-node-role --ignore-not-found
-    kubectl delete serviceaccount csi-azuredisk-controller-sa -n kube-system --ignore-not-found
-    kubectl delete serviceaccount csi-azuredisk-node-sa -n kube-system --ignore-not-found
-    
+    kubectl_delete_resources clusterrolebinding azuredisk-csi-provisioner-binding
+    kubectl_delete_resources clusterrole azuredisk-external-provisioner-role
+    kubectl_delete_resources clusterrolebinding azuredisk-csi-attacher-binding
+    kubectl_delete_resources clusterrole azuredisk-external-attacher-role
+    kubectl_delete_resources clusterrolebinding azuredisk-csi-snapshotter-binding
+    kubectl_delete_resources clusterrole azuredisk-external-snapshotter-role
+    kubectl_delete_resources clusterrolebinding azuredisk-csi-resizer-role
+    kubectl_delete_resources clusterrole azuredisk-external-resizer-role
+    kubectl_delete_resources clusterrolebinding csi-azuredisk-controller-secret-binding
+    kubectl_delete_resources clusterrole csi-azuredisk-controller-secret-role
+    kubectl_delete_resources clusterrolebinding csi-azuredisk-node-secret-binding
+    kubectl_delete_resources clusterrole csi-azuredisk-node-role
+    kubectl_delete_resources serviceaccount csi-azuredisk-controller-sa -n kube-system
+    kubectl_delete_resources serviceaccount csi-azuredisk-node-sa -n kube-system
+
     # Delete cloud provider secret
-    kubectl delete secret azure-cloud-provider -n kube-system --ignore-not-found
+    kubectl_delete_resources secret azure-cloud-provider -n kube-system
     
     # Update state
     update_state "azure_csi_installed" "false"

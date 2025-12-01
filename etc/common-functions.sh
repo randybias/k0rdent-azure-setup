@@ -44,7 +44,7 @@ handle_error() {
     local command="$2"
     print_error "Command failed at line $line_number"
     echo "Last command: $command"
-    exit 1
+    return 1
 }
 
 # Azure CLI validation
@@ -52,12 +52,12 @@ check_azure_cli() {
     if ! command -v az &> /dev/null; then
         print_error "Azure CLI (az) is not installed. Please install it first."
         echo "Visit: https://docs.microsoft.com/en-us/cli/azure/install-azure-cli"
-        exit 1
+        return 1
     fi
 
     if ! az account show &> /dev/null; then
         print_error "Not logged into Azure. Please run 'az login' first."
-        exit 1
+        return 1
     fi
 
     print_success "Azure CLI is installed and user is authenticated"
@@ -70,47 +70,19 @@ check_wireguard_tools() {
         echo "On Ubuntu/Debian: sudo apt install wireguard"
         echo "On CentOS/RHEL: sudo yum install wireguard-tools"
         echo "On macOS: brew install wireguard-tools"
-        exit 1
+        return 1
     fi
     print_success "WireGuard tools are installed"
 }
 
 # Check k0sctl installation
-check_k0sctl() {
-    if ! command -v k0sctl &> /dev/null; then
-        print_error "k0sctl is not installed. Please install it first."
-        echo "Visit: https://docs.k0sproject.io/stable/k0sctl-install/"
-        echo "Or install via:"
-        echo "  # macOS:"
-        echo "  brew install k0sproject/tap/k0sctl"
-        echo "  # Linux:"
-        echo "  curl -sSLf https://get.k0s.sh | sudo sh"
-        exit 1
-    fi
-    print_success "k0sctl is installed"
-}
-
-# Check netcat installation
-check_netcat() {
-    if ! command -v nc &> /dev/null; then
-        print_error "netcat (nc) not found. Please install netcat first:"
-        echo "  # macOS:"
-        echo "  brew install netcat"
-        echo "  # Ubuntu/Debian:"
-        echo "  sudo apt install netcat-openbsd"
-        echo "  # CentOS/RHEL:"
-        echo "  sudo yum install nmap-ncat"
-        exit 1
-    fi
-    print_success "netcat is installed"
-}
 
 # AWS CLI validation
 check_aws_cli() {
     if ! command -v aws &> /dev/null; then
         print_error "AWS CLI (aws) is not installed. Please install it first."
         echo "Visit: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
-        exit 1
+        return 1
     fi
     print_success "AWS CLI is installed"
 }
@@ -126,7 +98,7 @@ check_yq() {
         echo "  # Linux (download latest release):"
         echo "  wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq"
         echo "  chmod +x /usr/local/bin/yq"
-        exit 1
+        return 1
     fi
     print_success "yq is installed"
 }
