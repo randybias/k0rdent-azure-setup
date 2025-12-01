@@ -757,3 +757,13 @@ add_cluster_event() {
         yq eval ".last_updated = \"${timestamp}\"" -i "$cluster_state_file"
     fi
 }
+
+# Check if a phase is completed
+# Args: $1 - phase name
+# Returns: 0 if completed, 1 if not
+check_phase_completion() {
+    local phase_name="$1"
+    local status
+    status=$(phase_status "${phase_name}")
+    [[ "${status}" == "completed" ]]
+}

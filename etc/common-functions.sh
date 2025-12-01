@@ -1632,3 +1632,42 @@ display_status() {
         esac
     done
 }
+# ---- Phase 3 Helper Functions ----
+
+# Find SSH key path for k0rdent cluster
+# Returns: Path to SSH private key or empty string if not found
+find_ssh_key() {
+    local key_path
+    key_path=$(find ./azure-resources -maxdepth 1 -type f -name "${K0RDENT_CLUSTERID}-ssh-key" 2>/dev/null | head -n 1)
+    echo "${key_path}"
+}
+
+# Delete multiple Kubernetes resources with ignore-not-found
+# Args: $@ - resource types and names
+kubectl_delete_resources() {
+    kubectl delete --ignore-not-found=true "$@"
+}
+
+# Get controller nodes from VM_HOSTS
+# Returns: Array of controller node hostnames
+get_controller_nodes() {
+    local controllers=()
+    for host in "${VM_HOSTS[@]}"; do
+        if [[ "${VM_TYPE_MAP[$host]}" == "controller" ]]; then
+            controllers+=("$host")
+        fi
+    done
+    echo "${controllers[@]}"
+}
+
+# Get worker nodes from VM_HOSTS
+# Returns: Array of worker node hostnames
+get_worker_nodes() {
+    local workers=()
+    for host in "${VM_HOSTS[@]}"; do
+        if [[ "${VM_TYPE_MAP[$host]}" == "worker" ]]; then
+            workers+=("$host")
+        fi
+    done
+    echo "${workers[@]}"
+}
