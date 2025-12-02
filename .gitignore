@@ -23,6 +23,11 @@ wireguard-port.txt
 *.swo
 *~
 
+# AI assistant command directories
+.claude/
+.cursor/
+.factory/
+
 # OS generated files
 .DS_Store
 .DS_Store?
@@ -49,6 +54,9 @@ config/aws-credentials.yaml
 
 # Temporary scratch directory
 scratch/
+
+# Demo files (large binaries)
+demos/
 
 # WireGuard setuid wrapper binary (not to be committed)
 bin/utils/wg-wrapper
