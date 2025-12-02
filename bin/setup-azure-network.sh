@@ -161,8 +161,19 @@ deploy_resources() {
     
     # Create resource group (if not already created)
     if [[ "$(get_state "azure_rg_status" 2>/dev/null)" != "created" ]]; then
+        # Get deployer identity for tagging
+        get_deployer_identity
+
+        # Create ISO 8601 UTC timestamp
+        local creation_timestamp
+        creation_timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
         if ! log_azure_command "Creating resource group: $RG in $AZURE_LOCATION" \
-            az group create --name "$RG" --location "$AZURE_LOCATION"; then
+            az group create --name "$RG" --location "$AZURE_LOCATION" \
+            --tags "owner=${DEPLOYER_IDENTITY}" \
+                   "created-by=k0rdent-azure-setup" \
+                   "cluster-id=${K0RDENT_CLUSTERID}" \
+                   "created=${creation_timestamp}"; then
             handle_error ${LINENO} "az group create"
         fi
         # Update state

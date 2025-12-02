@@ -80,16 +80,27 @@ archive_existing_state() {
 init_deployment_state() {
     local deployment_id="$1"
     local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    
+
     # Ensure state directory exists
     mkdir -p "$STATE_DIR"
-    
+
+    # Get deployer identity for recording in state
+    # This must be called before we create the state file
+    local deployer_id=""
+    if command -v get_deployer_identity &>/dev/null; then
+        get_deployer_identity
+        deployer_id="${DEPLOYER_IDENTITY:-unknown}"
+    else
+        deployer_id="unknown"
+    fi
+
     cat > "$DEPLOYMENT_STATE_FILE" << EOF
 # k0rdent Deployment State
 # Auto-generated on $timestamp
 
 # Basic deployment info
 deployment_id: "$deployment_id"
+deployer: "$deployer_id"
 created_at: "$timestamp"
 last_updated: "$timestamp"
 phase: "preparation"
@@ -778,4 +789,44 @@ check_phase_completion() {
     local status
     status=$(phase_status "${phase_name}")
     [[ "${status}" == "completed" ]]
+}
+
+# Record deployment to history file
+# Args: $1 - cluster_id, $2 - config_file (optional), $3 - deployer (optional)
+record_deployment_history() {
+    local cluster_id="$1"
+    local config_file="${2:-${CONFIG_YAML:-unknown}}"
+    local deployer="${3:-${DEPLOYER_IDENTITY:-unknown}}"
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    local history_file="./old_deployments/deployment-history.yaml"
+
+    # Ensure old_deployments directory exists
+    mkdir -p "./old_deployments"
+
+    # Create history file if it doesn't exist
+    if [[ ! -f "$history_file" ]]; then
+        cat > "$history_file" << INNER_EOF
+# Deployment History Index
+# Tracks all k0rdent deployments for easy lookup
+deployments: []
+INNER_EOF
+    fi
+
+    # Add entry to history
+    yq eval ".deployments += [{\"cluster_id\": \"${cluster_id}\", \"deployed_at\": \"${timestamp}\", \"config_file\": \"${config_file}\", \"deployer\": \"${deployer}\"}]" -i "$history_file"
+
+    print_info "Recorded deployment in history: $cluster_id"
+}
+
+# Show deployment history
+show_deployment_history() {
+    local history_file="./old_deployments/deployment-history.yaml"
+
+    if [[ ! -f "$history_file" ]]; then
+        print_info "No deployment history found"
+        return 0
+    fi
+
+    print_header "Deployment History"
+    yq eval '.deployments[] | "  " + .cluster_id + " | " + .deployed_at + " | " + .deployer' "$history_file"
 }
