@@ -5,6 +5,14 @@ metadata:
   schema: "k0rdent-config"
   description: "Minimal single-node development setup"
 
+  # Owner identity for resource tagging (optional)
+  # If not set, deployer identity is auto-detected from:
+  #   1. git config user.email
+  #   2. $USER@hostname
+  #   3. whoami@hostname
+  # Example: owner: "alice@company.com"
+  # owner: ""
+
   # Azure Infrastructure Settings
 azure:
   location: "westus2"

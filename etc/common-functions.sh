@@ -1809,3 +1809,82 @@ get_worker_nodes() {
     done
     echo "${workers[@]}"
 }
+
+# Sanitize tag value for Azure CLI
+# Removes/escapes special characters and truncates to 256 character limit
+# Args: $1 - tag value to sanitize
+# Returns: Sanitized tag value
+sanitize_tag_value() {
+    local value="$1"
+
+    # Remove characters that could break Azure CLI
+    # Allow: alphanumeric, spaces, dots, hyphens, underscores, colons, @
+    value=$(echo "$value" | tr -cd '[:alnum:][:space:]._-:@')
+
+    # Truncate to Azure's 256 character limit
+    if [[ ${#value} -gt 256 ]]; then
+        value="${value:0:256}"
+    fi
+
+    echo "$value"
+}
+
+# Auto-detect deployer identity for resource tagging
+# Sets: DEPLOYER_IDENTITY environment variable
+# Priority order:
+#   1. metadata.owner from CONFIG_YAML (if explicitly set)
+#   2. git config user.email (if available)
+#   3. $USER@$(hostname -s) (username + short hostname)
+#   4. $(whoami)@$(hostname -s) (fallback)
+#   5. "unknown" (final fallback)
+get_deployer_identity() {
+    local identity=""
+
+    # 1. Check metadata.owner from CONFIG_YAML
+    if [[ -n "${K0RDENT_CONFIG_FILE:-}" ]] && [[ -f "${K0RDENT_CONFIG_FILE}" ]]; then
+        identity=$(yq eval '.metadata.owner // ""' "${K0RDENT_CONFIG_FILE}" 2>/dev/null || echo "")
+        if [[ -n "$identity" ]] && [[ "$identity" != "null" ]]; then
+            print_info_verbose "Deployer identity from metadata.owner: $identity"
+            export DEPLOYER_IDENTITY="$(sanitize_tag_value "$identity")"
+            return 0
+        fi
+    fi
+
+    # 2. Try git config user.email
+    if command -v git &>/dev/null; then
+        identity=$(git config user.email 2>/dev/null || echo "")
+        if [[ -n "$identity" ]]; then
+            print_info_verbose "Deployer identity from git config: $identity"
+            export DEPLOYER_IDENTITY="$(sanitize_tag_value "$identity")"
+            return 0
+        fi
+    fi
+
+    # 3. Try $USER@$(hostname -s)
+    if [[ -n "${USER:-}" ]]; then
+        local short_hostname
+        short_hostname=$(hostname -s 2>/dev/null || echo "localhost")
+        identity="${USER}@${short_hostname}"
+        print_info_verbose "Deployer identity from \$USER: $identity"
+        export DEPLOYER_IDENTITY="$(sanitize_tag_value "$identity")"
+        return 0
+    fi
+
+    # 4. Try $(whoami)@$(hostname -s)
+    if command -v whoami &>/dev/null; then
+        local whoami_result
+        whoami_result=$(whoami 2>/dev/null || echo "")
+        if [[ -n "$whoami_result" ]]; then
+            local short_hostname
+            short_hostname=$(hostname -s 2>/dev/null || echo "localhost")
+            identity="${whoami_result}@${short_hostname}"
+            print_info_verbose "Deployer identity from whoami: $identity"
+            export DEPLOYER_IDENTITY="$(sanitize_tag_value "$identity")"
+            return 0
+        fi
+    fi
+
+    # 5. Final fallback
+    print_info_verbose "Deployer identity: using fallback 'unknown'"
+    export DEPLOYER_IDENTITY="unknown"
+}

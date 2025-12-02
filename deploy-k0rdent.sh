@@ -404,7 +404,11 @@ run_deployment() {
     update_state "deployment_flags.kof" "$WITH_KOF"
     update_state "deployment_start_time" "$DEPLOYMENT_START_DATE_UTC"
     add_event "deployment_started" "Deployment started with flags: azure-children=$WITH_AZURE_CHILDREN, kof=$WITH_KOF"
-    
+
+    # Record deployment in history with deployer identity
+    get_deployer_identity
+    record_deployment_history "$K0RDENT_CLUSTERID" "$CONFIG_YAML" "$DEPLOYER_IDENTITY"
+
     # Start desktop notifier if requested
     if [[ "$WITH_DESKTOP_NOTIFICATIONS" == "true" ]]; then
         print_info "Starting desktop notifier..."
@@ -1281,6 +1285,11 @@ show_deployment_status() {
     echo ""
 }
 
+# Show deployment history
+show_history() {
+    show_deployment_history
+}
+
 # Main execution
 # Handle help flag
 if [[ "${SHOW_HELP:-false}" == "true" ]]; then
@@ -1314,6 +1323,9 @@ case "${POSITIONAL_ARGS[0]:-deploy}" in
     "check")
         bash bin/check-prerequisites.sh
         ;;
+    "history")
+        show_history
+        ;;
     "help"|"-h"|"--help")
         echo "Usage: $0 [options] <command>"
         echo ""
@@ -1322,6 +1334,7 @@ case "${POSITIONAL_ARGS[0]:-deploy}" in
         echo "  reset     Remove all k0rdent resources"
         echo "  config    Show configuration"
         echo "  status    Show deployment status"
+        echo "  history   Show deployment history"
         echo "  check     Check prerequisites only"
         echo "  help      Show this help"
         echo ""
