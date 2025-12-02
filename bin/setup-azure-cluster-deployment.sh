@@ -454,17 +454,11 @@ cleanup_azure_credentials() {
     if [[ "$azure_only" != "true" ]]; then
         export KUBECONFIG="$KUBECONFIG_FILE"
         
-        # Remove KCM Credential
-        kubectl delete credential "$KCM_CREDENTIAL_NAME" -n "$KCM_NAMESPACE" --ignore-not-found
-        
-        # Remove AzureClusterIdentity
-        kubectl delete azureclusteridentity "$AZURE_IDENTITY_NAME" -n "$KCM_NAMESPACE" --ignore-not-found
-        
-        # Remove Kubernetes secret
-        kubectl delete secret "$AZURE_SECRET_NAME" -n "$KCM_NAMESPACE" --ignore-not-found
-        
-        # Remove Azure Resource Template ConfigMap
-        kubectl delete configmap azure-cluster-identity-resource-template -n "$KCM_NAMESPACE" --ignore-not-found
+        # Remove KCM resources
+        kubectl_delete_resources credential "$KCM_CREDENTIAL_NAME" -n "$KCM_NAMESPACE"
+        kubectl_delete_resources azureclusteridentity "$AZURE_IDENTITY_NAME" -n "$KCM_NAMESPACE"
+        kubectl_delete_resources secret "$AZURE_SECRET_NAME" -n "$KCM_NAMESPACE"
+        kubectl_delete_resources configmap azure-cluster-identity-resource-template -n "$KCM_NAMESPACE"
     else
         print_info "Skipping Kubernetes resource cleanup (cluster being deleted in fast reset)"
     fi

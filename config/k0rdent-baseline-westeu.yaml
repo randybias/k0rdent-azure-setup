@@ -1,0 +1,90 @@
+# k0rdent Minimal Configuration
+# Single controller+worker node for development and testing
+metadata:
+  version: "1.0"
+  schema: "k0rdent-config"
+  description: "Minimal single-node development setup"
+
+  # Azure Infrastructure Settings
+azure:
+  location: "westeurope"
+  vm_image: "Debian:debian-12:12-gen2:latest"
+  vm_priority: "Regular"  # Regular | Spot
+  eviction_policy: "Deallocate"  # Deallocate | Delete (for Spot VMs)
+
+# Network configuration
+network:
+  vnet_prefix: "10.0.0.0/16"
+  subnet_prefix: "10.0.1.0/24"
+  wireguard_network: "172.16.32.0/24"
+
+# Use smaller VM sizes for cost savings
+vm_sizing:
+  controller:
+    size: "Standard_D4_v5"  # 2 vCPU, 4GB RAM - widely available across regions
+  worker:
+    size: "Standard_D4_v5"  # Same size for simplicity
+
+# Single node cluster
+cluster:
+  controllers:
+    count: 1
+    zones: [1]  # Single zone
+  workers:
+    count: 1
+    zones: [1]  # Single zone
+
+# SSH Configuration
+ssh:
+  username: "k0rdent"
+  key_comment: "k0rdent-azure-key"
+
+# Software Versions
+software:
+  k0s:
+    version: "v1.33.2+k0s.0"
+  k0rdent:
+    version: "1.4.0"
+    registry: "oci://ghcr.io/k0rdent/kcm/charts/kcm"
+    namespace: "kcm-system"
+
+# Reduced timeouts for faster development cycles
+timeouts:
+  ssh_connect: 30
+  k0s_install_wait: 30
+  k0rdent_install_wait: 1500
+  wireguard_connect_wait: 5
+  vm_creation_minutes: 10
+  vm_wait_check_interval: 30
+  verification_retries: 3
+  verification_retry_delay: 10
+
+# KOF (K0rdent Operations Framework) Configuration
+# KOF is an optional component that can be installed after k0rdent
+kof:
+  enabled: false  # KOF is opt-in, disabled by default
+  version: "1.4.0"
+  
+  # Istio configuration for KOF
+  istio:
+    version: "1.1.0"
+    namespace: "istio-system"
+  
+  # Mothership configuration
+  mothership:
+    namespace: "kof"
+    storage_class: "default"
+    collectors:
+      global: {}  # Custom global collectors can be added here
+  
+  # Regional cluster configuration
+  regional:
+    cluster_name: ""  # Will default to ${K0RDENT_CLUSTERID}-regional
+    domain: "regional.example.com"  # Required for KOF regional cluster
+    admin_email: "admin@example.com"  # Required for KOF certificates
+    location: "southeastasia"  # Azure region for regional cluster
+    template: "azure-standalone-cp-1-0-8"  # k0rdent cluster template
+    credential: "azure-cluster-credential"  # Azure credential name
+    cp_instance_size: "Standard_D4_v5"  # Control plane VM size
+    worker_instance_size: "Standard_D4_v5"  # Worker node VM size
+    root_volume_size: "32"  # Root volume size in GB

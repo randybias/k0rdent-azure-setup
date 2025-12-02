@@ -46,17 +46,12 @@ uninstall_k0rdent() {
     fi
     
     # Find SSH private key
-    SSH_KEY_PATH=$(find ./azure-resources -name "${K0RDENT_CLUSTERID}-ssh-key" -type f 2>/dev/null | head -1)
-    
+    SSH_KEY_PATH=$(find_ssh_key)
+
     if [[ -n "$SSH_KEY_PATH" ]]; then
         # Get the first controller host and WireGuard IP from state
-        local controller_name=""
-        for host in "${VM_HOSTS[@]}"; do
-            if [[ "${VM_TYPE_MAP[$host]}" == "controller" ]]; then
-                controller_name="$host"
-                break
-            fi
-        done
+        local controller_nodes=($(get_controller_nodes))
+        local controller_name="${controller_nodes[0]}"
 
         if [[ -z "$controller_name" ]]; then
             print_warning "No controller node found in configuration; skipping k0rdent uninstall"
@@ -102,7 +97,7 @@ if ! check_file_exists "$KUBECONFIG_FILE" "Kubeconfig file"; then
 fi
 
 # Find SSH private key
-SSH_KEY_PATH=$(find ./azure-resources -name "${K0RDENT_CLUSTERID}-ssh-key" -type f 2>/dev/null | head -1)
+SSH_KEY_PATH=$(find_ssh_key)
 if [[ -z "$SSH_KEY_PATH" ]]; then
     print_error "SSH private key not found. Expected: ./azure-resources/${K0RDENT_CLUSTERID}-ssh-key"
     print_info "Run: ./setup-azure-network.sh"
@@ -132,14 +127,9 @@ if [[ "$COMMAND" == "deploy" ]]; then
     
     # Get the first controller IP
     # Find the first controller node
-    local controller_name=""
-    for host in "${VM_HOSTS[@]}"; do
-        if [[ "${VM_TYPE_MAP[$host]}" == "controller" ]]; then
-            controller_name="$host"
-            break
-        fi
-    done
-    
+    local controller_nodes=($(get_controller_nodes))
+    local controller_name="${controller_nodes[0]}"
+
     if [[ -z "$controller_name" ]]; then
         print_error "No controller node found in configuration"
         exit 1
@@ -236,10 +226,10 @@ fi
 
 show_status() {
     print_header "k0rdent Installation Status"
-    
+
     # Find SSH private key
-    SSH_KEY_PATH=$(find ./azure-resources -name "${K0RDENT_CLUSTERID}-ssh-key" -type f 2>/dev/null | head -1)
-    
+    SSH_KEY_PATH=$(find_ssh_key)
+
     if [[ -n "$SSH_KEY_PATH" ]]; then
         # Get the first controller IP
         CONTROLLER_IP="${WG_IPS[k0s-controller]}"

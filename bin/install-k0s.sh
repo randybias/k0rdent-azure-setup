@@ -95,7 +95,7 @@ generate_k0s_config() {
     fi
 
     # Find SSH private key
-    SSH_KEY_PATH=$(find ./azure-resources -name "${K0RDENT_CLUSTERID}-ssh-key" -type f 2>/dev/null | head -1)
+    SSH_KEY_PATH=$(find_ssh_key)
     if [[ -z "$SSH_KEY_PATH" ]]; then
         print_error "SSH private key not found. Expected: ./azure-resources/${K0RDENT_CLUSTERID}-ssh-key"
         print_info "Run: ./setup-azure-network.sh"
@@ -105,17 +105,8 @@ generate_k0s_config() {
     print_success "Prerequisites validated"
 
     # Build controller and worker node arrays from VM configuration
-    CONTROLLER_NODES=()
-    WORKER_NODES=()
-    for i in "${!VM_HOSTS[@]}"; do
-        host="${VM_HOSTS[$i]}"
-        type="${VM_TYPES[$i]}"
-        if [[ "$type" == "controller" ]]; then
-            CONTROLLER_NODES+=("$host")
-        elif [[ "$type" == "worker" ]]; then
-            WORKER_NODES+=("$host")
-        fi
-    done
+    CONTROLLER_NODES=($(get_controller_nodes))
+    WORKER_NODES=($(get_worker_nodes))
 
     # Create output directory
     ensure_directory "$K0SCTL_DIR"
@@ -144,16 +135,8 @@ spec:
 EOF
 
     # Identify controller and worker nodes from VM configuration
-    CONTROLLER_NODES=()
-    WORKER_NODES=()
-
-    for HOST in "${VM_HOSTS[@]}"; do
-        if [[ "${VM_TYPE_MAP[$HOST]}" == "controller" ]]; then
-            CONTROLLER_NODES+=("$HOST")
-        else
-            WORKER_NODES+=("$HOST")
-        fi
-    done
+    CONTROLLER_NODES=($(get_controller_nodes))
+    WORKER_NODES=($(get_worker_nodes))
 
     # Add controller nodes
     print_info "Adding ${#CONTROLLER_NODES[@]} controller nodes to configuration..."

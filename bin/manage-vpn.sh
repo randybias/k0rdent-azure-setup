@@ -792,14 +792,10 @@ reset_and_cleanup() {
         interface_name="wgk0${K0RDENT_CLUSTERID#k0rdent-}"
     fi
     
-    # First disconnect if connected
+    # First disconnect if connected - always attempt shutdown if config file exists
     if [[ -f "$WG_CONFIG_FILE" ]]; then
-        # Check if interface is active and disconnect
-        local wg_output=$(run_wg_command wg-show 2>/dev/null)
-        if [[ -n "$wg_output" ]]; then
-            print_info "Disconnecting active WireGuard connection..."
-            shutdown_wireguard_interface "$WG_CONFIG_FILE"
-        fi
+        print_info "Disconnecting WireGuard VPN..."
+        shutdown_wireguard_interface "$WG_CONFIG_FILE"
     else
         # No config file, but check if interface is still active using state
         if [[ "$(uname)" == "Darwin" ]]; then
@@ -807,7 +803,7 @@ reset_and_cleanup() {
             if [[ -n "$stored_utun" ]] && ifconfig "$stored_utun" &>/dev/null; then
                 print_warning "Found active WireGuard interface without config file: $stored_utun"
                 print_info "Attempting to shut down orphaned interface..."
-                
+
                 # Try to shut it down using wg-quick with the interface name
                 if run_wg_command wg-quick-down "$interface_name" 2>/dev/null; then
                     print_success "Orphaned interface shut down"
@@ -844,38 +840,11 @@ reset_and_cleanup() {
         print_info "No WireGuard configuration directory found."
     fi
     
-    # The wg-quick down command should have cleaned up the runtime files
-    # If not, there's likely an issue with the WireGuard state
+    # Check if runtime files are still present (wg-quick down should have cleaned them)
     if [[ "$(uname)" == "Darwin" ]] && [[ -n "$interface_name" ]]; then
-        # Check if this specific interface's files still exist
-        if [[ -f "/var/run/wireguard/${interface_name}.name" ]]; then
-            print_warning "WireGuard runtime files still exist for $interface_name"
-            
-            # Try to clean up using the stored utun interface name
-            local stored_utun=$(get_state "wg_macos_interface" || echo "")
-            if [[ -n "$stored_utun" ]]; then
-                print_info "Cleaning up orphaned files for $interface_name (${stored_utun})"
-                
-                # Remove the socket file if it exists
-                if [[ -S "/var/run/wireguard/${stored_utun}.sock" ]]; then
-                    print_info "Removing orphaned socket: /var/run/wireguard/${stored_utun}.sock"
-                    # Use the wg-wrapper if available to avoid sudo
-                    if command -v ./bin/utils/wg-wrapper &>/dev/null && [[ -u ./bin/utils/wg-wrapper ]]; then
-                        # We'd need to add a cleanup command to wg-wrapper for this
-                        print_info "Manual cleanup required: sudo rm -f /var/run/wireguard/${stored_utun}.sock"
-                    else
-                        print_info "Manual cleanup required: sudo rm -f /var/run/wireguard/${stored_utun}.sock"
-                    fi
-                fi
-                
-                # Remove the name file
-                if [[ -f "/var/run/wireguard/${interface_name}.name" ]]; then
-                    print_info "Manual cleanup required: sudo rm -f /var/run/wireguard/${interface_name}.name"
-                fi
-            else
-                print_info "No stored utun interface found in state"
-                print_info "Manual cleanup may be required for /var/run/wireguard/ files"
-            fi
+        if [[ -f "/var/run/wireguard/${interface_name}.name" ]] || ls /var/run/wireguard/*.sock &>/dev/null 2>&1; then
+            print_warning "WireGuard runtime files still exist in /var/run/wireguard/"
+            print_info "Manual cleanup may be required: sudo rm -f /var/run/wireguard/${interface_name}.name /var/run/wireguard/*.sock"
         fi
     fi
     

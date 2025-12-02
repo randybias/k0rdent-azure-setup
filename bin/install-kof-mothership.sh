@@ -143,7 +143,7 @@ deploy_kof_mothership() {
         add_event "kof_operators_installation_failed" "Failed to install KOF operators"
         return 1
     fi
-    
+
     # Step 4: Install KOF mothership
     print_header "Step 4: Installing KOF Mothership"
     print_info "Installing kof-mothership chart..."
