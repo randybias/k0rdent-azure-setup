@@ -634,9 +634,15 @@ update_azure_state() {
     
     # Initialize if doesn't exist
     if [[ ! -f "$AZURE_STATE_FILE" ]]; then
-        init_azure_state
+        mkdir -p "$STATE_DIR"
+        cat > "$AZURE_STATE_FILE" <<EOF
+# Azure Credentials State
+# Auto-generated on $(date -u +%Y-%m-%dT%H:%M:%SZ)
+azure_credentials_configured: false
+last_updated: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+EOF
     fi
-    
+
     # Handle boolean values properly
     if [[ "$value" == "true" ]] || [[ "$value" == "false" ]]; then
         yq eval ".${key} = ${value}" -i "$AZURE_STATE_FILE"
@@ -667,9 +673,15 @@ add_azure_event() {
     
     # Initialize if doesn't exist
     if [[ ! -f "$AZURE_EVENTS_FILE" ]]; then
-        init_azure_state
+        mkdir -p "$STATE_DIR"
+        cat > "$AZURE_EVENTS_FILE" <<EOF
+# Azure Events Log
+# Auto-generated on $(date -u +%Y-%m-%dT%H:%M:%SZ)
+events: []
+last_updated: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+EOF
     fi
-    
+
     # Add event to events array
     yq eval ".events += [{\"timestamp\": \"${timestamp}\", \"action\": \"${action}\", \"message\": \"${message}\"}]" -i "$AZURE_EVENTS_FILE"
     yq eval ".last_updated = \"${timestamp}\"" -i "$AZURE_EVENTS_FILE"
