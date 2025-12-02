@@ -102,10 +102,9 @@ create_regional_cluster_core() {
     print_info "Creating cluster deployment for: $regional_cluster_name"
     print_info "Location: $location, Template: $template"
     
-    # Use the enhanced create-child.sh script to deploy the regional cluster
-    if ! bash bin/create-child.sh \
+    # Use the create-azure-child.sh script to deploy the regional cluster
+    if ! bash bin/create-azure-child.sh \
         --cluster-name "$regional_cluster_name" \
-        --cloud azure \
         --location "$location" \
         --cp-instance-size "$cp_instance_size" \
         --worker-instance-size "$worker_instance_size" \

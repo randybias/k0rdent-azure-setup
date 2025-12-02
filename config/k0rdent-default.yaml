@@ -64,16 +64,20 @@ timeouts:
 kof:
   enabled: false  # KOF is opt-in, disabled by default
   version: "1.1.0"
-  
+
   # Istio configuration for KOF
   istio:
     version: "1.1.0"
     namespace: "istio-system"
-  
+
   # Mothership configuration
   mothership:
     namespace: "kof"
     storage_class: "default"
+    # Retry settings for webhook race condition
+    # The Victoria Metrics operator webhook may not be ready when helm tries to create CRs
+    install_retries: 3           # Number of helm install attempts
+    retry_delay_seconds: 30      # Delay between retries to allow webhook to stabilize
     collectors:
       global: {}  # Custom global collectors can be added here
   

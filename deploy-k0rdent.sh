@@ -570,7 +570,7 @@ show_next_steps() {
         echo ""
         echo "Azure Child Clusters:"
         echo "  - Azure credentials configured for child cluster deployment"
-        echo "  - Deploy child clusters: ./bin/create-child.sh --help"
+        echo "  - Deploy child clusters: ./bin/create-azure-child.sh --help"
     fi
     
     if [[ "$WITH_KOF" == "true" ]]; then

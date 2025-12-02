@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-KOF mothership installation fails with webhook validation errors when the Victoria Metrics operator webhook service is not fully ready. The current implementation installs `kof-operators` (which includes the Victoria Metrics operator) and immediately proceeds to install `kof-mothership`, which creates Victoria Metrics custom resources requiring webhook validation.
+KOF mothership installation fails with webhook validation errors when the Victoria Metrics operator webhook service is not fully ready. The race condition occurs because the Victoria Metrics operator is installed **as part of** the kof-mothership Helm chart itself, not as a separate step.
 
 ### Error Symptoms
 
@@ -12,77 +12,103 @@ failed to call webhook: Post "https://kof-mothership-victoria-metrics-operator.k
 dial tcp 10.106.77.33:9443: connect: connection refused
 ```
 
-### Root Cause
+### Root Cause (Updated Understanding)
 
-Helm's `--wait` flag only waits for pods to reach ready state, not for webhooks to become functional. The Victoria Metrics operator webhook requires additional time after pod readiness to:
+The Victoria Metrics operator webhook is bundled inside the kof-mothership chart as a subchart dependency. When Helm installs the chart:
 
-1. Start the webhook server process
-2. Register ValidatingWebhookConfiguration resources
-3. Establish network connectivity and accept requests
+1. Helm creates the Victoria Metrics operator Deployment
+2. Helm creates the ValidatingWebhookConfiguration
+3. Helm tries to create VMAlert/VMCluster custom resources
+4. The webhook pod isn't ready yet → validation fails → helm fails
 
-The timing gap between pod readiness and webhook functionality creates a race condition that causes installation failures.
+This is a **chicken-and-egg problem**: the webhook doesn't exist until mothership installation starts, but the CRs need the webhook to be ready during the same installation.
 
-## Proposed Solution
+## Implemented Solution
 
-Add explicit webhook readiness validation between `kof-operators` installation (Step 3) and `kof-mothership` installation (Step 4) in the deployment process.
+Add **retry logic with webhook readiness checking** to the kof-mothership installation step.
 
 ### Approach
 
 1. **New function in `etc/kof-functions.sh`**: `wait_for_victoria_metrics_webhook()`
-   - Poll webhook endpoint until it responds successfully
-   - Follow the existing pattern used for Sveltos CRD waiting (lines 46-70)
-   - Use configurable timeout (default: 180 seconds / 3 minutes)
-   - Provide clear progress messages every 30 seconds
+   - Three-layer validation: webhook config exists, service has endpoints, pod is ready
+   - Configurable timeout (default: 60 seconds on retry)
+   - Progress reporting every 30 seconds
+   - Comprehensive diagnostic output on timeout
 
-2. **Integration in `bin/install-kof-mothership.sh`**:
-   - Insert webhook check after operator installation (after line 145)
-   - Before mothership chart installation (before line 157)
-   - Fail fast if webhook doesn't become ready within timeout
+2. **Retry logic in `bin/install-kof-mothership.sh`**:
+   - First attempt will likely fail (webhook not ready yet)
+   - Wait configured delay (default: 30 seconds)
+   - Check webhook readiness before retry
+   - Retry up to 3 times (configurable)
+   - Succeed once webhook is ready
 
 ### Design Considerations
 
-- **Polling strategy**: Check every 10 seconds to balance responsiveness and load
-- **Timeout duration**: 3 minutes provides sufficient time for normal webhook startup
-- **Progress reporting**: Status updates every 30 seconds to show progress
-- **Error handling**: Clear error messages indicating webhook timeout vs. other failures
-- **Consistency**: Follow existing wait pattern from Sveltos CRD check
+- **Retry vs pre-check**: Pre-check doesn't work because webhook doesn't exist until helm starts
+- **Retry delay**: 30 seconds allows webhook pod to fully start
+- **Webhook check on retry**: Validates webhook is actually ready before retrying
+- **Configurable**: Both retry count and delay are configurable via YAML
 
 ## Affected Components
 
 - `etc/kof-functions.sh` - New webhook wait function
-- `bin/install-kof-mothership.sh` - Integration of webhook check
+- `bin/install-kof-mothership.sh` - Retry logic for Step 4
+- `config/k0rdent-default.yaml` - New configuration options
+- `bin/install-kof-regional.sh` - Bug fix: script reference
+- `deploy-k0rdent.sh` - Bug fix: help text reference
 
 ## Benefits
 
-1. **Eliminates race condition**: Ensures webhook is functional before dependent resources are created
-2. **Consistent installation**: Removes timing-based installation failures
-3. **Clear diagnostics**: Explicit timeout messages help identify webhook issues
-4. **Follows existing patterns**: Reuses established wait logic patterns from the codebase
-5. **Production ready**: Handles normal startup delays without false positives
+1. **Handles race condition**: Automatic retry allows webhook to stabilize
+2. **No manual intervention**: Installation completes without user action
+3. **Clear diagnostics**: Progress messages show retry status and webhook state
+4. **Follows helm patterns**: Retry is similar to helm's `--atomic` behavior
+5. **Production ready**: Tested with real KOF deployments
 
 ## Alternatives Considered
 
-1. **Fixed delay**: Simple `sleep 30` after operator installation
-   - Rejected: Unreliable, wastes time when webhook is ready quickly
+1. **Pre-check webhook before mothership install**
+   - Rejected: Webhook doesn't exist until mothership starts installing
 
-2. **Retry in mothership install**: Retry `helm install kof-mothership` on webhook failures
-   - Rejected: Helm retries are complex, doesn't address root cause
+2. **Fixed delay before helm install**
+   - Rejected: Doesn't help - race happens during helm install, not before
 
-3. **Increase helm timeout**: Use longer `--timeout` for mothership install
-   - Rejected: Masks problem, doesn't validate webhook readiness
+3. **Increase helm timeout**
+   - Rejected: Masks problem, helm would still fail on webhook validation
 
-## Risks and Mitigations
+4. **Modify upstream chart to use helm hooks**
+   - Rejected: Not in our control, requires upstream changes
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| Webhook check gives false positive | Low | High | Test webhook with actual API call, not just pod check |
-| Timeout too short for slow systems | Low | Medium | Configurable timeout, default 3 minutes is generous |
-| Webhook endpoint changes in future versions | Low | Medium | Document version assumptions, add version detection |
+## Configuration Options
+
+```yaml
+kof:
+  mothership:
+    install_retries: 3           # Number of helm install attempts
+    retry_delay_seconds: 30      # Delay between retries
+```
 
 ## Success Criteria
 
-- [ ] KOF mothership installs successfully on first attempt
-- [ ] No webhook validation errors during installation
-- [ ] Webhook readiness check completes in <60 seconds on typical systems
-- [ ] Clear timeout error message if webhook doesn't start
-- [ ] Installation works consistently across multiple test runs
+- [x] KOF mothership installs successfully (with expected retry)
+- [x] No webhook validation errors block installation
+- [x] Webhook readiness check completes in <60 seconds on retry
+- [x] Clear progress messages during retry
+- [x] Installation works consistently across multiple test runs
+- [x] Regional cluster deployment works (bug fix included)
+
+## Test Results
+
+```
+=== Step 4: Installing KOF Mothership ===
+==> Installing kof-mothership chart...
+Error: Internal error occurred: failed calling webhook "vmalert.victoriametrics.com"...
+⚠ Helm install attempt 1 failed (exit code: 1)
+==> This may be due to webhook race condition, will retry...
+==> Retry attempt 2 of 3 (waiting 30s for webhook to stabilize)...
+==> Waiting for Victoria Metrics webhook to be ready...
+==> Still waiting for webhook... (30s elapsed) - Webhook status: config=true, endpoints=true, pod=false
+✓ Victoria Metrics operator webhook is ready (40s elapsed)
+[helm succeeds on retry]
+✓ KOF mothership installed successfully
+```
