@@ -252,7 +252,8 @@ phase_reset_from() {
             found=1
             break
         fi
-        ((index++))
+        # Use pre-increment to avoid exit code 1 when index=0 with set -e
+        ((++index))
     done
 
     if [[ $found -eq 0 ]]; then

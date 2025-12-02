@@ -26,7 +26,8 @@ deploy_cluster_with_retry() {
             return 0
         fi
 
-        ((retry_count++))
+        # Use pre-increment to avoid exit code 1 when retry_count=0 with set -e
+        ((++retry_count))
 
         if [[ $retry_count -lt $max_retries ]]; then
             print_warning "Deployment attempt $retry_count failed"
