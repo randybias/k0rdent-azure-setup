@@ -451,46 +451,184 @@ get_wg_quick_path() {
     which wg-quick 2>/dev/null || echo "/usr/bin/wg-quick"
 }
 
-# Check if the setuid wrapper is available
-check_wg_wrapper() {
-    # Get the directory where k0rdent-config.sh is located
-    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    local wrapper_path="$(cd "$script_dir/.." && pwd)/bin/utils/wg-wrapper"
-    
+# WireGuard wrapper status codes
+WG_WRAPPER_READY=0        # Wrapper exists and has setuid bit
+WG_WRAPPER_NOT_COMPILED=1 # Source exists but binary not compiled
+WG_WRAPPER_NO_SETUID=2    # Binary exists but missing setuid bit
+WG_WRAPPER_NOT_FOUND=3    # Wrapper not found at all
+
+# Check the status of the setuid wrapper
+# Returns status code and sets WG_WRAPPER_PATH if found
+# Usage: check_wg_wrapper_status; then check $?
+check_wg_wrapper_status() {
+    # Determine project root - handle being sourced from different locations
+    local script_dir
+    local project_root
+
+    # Try to get the directory of common-functions.sh itself
+    if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || true
+    fi
+
+    # If that failed or is empty, try PROJECT_ROOT if set
+    if [[ -z "${script_dir:-}" ]] && [[ -n "${PROJECT_ROOT:-}" ]]; then
+        project_root="$PROJECT_ROOT"
+    elif [[ -n "${script_dir:-}" ]]; then
+        project_root="$(cd "$script_dir/.." 2>/dev/null && pwd)" || true
+    fi
+
+    # Final fallback to current directory
+    if [[ -z "${project_root:-}" ]]; then
+        project_root="$(pwd)"
+    fi
+
+    local wrapper_path="$project_root/bin/utils/wg-wrapper"
+    local source_path="$project_root/bin/utils/code/wg-wrapper.c"
+
+    # Export path for use by caller
+    export WG_WRAPPER_PATH="$wrapper_path"
+    export WG_WRAPPER_SOURCE="$source_path"
+    export WG_WRAPPER_BUILD_SCRIPT="$project_root/bin/utils/build-wg-wrapper.sh"
+
     if [[ -f "$wrapper_path" ]] && [[ -u "$wrapper_path" ]]; then
-        echo "$wrapper_path"
+        # Wrapper exists and has setuid bit - ready to use
+        return $WG_WRAPPER_READY
+    elif [[ -f "$wrapper_path" ]] && [[ ! -u "$wrapper_path" ]]; then
+        # Binary exists but missing setuid bit
+        return $WG_WRAPPER_NO_SETUID
+    elif [[ -f "$source_path" ]]; then
+        # Source exists but binary not compiled
+        return $WG_WRAPPER_NOT_COMPILED
+    else
+        # Wrapper not found at all
+        return $WG_WRAPPER_NOT_FOUND
+    fi
+}
+
+# Check if the setuid wrapper is available (legacy interface)
+# Returns 0 and echoes path if ready, 1 otherwise
+check_wg_wrapper() {
+    check_wg_wrapper_status
+    local status=$?
+    if [[ $status -eq $WG_WRAPPER_READY ]]; then
+        echo "$WG_WRAPPER_PATH"
         return 0
     fi
     return 1
 }
 
-# Execute WireGuard command with wrapper if available, otherwise use sudo
-run_wg_command() {
-    local wrapper_path
-    if wrapper_path=$(check_wg_wrapper); then
-        # Use wrapper without sudo
-        "$wrapper_path" "$@"
+# Get human-readable description of wrapper status
+get_wg_wrapper_status_message() {
+    local status=$1
+    case $status in
+        $WG_WRAPPER_READY)
+            echo "WireGuard wrapper is ready to use"
+            ;;
+        $WG_WRAPPER_NOT_COMPILED)
+            echo "WireGuard wrapper source exists but binary is not compiled"
+            ;;
+        $WG_WRAPPER_NO_SETUID)
+            echo "WireGuard wrapper binary exists but is missing setuid permissions"
+            ;;
+        $WG_WRAPPER_NOT_FOUND)
+            echo "WireGuard wrapper not found"
+            ;;
+        *)
+            echo "Unknown wrapper status: $status"
+            ;;
+    esac
+}
+
+# Offer to build the WireGuard wrapper
+# Returns 0 if wrapper is ready after function completes, 1 otherwise
+offer_to_build_wg_wrapper() {
+    # Use if/else to capture status without triggering set -e
+    local status
+    if check_wg_wrapper_status; then
+        status=0
     else
-        # Fall back to sudo
-        case "$1" in
-            wg-show)
-                shift
-                sudo wg show "$@"
-                ;;
-            wg-quick-up)
-                shift
-                sudo wg-quick up "$@"
-                ;;
-            wg-quick-down)
-                shift
-                sudo wg-quick down "$@"
-                ;;
-            *)
-                echo "Unknown command: $1" >&2
-                return 1
-                ;;
-        esac
+        status=$?
     fi
+
+    # Already ready - nothing to do
+    if [[ $status -eq 0 ]]; then
+        return 0
+    fi
+
+    echo
+    print_warning "WireGuard wrapper is not ready"
+    print_info "$(get_wg_wrapper_status_message $status)"
+    echo
+    print_info "The WireGuard wrapper allows VPN operations without requiring sudo for each command."
+    print_info "Building it requires sudo once to set up the setuid binary."
+    echo
+
+    # Check if we can build it
+    if [[ $status -eq 3 ]]; then  # WG_WRAPPER_NOT_FOUND
+        print_error "Cannot build wrapper: source file not found at $WG_WRAPPER_SOURCE"
+        print_info "This may indicate an incomplete installation or worktree."
+        return 1
+    fi
+
+    # Non-interactive mode (--yes flag): automatically build the wrapper
+    if [[ "${SKIP_PROMPTS:-false}" == "true" ]]; then
+        print_info "Non-interactive mode: automatically building WireGuard wrapper..."
+    else
+        # Interactive mode: offer to build
+        print_info "Would you like to build the WireGuard wrapper now?"
+        read -p "Build wrapper? (yes/no): " -r
+        echo
+
+        if [[ ! $REPLY =~ ^[Yy]([Ee][Ss])?$ ]]; then
+            print_warning "Wrapper build declined."
+            print_info "To build manually later, run:"
+            print_info "  $WG_WRAPPER_BUILD_SCRIPT"
+            return 1
+        fi
+    fi
+
+    # Build the wrapper
+    print_info "Building WireGuard wrapper..."
+    if "$WG_WRAPPER_BUILD_SCRIPT"; then
+        # Verify it's ready now - use if/else pattern
+        if check_wg_wrapper_status; then
+            status=0
+        else
+            status=$?
+        fi
+        if [[ $status -eq 0 ]]; then
+            print_success "WireGuard wrapper built and ready!"
+            return 0
+        else
+            print_error "Wrapper built but not ready: $(get_wg_wrapper_status_message $status)"
+            return 1
+        fi
+    else
+        print_error "Failed to build WireGuard wrapper"
+        return 1
+    fi
+}
+
+# Execute WireGuard command with wrapper
+# Requires wrapper to be available - does NOT fall back to sudo silently
+run_wg_command() {
+    check_wg_wrapper_status
+    local status=$?
+
+    # If wrapper is ready, use it directly
+    if [[ $status -eq $WG_WRAPPER_READY ]]; then
+        "$WG_WRAPPER_PATH" "$@"
+        return $?
+    fi
+
+    # Wrapper not ready - offer to build it
+    if ! offer_to_build_wg_wrapper; then
+        print_error "Cannot execute WireGuard command: wrapper not available"
+        return 1
+    fi
+
+    # Try again after successful build
+    "$WG_WRAPPER_PATH" "$@"
 }
 
 # File existence validation

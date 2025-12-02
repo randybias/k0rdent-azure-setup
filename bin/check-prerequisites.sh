@@ -105,17 +105,17 @@ check_azure_cli() {
 # Function to check for WireGuard tools
 check_wireguard_tools() {
     print_info "Checking for WireGuard tools..."
-    
+
     local missing_tools=()
-    
+
     if ! command -v wg &> /dev/null; then
         missing_tools+=("wg")
     fi
-    
+
     if ! command -v wg-quick &> /dev/null; then
         missing_tools+=("wg-quick")
     fi
-    
+
     if [[ ${#missing_tools[@]} -gt 0 ]]; then
         print_error "WireGuard tools missing: ${missing_tools[*]}"
         print_info "To install WireGuard:"
@@ -126,6 +126,46 @@ check_wireguard_tools() {
     else
         print_success "WireGuard tools: wg, wg-quick ✓"
     fi
+}
+
+# Function to check WireGuard wrapper status (informational, not blocking)
+check_wg_wrapper_status_prereq() {
+    print_info "Checking WireGuard wrapper status..."
+
+    # Use the status check function from common-functions.sh
+    # Capture return code without triggering set -e on non-zero
+    local status
+    if check_wg_wrapper_status; then
+        status=0
+    else
+        status=$?
+    fi
+
+    # Use literal values (0=ready, 1=not compiled, 2=no setuid, 3=not found)
+    case $status in
+        0)
+            print_success "WireGuard wrapper: Ready ✓"
+            ;;
+        1)
+            print_warning "WireGuard wrapper: Not compiled (optional)"
+            print_info "  The wrapper enables passwordless VPN operations."
+            print_info "  To build: $WG_WRAPPER_BUILD_SCRIPT"
+            ;;
+        2)
+            print_warning "WireGuard wrapper: Missing setuid bit (optional)"
+            print_info "  The wrapper binary exists but needs setuid permissions."
+            print_info "  To fix: $WG_WRAPPER_BUILD_SCRIPT"
+            ;;
+        3)
+            print_warning "WireGuard wrapper: Not found (optional)"
+            print_info "  Source file not found at expected location."
+            print_info "  This may indicate an incomplete clone or worktree."
+            ;;
+        *)
+            print_warning "WireGuard wrapper: Unknown status $status (optional)"
+            ;;
+    esac
+    # Note: This check is informational only - does not set ALL_CHECKS_PASSED=false
 }
 
 # Function to check for k0sctl
@@ -374,6 +414,7 @@ main() {
     check_git
     check_azure_cli
     check_wireguard_tools
+    check_wg_wrapper_status_prereq
     check_k0sctl
     check_kubectl
     check_helm

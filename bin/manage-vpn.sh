@@ -184,6 +184,25 @@ validate_full_prerequisites() {
 setup_vpn() {
     print_header "Setting Up WireGuard VPN (One-Time Setup)"
 
+    # Check WireGuard wrapper status early - offer to build if needed
+    # This provides a better first-run experience by handling wrapper setup upfront
+    # Use if/else to capture status without triggering set -e on non-zero return
+    local wrapper_status
+    if check_wg_wrapper_status; then
+        wrapper_status=0
+    else
+        wrapper_status=$?
+    fi
+
+    if [[ $wrapper_status -ne 0 ]]; then
+        print_info "Checking WireGuard wrapper before VPN setup..."
+        if ! offer_to_build_wg_wrapper; then
+            print_error "WireGuard wrapper is required for VPN operations."
+            print_info "Please build the wrapper and try again."
+            return 1
+        fi
+    fi
+
     if state_file_exists && phase_is_completed "setup_vpn"; then
         if validate_vpn_setup_state; then
             print_success "WireGuard VPN setup already complete. Nothing to do."
@@ -654,6 +673,24 @@ test_wireguard_connectivity() {
 connect_wireguard() {
     print_header "Connecting to WireGuard VPN"
 
+    # Check WireGuard wrapper status early - offer to build if needed
+    # Use if/else to capture status without triggering set -e on non-zero return
+    local wrapper_status
+    if check_wg_wrapper_status; then
+        wrapper_status=0
+    else
+        wrapper_status=$?
+    fi
+
+    if [[ $wrapper_status -ne 0 ]]; then
+        print_info "Checking WireGuard wrapper before connecting..."
+        if ! offer_to_build_wg_wrapper; then
+            print_error "WireGuard wrapper is required for VPN operations."
+            print_info "Please build the wrapper and try again."
+            return 1
+        fi
+    fi
+
     if state_file_exists && phase_is_completed "connect_vpn"; then
         if validate_vpn_connection_state; then
             print_success "WireGuard VPN already connected."
@@ -662,13 +699,13 @@ connect_wireguard() {
         print_warning "VPN connection recorded as active but validation failed. Reconnecting."
         phase_reset_from "connect_vpn"
     fi
-    
+
     # Check if setup is complete
     if ! check_setup_complete; then
         print_error "VPN setup not complete. Run '$0 setup' first."
         exit 1
     fi
-    
+
     # Validate prerequisites
     validate_connection_prerequisites
     
