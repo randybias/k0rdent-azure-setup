@@ -133,5 +133,113 @@ check_kof_operators_installed() {
     helm list -n "$namespace" | grep -q "kof-operators"
 }
 
-# All other functions (check_vpn_connectivity, execute_remote_command, etc.) 
+# Wait for Victoria Metrics operator webhook to become ready
+# This prevents race conditions where kof-mothership installation fails because
+# the webhook is not yet accepting requests after kof-operators helm install completes.
+#
+# The webhook requires three components to be ready:
+# 1. ValidatingWebhookConfiguration must exist
+# 2. Webhook service must have endpoints
+# 3. Webhook pod must be ready
+#
+# Parameters:
+#   $1 - namespace (optional, defaults to "kof")
+#   $2 - timeout in seconds (optional, defaults to 180)
+#
+# Returns:
+#   0 - webhook is ready
+#   1 - timeout or error
+wait_for_victoria_metrics_webhook() {
+    local namespace="${1:-kof}"
+    local timeout_seconds="${2:-180}"
+    local check_interval=10
+    local progress_interval=30
+    local elapsed=0
+    local last_progress=0
+
+    # Ensure minimum timeout of 30 seconds
+    if [[ $timeout_seconds -lt 30 ]]; then
+        timeout_seconds=30
+    fi
+
+    print_info "Waiting for Victoria Metrics operator webhook to be ready (timeout: ${timeout_seconds}s)..."
+
+    while [[ $elapsed -lt $timeout_seconds ]]; do
+        # Check 1: ValidatingWebhookConfiguration exists
+        local webhook_config_exists=false
+        if kubectl get validatingwebhookconfigurations -l app.kubernetes.io/name=victoria-metrics-operator &>/dev/null 2>&1; then
+            local webhook_count
+            webhook_count=$(kubectl get validatingwebhookconfigurations -l app.kubernetes.io/name=victoria-metrics-operator --no-headers 2>/dev/null | wc -l | tr -d ' ')
+            if [[ $webhook_count -gt 0 ]]; then
+                webhook_config_exists=true
+            fi
+        fi
+
+        # Check 2: Webhook service has endpoints
+        local endpoints_ready=false
+        if [[ "$webhook_config_exists" == "true" ]]; then
+            local endpoint_count
+            endpoint_count=$(kubectl get endpoints -n "$namespace" -l app.kubernetes.io/name=victoria-metrics-operator --no-headers 2>/dev/null | awk '{print $2}' | grep -v '<none>' | head -1)
+            if [[ -n "$endpoint_count" ]] && [[ "$endpoint_count" != "<none>" ]]; then
+                endpoints_ready=true
+            fi
+        fi
+
+        # Check 3: Webhook pod is ready
+        local pod_ready=false
+        if [[ "$endpoints_ready" == "true" ]]; then
+            local ready_pods
+            ready_pods=$(kubectl get pods -n "$namespace" -l app.kubernetes.io/name=victoria-metrics-operator -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
+            if [[ "$ready_pods" == *"True"* ]]; then
+                pod_ready=true
+            fi
+        fi
+
+        # All checks passed
+        if [[ "$webhook_config_exists" == "true" ]] && [[ "$endpoints_ready" == "true" ]] && [[ "$pod_ready" == "true" ]]; then
+            print_success "Victoria Metrics operator webhook is ready (${elapsed}s elapsed)"
+            return 0
+        fi
+
+        # Progress reporting every 30 seconds
+        if [[ $((elapsed - last_progress)) -ge $progress_interval ]] && [[ $elapsed -gt 0 ]]; then
+            local status_msg="Webhook status: config=$webhook_config_exists, endpoints=$endpoints_ready, pod=$pod_ready"
+            print_info "Still waiting for webhook... (${elapsed}s elapsed) - $status_msg"
+            last_progress=$elapsed
+        fi
+
+        sleep $check_interval
+        elapsed=$((elapsed + check_interval))
+    done
+
+    # Timeout - provide diagnostic information
+    print_error "Timeout waiting for Victoria Metrics operator webhook after ${timeout_seconds} seconds"
+    print_info ""
+    print_info "Diagnostic Information:"
+    print_info "========================"
+
+    # Report ValidatingWebhookConfiguration status
+    print_info "ValidatingWebhookConfigurations:"
+    kubectl get validatingwebhookconfigurations -l app.kubernetes.io/name=victoria-metrics-operator 2>/dev/null || print_info "  (none found)"
+
+    # Report service endpoints
+    print_info ""
+    print_info "Webhook Service Endpoints:"
+    kubectl get endpoints -n "$namespace" -l app.kubernetes.io/name=victoria-metrics-operator 2>/dev/null || print_info "  (none found)"
+
+    # Report pod status
+    print_info ""
+    print_info "Webhook Pod Status:"
+    kubectl get pods -n "$namespace" -l app.kubernetes.io/name=victoria-metrics-operator 2>/dev/null || print_info "  (none found)"
+
+    print_info ""
+    print_info "Troubleshooting suggestions:"
+    print_info "  1. Check operator logs: kubectl logs -n $namespace -l app.kubernetes.io/name=victoria-metrics-operator"
+    print_info "  2. Check operator events: kubectl get events -n $namespace --sort-by='.lastTimestamp'"
+    print_info "  3. Verify kof-operators helm release: helm status kof-operators -n $namespace"
+
+    return 1
+}
+
+# All other functions (check_vpn_connectivity, execute_remote_command, etc.)
 # are already available from common-functions.sh

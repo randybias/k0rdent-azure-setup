@@ -144,25 +144,66 @@ deploy_kof_mothership() {
         return 1
     fi
 
-    # Step 4: Install KOF mothership
+    # Step 4: Install KOF mothership (with retry for webhook race condition)
+    # The Victoria Metrics operator webhook is installed AS PART OF the mothership chart.
+    # A race condition can occur where helm creates the webhook config but then tries to
+    # create Victoria Metrics CRs before the webhook is ready to accept requests.
+    # Solution: Retry the helm install if it fails with webhook errors.
     print_header "Step 4: Installing KOF Mothership"
     print_info "Installing kof-mothership chart..."
-    
+
     # Prepare values for mothership installation
     local values_args=""
     if [[ "$storage_class" != "default" ]]; then
         values_args="--set storageClass=$storage_class"
     fi
-    
-    if helm upgrade -i --reset-values --wait \
-        -n "$kof_namespace" kof-mothership \
-        oci://ghcr.io/k0rdent/kof/charts/kof-mothership \
-        --version "$kof_version" $values_args; then
+
+    # Get retry configuration
+    local max_retries
+    max_retries=$(get_kof_config "mothership.install_retries" "3")
+    local retry_delay
+    retry_delay=$(get_kof_config "mothership.retry_delay_seconds" "30")
+    local attempt=1
+    local install_success=false
+
+    while [[ $attempt -le $max_retries ]]; do
+        if [[ $attempt -gt 1 ]]; then
+            print_info "Retry attempt $attempt of $max_retries (waiting ${retry_delay}s for webhook to stabilize)..."
+            sleep "$retry_delay"
+
+            # On retry, wait for Victoria Metrics webhook if it exists
+            if kubectl get validatingwebhookconfigurations 2>/dev/null | grep -q "victoria-metrics"; then
+                print_info "Waiting for Victoria Metrics webhook to be ready..."
+                wait_for_victoria_metrics_webhook "$kof_namespace" "60" || true
+            fi
+        fi
+
+        if helm upgrade -i --reset-values --wait \
+            -n "$kof_namespace" kof-mothership \
+            oci://ghcr.io/k0rdent/kof/charts/kof-mothership \
+            --version "$kof_version" $values_args 2>&1; then
+            install_success=true
+            break
+        else
+            local exit_code=$?
+            print_warning "Helm install attempt $attempt failed (exit code: $exit_code)"
+
+            # Check if this looks like a webhook error
+            if [[ $attempt -lt $max_retries ]]; then
+                print_info "This may be due to webhook race condition, will retry..."
+                add_event "kof_mothership_retry" "Retrying mothership install (attempt $attempt failed)"
+            fi
+        fi
+
+        attempt=$((attempt + 1))
+    done
+
+    if [[ "$install_success" == "true" ]]; then
         print_success "KOF mothership installed successfully"
         add_event "kof_mothership_installed" "KOF mothership v$kof_version installed"
     else
-        print_error "Failed to install KOF mothership"
-        add_event "kof_mothership_installation_failed" "Failed to install KOF mothership"
+        print_error "Failed to install KOF mothership after $max_retries attempts"
+        add_event "kof_mothership_installation_failed" "Failed to install KOF mothership after $max_retries attempts"
         return 1
     fi
     
