@@ -202,6 +202,32 @@ phase_is_completed() {
     [[ "$current_status" == "completed" ]]
 }
 
+# Check if a phase is marked as skipped
+# Args: $1 - phase name
+# Returns: 0 if skipped, 1 otherwise
+phase_is_skipped() {
+    local current_status
+    current_status=$(phase_status "$1")
+    [[ "$current_status" == "skipped" ]]
+}
+
+# Mark a phase as skipped (for optional components that are disabled)
+# Args: $1 - phase name, $2 - reason (optional)
+phase_mark_skipped() {
+    local phase="$1"
+    local reason="${2:-Component not enabled}"
+    local phase_normalized="${phase//-/_}"
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    if [[ -f "$DEPLOYMENT_STATE_FILE" ]]; then
+        yq eval ".phases.${phase_normalized}.status = \"skipped\"" -i "$DEPLOYMENT_STATE_FILE"
+        yq eval ".phases.${phase_normalized}.skipped_reason = \"${reason}\"" -i "$DEPLOYMENT_STATE_FILE"
+        yq eval ".phases.${phase_normalized}.updated_at = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+        yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
+    fi
+    add_event "phase_skipped" "Phase skipped: $phase_normalized - $reason" "$phase_normalized"
+}
+
 phase_mark_in_progress() {
     local phase="$1"
     local phase_normalized="${phase//-/_}"
@@ -226,7 +252,8 @@ phase_mark_completed() {
         yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
     fi
     update_state "phase" "$phase_normalized"
-    add_event "phase_completed" "Phase completed: $phase_normalized"
+    # Pass phase name as third arg for accurate notification tracking
+    add_event "phase_completed" "Phase completed: $phase_normalized" "$phase_normalized"
 }
 
 phase_mark_pending() {
@@ -277,7 +304,8 @@ phase_reset_from() {
 phase_needs_run() {
     local current_status
     current_status=$(phase_status "$1")
-    [[ "$current_status" != "completed" ]]
+    # Skipped phases should not run (they were intentionally skipped)
+    [[ "$current_status" != "completed" && "$current_status" != "skipped" ]]
 }
 
 # Check if a phase is completed
@@ -422,22 +450,29 @@ refresh_all_vm_data() {
 }
 
 # Add event to log
+# Args: $1 - action, $2 - message, $3 - phase name (optional, used for phase_completed events)
 add_event() {
     local action="$1"
     local message="$2"
+    local phase_name="${3:-}"
     local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    
+
     # Add event to events array in separate events file
     if [[ -f "$DEPLOYMENT_EVENTS_FILE" ]]; then
-        yq eval ".events += [{\"timestamp\": \"${timestamp}\", \"action\": \"${action}\", \"message\": \"${message}\"}]" -i "$DEPLOYMENT_EVENTS_FILE"
+        if [[ -n "$phase_name" ]]; then
+            # Include phase name in the event for accurate notification tracking
+            yq eval ".events += [{\"timestamp\": \"${timestamp}\", \"action\": \"${action}\", \"message\": \"${message}\", \"phase\": \"${phase_name}\"}]" -i "$DEPLOYMENT_EVENTS_FILE"
+        else
+            yq eval ".events += [{\"timestamp\": \"${timestamp}\", \"action\": \"${action}\", \"message\": \"${message}\"}]" -i "$DEPLOYMENT_EVENTS_FILE"
+        fi
         yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_EVENTS_FILE"
     fi
-    
+
     # Update timestamp in main state file
     if [[ -f "$DEPLOYMENT_STATE_FILE" ]]; then
         yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
     fi
-    
+
 }
 
 # Check if state file exists and is valid
@@ -552,7 +587,10 @@ assign_wireguard_ips() {
     # Update timestamp
     local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     yq eval ".last_updated = \"${timestamp}\"" -i "$DEPLOYMENT_STATE_FILE"
-    
+
+    # Refresh the WG_IPS array so it's available immediately after assignment
+    populate_wg_ips_array
+
     add_event "wireguard_ips_assigned" "WireGuard IP addresses assigned to all hosts"
 }
 

@@ -2,6 +2,28 @@
 
 # Notification functions for k0rdent deployments
 
+# Get human-readable display name for a phase
+# Args: $1 - phase name (e.g., "install_k0s")
+# Returns: display name (e.g., "k0s installation")
+get_phase_display_name() {
+    local phase="$1"
+
+    case "$phase" in
+        "install_k0s") echo "k0s installation" ;;
+        "install_k0rdent") echo "k0rdent installation" ;;
+        "install_kof_mothership") echo "KOF mothership deployment" ;;
+        "install_kof_regional") echo "KOF regional cluster deployment" ;;
+        "install_azure_csi") echo "Azure CSI driver installation" ;;
+        "setup_azure_children") echo "Azure child cluster setup" ;;
+        "prepare_deployment") echo "deployment preparation" ;;
+        "setup_network") echo "network setup" ;;
+        "create_vms") echo "VM creation" ;;
+        "setup_vpn") echo "VPN setup" ;;
+        "connect_vpn") echo "VPN connection" ;;
+        *) echo "$phase" ;;
+    esac
+}
+
 # Send a desktop notification
 # Usage: send_notification "title" "message" ["subtitle"] ["group"]
 send_notification() {
@@ -77,7 +99,14 @@ notify_deployment_event() {
             esac
             ;;
         "phase_completed")
-            send_notification "✓ Phase Completed" "$phase completed successfully" "$message" "$notification_group"
+            local display_name
+            display_name=$(get_phase_display_name "$phase")
+            send_notification "✓ Phase Completed" "$display_name completed successfully" "$message" "$notification_group"
+            ;;
+        "phase_skipped")
+            local display_name
+            display_name=$(get_phase_display_name "$phase")
+            send_notification "⏭ Phase Skipped" "$display_name" "$message" "$notification_group"
             ;;
         "vm_created")
             local vm_name=$(echo "$event_json" | jq -r '.vm_name // "VM"')

@@ -186,11 +186,18 @@ monitor_events() {
                         if [[ -n "$action" ]]; then
                             # Add event field for compatibility
                             event_json=$(echo "$event_json" | jq --arg event "$action" '. + {event: $event}')
-                            
-                            # Get phase from state file
-                            local phase="unknown"
-                            if [[ -f "$DEPLOYMENT_STATE_FILE" ]]; then
-                                phase=$(yq eval '.phase // "unknown"' "$DEPLOYMENT_STATE_FILE" 2>/dev/null || echo "unknown")
+
+                            # Get phase from event data first (authoritative for phase_completed events)
+                            # Fall back to state file for older events without phase field
+                            local phase
+                            phase=$(echo "$event_json" | jq -r '.phase // empty')
+                            if [[ -z "$phase" ]]; then
+                                # Fall back to state file for backward compatibility
+                                if [[ -f "$DEPLOYMENT_STATE_FILE" ]]; then
+                                    phase=$(yq eval '.phase // "unknown"' "$DEPLOYMENT_STATE_FILE" 2>/dev/null || echo "unknown")
+                                else
+                                    phase="unknown"
+                                fi
                                 event_json=$(echo "$event_json" | jq --arg phase "$phase" '. + {phase: $phase}')
                             fi
                             

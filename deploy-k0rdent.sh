@@ -120,6 +120,7 @@ fi
 # Load central configuration and state management helpers
 source ./etc/k0rdent-config.sh
 source ./etc/state-management.sh
+source ./etc/kof-functions.sh
 
 # Build flags to pass to child scripts
 if [[ "$SKIP_PROMPTS" == "true" ]]; then
@@ -272,6 +273,16 @@ validate_k0rdent_phase() {
     [[ "$installed" == "true" ]]
 }
 
+# Enablement checker for KOF components (uses deploy script flag)
+is_kof_deployment_enabled() {
+    [[ "$WITH_KOF" == "true" ]]
+}
+
+# Enablement checker for Azure children components (uses deploy script flag)
+is_azure_children_deployment_enabled() {
+    [[ "$WITH_AZURE_CHILDREN" == "true" ]]
+}
+
 handle_completed_phase() {
     local phase="$1"
     local validator="$2"
@@ -293,11 +304,48 @@ handle_completed_phase() {
     return 1
 }
 
+# Check if a phase should run
+# Args: $1 - phase name, $2 - validator function (optional), $3 - enablement checker function (optional)
+# Returns: 0 if should run, 1 if should skip
 should_run_phase() {
     local phase="$1"
-    local validator="$2"
+    local validator="${2:-}"
+    local enablement_checker="${3:-}"
+    local label
+    label=$(phase_display_name "$phase")
+
+    # Check if component is enabled (if enablement checker provided)
+    if [[ -n "$enablement_checker" ]]; then
+        if ! "$enablement_checker" 2>/dev/null; then
+            # Component is disabled - handle state transitions
+            local current_status
+            current_status=$(phase_status "$phase")
+
+            if [[ "$current_status" == "completed" ]]; then
+                # Phase was completed in previous run but now disabled
+                phase_mark_skipped "$phase" "Component no longer enabled"
+                print_info "$label - previously completed, now skipped (component disabled)."
+            elif [[ "$current_status" != "skipped" ]]; then
+                # Phase never run and component disabled
+                phase_mark_skipped "$phase" "Component not enabled"
+                print_info "$label skipped - component not enabled."
+            else
+                # Already skipped, just log
+                print_info "$label skipped - component not enabled."
+            fi
+            return 1  # Don't run phase
+        fi
+    fi
 
     if ! state_file_exists; then
+        return 0
+    fi
+
+    # Check if phase was previously skipped but now component is enabled
+    if phase_is_skipped "$phase"; then
+        # Component is now enabled, reset phase to pending so it can run
+        phase_mark_pending "$phase"
+        print_info "$label - was skipped, now enabled. Will run."
         return 0
     fi
 
@@ -390,16 +438,13 @@ run_deployment() {
     print_info "Deployment started at: $DEPLOYMENT_START_DATE"
     echo
 
-    # Step 1: Prepare deployment (keys and cloud-init)
-    if should_run_phase "prepare_deployment" validate_prepare_phase; then
-        print_header "Step 1: Preparing Deployment (Keys & Cloud-Init)"
-        bash bin/prepare-deployment.sh deploy $DEPLOY_FLAGS
-        phase_mark_completed "prepare_deployment"
-    else
-        print_success "Step 1 skipped - deployment preparation already complete."
+    # Initialize state file early if it doesn't exist, so deployment flags are recorded immediately
+    if ! state_file_exists; then
+        init_deployment_state "$K0RDENT_CLUSTERID"
     fi
 
-    # Record deployment flags in state (after state file is created)
+    # Record deployment flags immediately (before any phases run)
+    # This ensures 'status' command shows correct flags even during first phase
     update_state "deployment_flags.azure_children" "$WITH_AZURE_CHILDREN"
     update_state "deployment_flags.kof" "$WITH_KOF"
     update_state "deployment_start_time" "$DEPLOYMENT_START_DATE_UTC"
@@ -408,6 +453,15 @@ run_deployment() {
     # Record deployment in history with deployer identity
     get_deployer_identity
     record_deployment_history "$K0RDENT_CLUSTERID" "$CONFIG_YAML" "$DEPLOYER_IDENTITY"
+
+    # Step 1: Prepare deployment (keys and cloud-init)
+    if should_run_phase "prepare_deployment" validate_prepare_phase; then
+        print_header "Step 1: Preparing Deployment (Keys & Cloud-Init)"
+        bash bin/prepare-deployment.sh deploy $DEPLOY_FLAGS
+        phase_mark_completed "prepare_deployment"
+    else
+        print_success "Step 1 skipped - deployment preparation already complete."
+    fi
 
     # Start desktop notifier if requested
     if [[ "$WITH_DESKTOP_NOTIFICATIONS" == "true" ]]; then
@@ -482,52 +536,56 @@ run_deployment() {
         print_success "Step 7 skipped - k0rdent already installed."
     fi
 
-    # Step 8: Setup Azure child cluster deployment (if requested)
-    if [[ "$WITH_AZURE_CHILDREN" == "true" ]]; then
-        if should_run_phase "setup_azure_children" ""; then
-            print_header "Step 8: Setting up Azure Child Cluster Deployment"
-            bash bin/setup-azure-cluster-deployment.sh setup $DEPLOY_FLAGS
-            phase_mark_completed "setup_azure_children"
-        else
+    # Step 8: Setup Azure child cluster deployment (optional - uses enablement checker)
+    if should_run_phase "setup_azure_children" "" "is_azure_children_deployment_enabled"; then
+        print_header "Step 8: Setting up Azure Child Cluster Deployment"
+        bash bin/setup-azure-cluster-deployment.sh setup $DEPLOY_FLAGS
+        phase_mark_completed "setup_azure_children"
+    else
+        local step8_status
+        step8_status=$(phase_status "setup_azure_children")
+        if [[ "$step8_status" == "completed" ]]; then
             print_success "Step 8 skipped - Azure child cluster deployment already configured."
         fi
+        # If skipped, message was already printed by should_run_phase
     fi
 
-    # Step 9: Install Azure CSI driver (if KOF requested)
-    if [[ "$WITH_KOF" == "true" ]]; then
-        if should_run_phase "install_azure_csi" ""; then
-            print_header "Step 9: Installing Azure Disk CSI Driver for KOF"
-            bash bin/install-k0s-azure-csi.sh deploy $DEPLOY_FLAGS
-            phase_mark_completed "install_azure_csi"
-        else
+    # Step 9: Install Azure CSI driver (optional - required for KOF)
+    if should_run_phase "install_azure_csi" "" "is_kof_deployment_enabled"; then
+        print_header "Step 9: Installing Azure Disk CSI Driver for KOF"
+        bash bin/install-k0s-azure-csi.sh deploy $DEPLOY_FLAGS
+        phase_mark_completed "install_azure_csi"
+    else
+        local step9_status
+        step9_status=$(phase_status "install_azure_csi")
+        if [[ "$step9_status" == "completed" ]]; then
             print_success "Step 9 skipped - Azure Disk CSI driver already installed."
         fi
     fi
 
-    # Step 10: Install KOF mothership (if requested)
-    if [[ "$WITH_KOF" == "true" ]]; then
-        if should_run_phase "install_kof_mothership" ""; then
-            print_header "Step 10: Installing KOF Mothership"
-            bash bin/install-kof-mothership.sh deploy $DEPLOY_FLAGS
-            phase_mark_completed "install_kof_mothership"
-        else
+    # Step 10: Install KOF mothership (optional - uses enablement checker)
+    if should_run_phase "install_kof_mothership" "" "is_kof_deployment_enabled"; then
+        print_header "Step 10: Installing KOF Mothership"
+        bash bin/install-kof-mothership.sh deploy $DEPLOY_FLAGS
+        phase_mark_completed "install_kof_mothership"
+    else
+        local step10_status
+        step10_status=$(phase_status "install_kof_mothership")
+        if [[ "$step10_status" == "completed" ]]; then
             print_success "Step 10 skipped - KOF mothership already installed."
         fi
     fi
 
-    # Step 11: Deploy KOF regional cluster (if requested)
-    if [[ "$WITH_KOF" == "true" ]]; then
-        if should_run_phase "install_kof_regional" ""; then
-            print_header "Step 11: Deploying KOF Regional Cluster"
-            bash bin/install-kof-regional.sh deploy $DEPLOY_FLAGS
-            phase_mark_completed "install_kof_regional"
-        else
-            print_success "Step 11 skipped - KOF regional cluster already deployed."
-        fi
+    # Step 11: Deploy KOF regional cluster (optional - uses enablement checker)
+    if should_run_phase "install_kof_regional" "" "is_kof_deployment_enabled"; then
+        print_header "Step 11: Deploying KOF Regional Cluster"
+        bash bin/install-kof-regional.sh deploy $DEPLOY_FLAGS
+        phase_mark_completed "install_kof_regional"
     else
-        # Clear any stale completion state so we do not emit warnings
-        if state_file_exists && phase_is_completed "install_kof_regional"; then
-            phase_reset_from "install_kof_regional"
+        local step11_status
+        step11_status=$(phase_status "install_kof_regional")
+        if [[ "$step11_status" == "completed" ]]; then
+            print_success "Step 11 skipped - KOF regional cluster already deployed."
         fi
     fi
 
@@ -1213,13 +1271,25 @@ show_deployment_status() {
         "install_k0rdent:Install k0rdent"
     )
 
-    # Add optional phases based on deployment flags
-    if [[ "$azure_children" == "true" ]]; then
+    # Add optional phases based on deployment flags or if they've been executed/skipped
+    # This ensures phases show up in status even if flags changed between deployments
+    local azure_children_status
+    local azure_csi_status kof_mothership_status kof_regional_status
+    azure_children_status=$(get_state "phases.setup_azure_children.status" 2>/dev/null || echo "")
+    azure_csi_status=$(get_state "phases.install_azure_csi.status" 2>/dev/null || echo "")
+    kof_mothership_status=$(get_state "phases.install_kof_mothership.status" 2>/dev/null || echo "")
+    kof_regional_status=$(get_state "phases.install_kof_regional.status" 2>/dev/null || echo "")
+
+    if [[ "$azure_children" == "true" ]] || [[ -n "$azure_children_status" && "$azure_children_status" != "pending" ]]; then
         phases+=("setup_azure_children:Setup Azure children")
     fi
-    if [[ "$kof" == "true" ]]; then
+    if [[ "$kof" == "true" ]] || [[ -n "$azure_csi_status" && "$azure_csi_status" != "pending" ]]; then
         phases+=("install_azure_csi:Install Azure CSI")
+    fi
+    if [[ "$kof" == "true" ]] || [[ -n "$kof_mothership_status" && "$kof_mothership_status" != "pending" ]]; then
         phases+=("install_kof_mothership:Install KOF mothership")
+    fi
+    if [[ "$kof" == "true" ]] || [[ -n "$kof_regional_status" && "$kof_regional_status" != "pending" ]]; then
         phases+=("install_kof_regional:Install KOF regional")
     fi
 
@@ -1239,6 +1309,9 @@ show_deployment_status() {
                 ;;
             "pending")
                 symbol="○"
+                ;;
+            "skipped")
+                symbol="⏭"
                 ;;
             "failed")
                 symbol="✗"
